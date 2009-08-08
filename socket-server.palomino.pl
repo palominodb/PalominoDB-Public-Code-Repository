@@ -52,6 +52,8 @@ my $SNAPSHOT_INSTALL_CONF_FILE = "/etc/mysql-zrm/plugin-path";
 delete @ENV{'IFS', 'CDPATH', 'ENV', 'BASH_ENV'};
 $ENV{PATH}="/usr/local/bin:/opt/csw/bin:/usr/bin:/usr/sbin:/bin:/sbin";
 my $TAR = "tar";
+my $TAR_WRITE_OPTIONS = "";
+my $TAR_READ_OPTIONS = "";
 my $LS = "ls";
 
 my $TMPDIR;
@@ -66,6 +68,18 @@ my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
 open LOG, ">>$logFile" or die "Unable to create log file";
 $SIG{'PIPE'} = sub { &printAndDie( "pipe broke\n" ); };
+
+if($^O eq "linux") {
+	$TAR_WRITE_OPTIONS = "--same-owner -cphsC";
+	$TAR_READ_OPTIONS = "--same-owner -xphsC";
+}
+elsif($^O eq "freebsd") {
+	$TAR_WRITE_OPTIONS = " -cph -f - -C";
+	$TAR_READ_OPTIONS = " -xp -f - -C";
+}
+else {
+	&printAndDie("Unable to determine which tar options to use!");
+}
 
 # This will only allow and a-z A-Z 0-9 _ - / . = " ' ; + * and space.
 # Modify this if any other characters are to be allowed.
@@ -156,7 +170,8 @@ sub writeTarStream()
 		$fileList = " -T $tmpFile";
 	}
 
-	unless(open( TAR_H, "$TAR --same-owner -cphszC $_[0] $fileList 2>/dev/null|" ) ){
+	&printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList");
+	unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ){
 		&printandDie( "tar failed $!\n" );
 	}
 	binmode( TAR_H );
@@ -176,7 +191,8 @@ sub writeTarStream()
 #$_[0] dirname to strea the data to
 sub readTarStream()
 {
-	unless(open( TAR_H, "|$TAR --same-owner -xphszC $_[0] 2>/dev/null" ) ){
+	&printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]");
+	unless(open( TAR_H, "|$TAR $TAR_READ_OPTIONS $_[0] 2>/dev/null" ) ){
 		&printandDie( "tar failed $!\n" );
 	}
 

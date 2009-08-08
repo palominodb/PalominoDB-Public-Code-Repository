@@ -1,5 +1,9 @@
 So uh, this is a rather informal changelog.
 
+From beta2:
+ - Detect FreeBSD and run tar with bsd compatible options.
+ - Consolidated some duplicate code for ease of maintenance.
+
 From beta1:
  - Changed version number in the socket-server/copy scripts
    to prevent badness with the originals.

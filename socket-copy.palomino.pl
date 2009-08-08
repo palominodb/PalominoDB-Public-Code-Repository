@@ -69,6 +69,8 @@ my $REMOTE_MYSQL_BINPATH = "/usr/bin";
 #$ENV{'TMPDIR'}="/tmp";
 
 my $TAR = "tar";
+my $TAR_WRITE_OPTIONS = "";
+my $TAR_READ_OPTIONS = "";
 my $CP="cp -pr";
 
 my $MYSQL_BINPATH="/usr/bin";
@@ -87,6 +89,18 @@ my $snapshotConfString;
 
 $SIG{'PIPE'} = sub { die "Pipe broke"; };
 $SIG{'TERM'} = sub { close SOCK; die "TERM broke\n"; };
+
+if($^O eq "linux") {
+	$TAR_WRITE_OPTIONS = "--same-owner -cphsC";
+	$TAR_READ_OPTIONS = "--same-owner -xphsC";
+}
+elsif($^O eq "freebsd") {
+	$TAR_WRITE_OPTIONS = " -cph -f - -C";
+	$TAR_READ_OPTIONS = " -xp -f - -C";
+}
+else {
+	&printAndDie("Unable to determine which tar options to use!");
+}
 
 # Parses the command line for all of the copy parameters
 sub getCopyParameters()
@@ -161,7 +175,7 @@ sub getCopyParameters()
 sub doLocalTar()
 {
 	my $cmd;
-	my $tarCmd = "$TAR --same-owner -phszC ";
+	my $tarCmd = $^O eq "linux" ? "$TAR --same-owner -psC " : "$TAR -pC";
 
 	my $srcDir = dirname( $srcFile );
 	my $srcFile = basename( $srcFile );	
@@ -175,7 +189,7 @@ sub doLocalTar()
 		$fileList = " -T $d";
 	}
 
-	my $srcCmd = "$lsCmd $tarCmd $srcDir -c $fileList";
+	my $srcCmd = "$lsCmd $tarCmd $srcDir -h -c $fileList";
 	my $destCmd = "$tarCmd $destDir -x";
 	$cmd = "$srcCmd|$destCmd";
 
@@ -309,8 +323,7 @@ sub sendArgsToRemoteHost()
 # This will read the data from the socket and pipe the output to tar
 sub readTarStream()
 {
-	unless( open( TAR_H, "|$TAR --same-owner -xphszC $destDir 2>/dev/null" ) ){
-	#unless( open( TAR_H, "|$TAR --same-owner -xipC $destDir 2>/dev/null" ) ){
+	unless( open( TAR_H, "|$TAR $TAR_READ_OPTIONS $destDir 2>/dev/null" ) ){
 		die "tar failed $!";
 	}
 	binmode( TAR_H );
@@ -360,7 +373,7 @@ sub readInnoBackupStream()
 #$_[1] filename
 sub writeTarStream()
 {
-	unless(open( TAR_H, "$TAR --same-owner -cphszC $_[0] $_[1] 2>/dev/null|" ) ){
+	unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $_[1] 2>/dev/null|" ) ){
 		&printandDie( "tar failed $!\n" );
 	}
 	binmode( TAR_H );
