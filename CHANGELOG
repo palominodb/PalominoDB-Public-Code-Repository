@@ -1,5 +1,10 @@
 So uh, this is a rather informal changelog.
 
+From beta3a:
+ - Now comes with a fake snapshot plugin! To prevent the raw/logical MADNESS!
+ - Buttloads more debugging. I may eventually make ZRM noisy enough. Prolly not.
+ - Comes with an example config file for "BackupSet1"
+
 From beta2:
  - Detect FreeBSD and run tar with bsd compatible options.
  - Consolidated some duplicate code for ease of maintenance.

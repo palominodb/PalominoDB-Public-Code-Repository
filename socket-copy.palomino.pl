@@ -169,7 +169,7 @@ sub getCopyParameters()
 			}
 		}
 	}
-	print "socket-copy params: $params\n"
+	print "socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir\n";
 }
 
 sub doLocalTar()
@@ -461,9 +461,12 @@ sub doSnapshotCommand()
 {
 	print SOCK $config{"snapshot-plugin"}."\n";
 	my $num = @snapshotParamList;
+	$num += 2; # For user/pass
 	print SOCK "$num\n";
 	if( $num > 0 ){
 		print SOCK "$snapshotConfString";
+		print SOCK "user=$config{'user'}\n";
+		print SOCK "password=$config{'password'}\n";
 	}
 	my $status = <SOCK>;
 	chomp( $status );
@@ -511,7 +514,8 @@ sub doCopyBetween()
 &connectToHost();
 &sendArgsToRemoteHost();
 if( $action eq "copy from" ){
-	&readTarStream();
+	#&readTarStream();
+	&readInnoBackupStream();
 }elsif( $action eq "mysqlhotcopy" ){
 	&readInnoBackupStream();
 }elsif( $action eq "copy between" ){

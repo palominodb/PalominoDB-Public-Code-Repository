@@ -297,6 +297,8 @@ sub doCreateLink()
 	for( $i = 0; $i < $num; $i += 2 ){
 		my $p = &readOneLine();
 		my $link = &readOneLine();
+		&printLog("createLink: $p\n");
+		&printLog("createLink: $link\n");
 		mkpath( $p, 0, 0700 );
 		my $cmd = "ln -s $link";
 		my $r = system( $cmd );
@@ -321,7 +323,6 @@ sub readOneLine()
 sub doSnapshotCommand()
 {
 	my $cmd = &readOneLine();
-
 	my $num = &readOneLine();
 
 	my @confData;
@@ -379,7 +380,7 @@ sub doCopyBetween()
 	my $ofile = basename($f);
 	$f = tmpnam();
 	my $efile = basename($f);
-	my $cmd = "/usr/share/mysql-zrm/plugins/socket-copy.pl $params > $tmp_directory/$ofile 2>$tmp_directory/$efile";
+	my $cmd = "/usr/share/mysql-zrm/plugins/socket-copy.palomino.pl $params > $tmp_directory/$ofile 2>$tmp_directory/$efile";
 	&printLog( "$cmd\n" );
 	my $r = system( $cmd );
 	if( $r == 0 ){
@@ -397,10 +398,30 @@ $| = 1;
 &getInputs();
 
 if( $action eq "copy from" ){
-	my @suf;
-	my $file = basename( $params, @suf );
-	my $dir = dirname( $params );
-	&writeTarStream( $dir, $file );
+	if(-f "/tmp/zrm-innosnap/running" ) {
+		&printLog(" Redirecting to innobackupex. \n");
+		open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
+		$_ = <FAKESNAPCONF>; # Throw away the timestamp for now
+		$_ = <FAKESNAPCONF>;
+		chomp($_);
+		$params .= " --user=$_ ";
+		$_ = <FAKESNAPCONF>;
+		chomp($_);
+		$params .= " --password=$_ ";
+
+		$tmp_directory=&getTmpName();
+		my $r = mkdir( $tmp_directory );
+		if( $r == 0 ){
+			&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+		}
+		&doRealHotCopy( $tmp_directory );
+	}
+	else {
+		my @suf;
+		my $file = basename( $params, @suf );
+		my $dir = dirname( $params );
+		&writeTarStream( $dir, $file );
+	}
 }elsif( $action eq "copy between" ){
 	$tmp_directory=&getTmpName();
 	my $r = mkdir( $tmp_directory );
