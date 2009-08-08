@@ -59,7 +59,7 @@ my $tmp_directory;
 my $action;
 my $params;
 my $INNOBACKUPEX="innobackupex-1.5.1";
-my $VERSION="1.8";
+my $VERSION="1.8b2_palomino";
 my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
@@ -115,26 +115,6 @@ sub getInputs()
 	$MYSQL_BINPATH = &checkIfTainted($inp[3]);
 }
 
-sub doHotCopy()
-{
-#	my $r = system( "$MYSQL_BINPATH/$MYSQLHOTCOPY $params $tmp_directory 2>/dev/null" );
-#	if( $r > 0 ){
-#		&printAndDie( "mysqlhotcopy failed $!\n" );
-#	}
-	$params =~ s/host/remote-host/;
-	$params =~ s/--quiet//;
-	my $new_params = "";
-	foreach my $i (split(/\s+/, $params)) {
-		&printLog("param: $i\n");
-		next if($i !~ /^--/);
-		$new_params .= "$i ";
-	}
-	&printLog("HOT COPY COMMAND:$MYSQL_BINPATH/$INNOBACKUPEX $new_params $tmp_directory &>/tmp/innobackup.log\n");
-	my $r = system("$MYSQL_BINPATH/$INNOBACKUPEX $new_params $tmp_directory &>/tmp/innobackup.log");
-	if( $r > 0 ){
-		&printAndDie("innobackupex failed $1\n");
-	}
-}
 
 sub doRealHotCopy()
 {
@@ -148,7 +128,7 @@ sub doRealHotCopy()
 		$new_params .= "$i ";
 	}
 	&printLog("HOT COPY COMMAND:$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory\n");
-	unless(open( TAR_H, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>/tmp/innobackup.log|" ) ) {
+	unless(open( TAR_H, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>>$logDir/innobackupex.log|" ) ) {
 		&printandDie( "tar failed $!\n" );
 	}
 	binmode( TAR_H );
@@ -423,9 +403,7 @@ if( $action eq "copy from" ){
 	if( $r == 0 ){
 		&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
 	}
-	#&doHotCopy( $tmp_directory );
 	&doRealHotCopy( $tmp_directory );
-	#&writeTarStream( $tmp_directory, "." );
 }elsif( $action eq "remove-backup-data" ){
 	&removeBackupData();
 }elsif( $action eq "snapshot" ){
