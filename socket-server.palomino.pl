@@ -1,23 +1,4 @@
 #!/usr/bin/perl
-#
-# Copyright (c) 2006 Zmanda Inc.  All Rights Reserved.
-#
-# This program is free software; you can redistribute it and/or modify it
-# under the terms of the GNU General Public License version 2 as published
-# by the Free Software Foundation.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-# for more details.
-#
-# You should have received a copy of the GNU General Public License along
-# with this program; if not, write to the Free Software Foundation, Inc.,
-# 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-#
-# Contact information: Zmanda Inc, 505 N Mathlida Ave, Suite 120
-# Sunnyvale, CA 94085, USA, or: http://www.zmanda.com
-#
 
 # This is meant to be invoked by xinetd.
 # It expects two arguments on stdin
@@ -61,7 +42,7 @@ my $tmp_directory;
 my $action;
 my $params;
 my $INNOBACKUPEX="innobackupex-1.5.1";
-my $VERSION="1.8b2_palomino";
+my $VERSION="1.8b5_palomino";
 my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";

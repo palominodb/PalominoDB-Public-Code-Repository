@@ -1,0 +1,49 @@
+README For the innobackupex ZRM plugin
+
+Installing:
+  Place all of the perl scripts in /usr/share/mysql-zrm/plugins,
+  or to whatever root you have installed zrm in. (So /usr/local/share/mysql-zrm/plugins,
+  if your root is /usr/local.)
+  The scripts need to be executable, and owned by the zrm user (usually mysql).
+  The sample mysql-zrm.conf file provided can be used as a template for config.
+
+  /etc/xinetd.d/mysql-zrm-socket-server needs to have this line:
+  server = /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
+
+  Be aware that this socket server (by design) will not interoperate with stock zrm
+  plugins. The version number was changed to protect you against any badness from
+  possible incompatibilities I may have introduced.
+
+Files:
+  The scripts MUST have the ability to create files in /tmp.
+  Specifically, the directory /tmp/zrm-innosnap, and the file 'running' underneath it.
+  That file is used to forward data to the copy plugin after the snapshot has been made.
+  Innobackupex also creates a directory under /tmp, that contains state for while it's running.
+  It doesn't appear to clean it up, but it also appears to be harmless between runs to leave it.
+
+Logs/Troubleshooting:
+  - /var/log/innobackupex.log 
+    Contains the output from innobackupex. Doesn't contain timestamps, iirc
+  - /var/log/socket-server.log
+    Contains standard zrm socket server logging, but doesn't truncate after
+    every run. It's also more verbose.
+    The line 'createLink' will help you track down mismatches between zrm and innobackupex,
+    though, technically, I don't think it matters.
+    
+How it works:
+  This is documented in the scripts also but basically this is what it does:
+  1. ZRM starts up, copies away replication info, etc. It also places a config file in /tmp.
+  2. ZRM creates a snapshot, and mounts it.
+      inno-snapshot.pl grabs the user/name and password from the config file that ZRM placed,
+      and squirrels it away in /tmp/zrm-innosnap/running along with a timestamp, that could be
+      used for staleness checking, but is currently ignored.
+      It does this because ZRM DELETES that config file after making the snapshot under
+      the assumption that it can just copy files now and that there won't be any programs
+      in between.
+  3. ZRM attempts to copy the files
+      The socket-server script checks for /tmp/zrm-innosnap/running and if it's present,
+      reads the username/password from it, and redirects to innobackupex <- this is the magic part.
+      Otherwise it lets the copy proceed as normal. That check allows copying repl files work.
+  4. ZRM unmounts and destroys the snapshot.
+      inno-snapshot.pl just deletes /tmp/zrm-innnosnap.
+  5. ZRM believes that is has raw copied your database. :)

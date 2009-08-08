@@ -1,5 +1,11 @@
 So uh, this is a rather informal changelog.
 
+From beta4:
+ - inno-snapshot.pl no longer has any OS specific code.
+ - Yanked out Zmanda license, because more than 60% of the code has been changed,
+   making this original work, I think. (We should double check this, and if necessary
+   I can rewrite further.)
+
 From beta3a:
  - Now comes with a fake snapshot plugin! To prevent the raw/logical MADNESS!
  - Buttloads more debugging. I may eventually make ZRM noisy enough. Prolly not.

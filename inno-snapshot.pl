@@ -30,25 +30,15 @@ $SIG{'TERM'} = sub { &printAndDie("TERM signal"); };
 # $_[1] snapshot name
 sub getSnapshotDeviceDetails()
 {
-	my $snapshotName = $_[1];
-	my @ret = `$DF '$_[0]'`;
-	if( $? != 0 ) {
-		&printAndDie( "Failed to find database: ".$_[0] );
-	}
-	chomp( @ret );
-	my @fs = split(" " , $ret[1]);
-	my $dev = $fs[0];
 
-	if( $? == 0 ) {
-		print "device=$dev\n";
-		print "snapshot-device=$dev\n";
-		print "device-mount-point=$fs[6]\n";
-		print "filesystem-type=$fs[1]\n";
-		my $str = &getCommonDetails( $_[0], $_[1], $fs[6] );
-		@ret = split /\n/, $str;
-		print $ret[1], "\n";
-		print "snapshot-mount-point=/tmp/zrm-innosnap\n";
-	}
+  print "device=/dev/null\n";
+  print "snapshot-device=/dev/null\n";
+  print "device-mount-point=null\n";
+  print "filesystem-type=null\n";
+  my $str = &getCommonDetails( $_[0], $_[1], $_[0] );
+  my @ret = split /\n/, $str;
+  print $ret[1], "\n";
+  print "snapshot-mount-point=/tmp/zrm-innosnap\n";
 }
 
 sub doGetSnapshotdeviceDetails()
