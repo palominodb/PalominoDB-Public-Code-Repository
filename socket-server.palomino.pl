@@ -20,6 +20,9 @@ use strict;
 use File::Path;
 use File::Basename;
 use File::Temp qw/ :POSIX /;
+use IO::Select;
+use IO::Handle;
+use POSIX;
 
 # Set remote-mysql-binpath in mysql-zrm.conf if mysql client binaries are 
 # in a different location
@@ -48,7 +51,8 @@ my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
 open LOG, ">>$logFile" or die "Unable to create log file";
-$SIG{'PIPE'} = sub { &printAndDie( "pipe broke\n" ); };
+LOG->autoflush(1);
+#$SIG{'PIPE'} = sub { &printAndDie( "pipe broke\n" ); };
 
 if($^O eq "linux") {
 	$TAR_WRITE_OPTIONS = "--same-owner -cphsC";
@@ -122,18 +126,49 @@ sub doRealHotCopy()
 		next if($i =~ /^--host/);
 		$new_params .= "$i ";
 	}
-	&printLog("HOT COPY COMMAND:$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory\n");
-	unless(open( TAR_H, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>>$logDir/innobackupex.log|" ) ) {
-		&printandDie( "tar failed $!\n" );
+
+	my ($fhs, $buf);
+	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
+	&printLog("Created FIFOS..\n");
+
+	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	&printLog("Opened InnoBackupEX.\n");
+	open(INNO_LOG, "</tmp/innobackupex-log");
+	&printLog("Opened Inno-Log.\n");
+	$fhs = IO::Select->new();
+	$fhs->add(\*INNO_TAR);
+	$fhs->add(\*INNO_LOG);
+	while( $fhs->count() > 0 ) {
+		my @r = $fhs->can_read(5);
+		foreach my $fh (@r) {
+			if($fh == \*INNO_TAR) {
+				if( sysread( INNO_TAR, $buf, 10240 ) ) {
+					my $x = pack( "u*", $buf );
+					print STDOUT pack( "N", length( $x ) );
+					print STDOUT $x;
+				}
+				else {
+					&printLog("closed tar handle\n");
+					$fhs->remove($fh);
+					close(INNO_TAR);
+				}
+			}
+			if($fh == \*INNO_LOG) {
+				if( sysread( INNO_LOG, $buf, 10240 ) ) {
+					&printLog($buf);
+					if($buf =~ /innobackupex: Error:(.*)/) {
+						&printandDie("innobackupex caught error: $1\n");
+					}
+				}
+				else {
+					&printLog("closed log handle\n");
+					$fhs->remove($fh);
+					close(INNO_LOG);
+				}
+			}
+		}
 	}
-	binmode( TAR_H );
-	my $buf;
-	while( read( TAR_H, $buf, 10240 ) ){
-		my $x = pack( "u*", $buf );
-		print pack( "N", length( $x ) );
-		print $x;
-	}
-	close( TAR_H );
+	unlink("/tmp/innobackupex-log");
 }
 
 #$_[0] dirname

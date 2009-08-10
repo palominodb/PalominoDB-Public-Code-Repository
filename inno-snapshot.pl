@@ -55,7 +55,7 @@ sub doGetSnapshotdeviceDetails()
 sub doCreateSnapshot()
 {
 	mkdir("/tmp/zrm-innosnap");
-	sleep(30);
+	sleep(5);
 	return;
 }
 
@@ -66,20 +66,20 @@ sub doMount()
 	print RUNFIL "$ZRM::SnapshotCommon::config{'user'}\n";
 	print RUNFIL "$ZRM::SnapshotCommon::config{'password'}\n";
 	close RUNFIL;
-	sleep(30);
+	sleep(5);
 	return;
 }
 
 sub doUmount()
 {
 	unlink("/tmp/zrm-innosnap/running");
-	sleep(30);
+	sleep(5);
 	return;
 }
 
 sub doRemoveSnapshot()
 {
-	sleep(30);
+	sleep(5);
 	rmdir("/tmp/zrm-innosnap");
 	return;
 }
