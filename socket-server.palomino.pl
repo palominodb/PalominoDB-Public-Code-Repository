@@ -22,6 +22,7 @@ use File::Basename;
 use File::Temp qw/ :POSIX /;
 use IO::Select;
 use IO::Handle;
+use Sys::Hostname;
 use POSIX;
 
 # Set remote-mysql-binpath in mysql-zrm.conf if mysql client binaries are 
@@ -45,10 +46,15 @@ my $tmp_directory;
 my $action;
 my $params;
 my $INNOBACKUPEX="innobackupex-1.5.1";
-my $VERSION="1.8b5_palomino";
+my $VERSION="1.8b6_palomino";
 my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
+
+my $nagios_service = "MySQL Backups";
+my $nagios_host = "develbox.linuxfood.net";
+my $nsca_client = "/usr/sbin/send_nsca";
+my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
 
 open LOG, ">>$logFile" or die "Unable to create log file";
 LOG->autoflush(1);
@@ -156,8 +162,9 @@ sub doRealHotCopy()
 			if($fh == \*INNO_LOG) {
 				if( sysread( INNO_LOG, $buf, 10240 ) ) {
 					&printLog($buf);
-					if($buf =~ /innobackupex: Error:(.*)/) {
-						&printandDie("innobackupex caught error: $1\n");
+					if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+						sendNagiosAlert("CRITICAL: $1", 2);
+            &printAndDie($_);
 					}
 				}
 				else {
@@ -169,6 +176,15 @@ sub doRealHotCopy()
 		}
 	}
 	unlink("/tmp/innobackupex-log");
+	sendNagiosAlert("OK: Copied data successfully.", 0);
+}
+
+sub sendNagiosAlert {
+	my $alert = shift;
+	my $status = shift;
+	my $host = hostname;
+	&printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
+	$_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
 }
 
 #$_[0] dirname
@@ -188,7 +204,7 @@ sub writeTarStream()
 
 	&printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList");
 	unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ){
-		&printandDie( "tar failed $!\n" );
+		&printAndDie( "tar failed $!\n" );
 	}
 	binmode( TAR_H );
 	my $buf;
@@ -209,7 +225,7 @@ sub readTarStream()
 {
 	&printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]");
 	unless(open( TAR_H, "|$TAR $TAR_READ_OPTIONS $_[0] 2>/dev/null" ) ){
-		&printandDie( "tar failed $!\n" );
+		&printAndDie( "tar failed $!\n" );
 	}
 
 	my $buf;
