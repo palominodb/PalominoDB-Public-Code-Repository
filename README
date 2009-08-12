@@ -6,9 +6,21 @@ Installing:
   if your root is /usr/local.)
   The scripts need to be executable, and owned by the zrm user (usually mysql).
   The sample mysql-zrm.conf file provided can be used as a template for config.
+  You should also probably place zrm_nsca.cfg in /usr/share/mysql-zrm/plugins
+  and make it readable by the zrm user, so that socket-server.palomino.pl can
+  send status to nagios.
+
+  You must edit socket-server.palomino.pl to point to your real nagios server,
+  and the real path to send_nsca, and the real path to a nsca config file readable
+  by the zrm user. The next version will have a config file so that these edits
+  need not be made on every upgrade.
 
   /etc/xinetd.d/mysql-zrm-socket-server needs to have this line:
   server = /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
+
+  Included in the tarball is the file example_nagios.cfg, which contains a service
+  definition, and a couple command definitions that should work with a stock
+  redhat/centos nagios install. It should obviously be modified to suit your environment.
 
   Be aware that this socket server (by design) will not interoperate with stock zrm
   plugins. The version number was changed to protect you against any badness from
@@ -20,13 +32,13 @@ Files:
   That file is used to forward data to the copy plugin after the snapshot has been made.
   Innobackupex also creates a directory under /tmp, that contains state for while it's running.
   It doesn't appear to clean it up, but it also appears to be harmless between runs to leave it.
+  The script also creates /tmp/innobackupex-log, which is a fifo for reading the logs from innobackupex
+  so that it can alert nagios in the event of failure.
 
 Logs/Troubleshooting:
-  - /var/log/innobackupex.log 
-    Contains the output from innobackupex. Doesn't contain timestamps, iirc
   - /var/log/socket-server.log
-    Contains standard zrm socket server logging, but doesn't truncate after
-    every run. It's also more verbose.
+    Contains standard zrm socket server logging plus the innobackupex log.
+    It also doesn't truncate after every run. It's also more verbose.
     The line 'createLink' will help you track down mismatches between zrm and innobackupex,
     though, technically, I don't think it matters.
     

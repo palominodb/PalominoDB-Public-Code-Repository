@@ -1,5 +1,17 @@
 So uh, this is a rather informal changelog.
 
+From beta5:
+ - inno-snapshot.pl "human sleeps" reduced from 30s to 5s.
+ - New dependency on send_nsca for nagios reporting.
+ - New config variables:
+   - $nsca_client (path to send_nsca, usually /usr/sbin/send_nsca).
+   - $nagios_server (hostname of the nagios machine running nsca daemon).
+   - $nagios_service (name of the service for backup reporting).
+   - $nsca_cfg (path to nsca config file, example provided. MUST be readable by mysql user).
+ - Creates a fifo /tmp/innobackupex-log to check for failures during copy
+ - No longer creates /var/log/mysql-zrm/innobackupex.log, that log is now
+   merged with /var/log/mysql-zrm/socket-server.log.
+
 From beta4:
  - inno-snapshot.pl no longer has any OS specific code.
  - Yanked out Zmanda license, because more than 60% of the code has been changed,
