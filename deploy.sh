@@ -1,11 +1,33 @@
 #!/bin/bash
 
 code_base=$1
+do_tarball=$2
+tag=$3
 
 if [[ -z $code_base ]]
 then
 	echo "Need a codebase!"
 	exit 1
+fi
+
+if [[ -n $do_tarball ]]
+then
+  # Do stuff to make a tarball at tag X.
+  if [[ -z $tag ]]
+  then
+    echo "Need a tag to make a tarball."
+    exit 1
+  fi
+  prev_head=$(git branch | grep '^*' | awk '{print $2}')
+  git stash
+  git checkout $tag
+  git log > CHANGELOG.git
+  tar czvf zrm-innobackupex-$tag.tar.gz socket-copy.palomino.pl socket-server.palomino.pl\
+  inno-snapshot.pl zrm_nsca.cfg example_nagios.cfg mysql-zrm.conf README CHANGELOG CHANGELOG.git
+  rm CHANGELOG.git
+  git checkout "$prev_head"
+  git stash pop
+  exit 0
 fi
 
 HOSTS="testdb1 testdb2"
