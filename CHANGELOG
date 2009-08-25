@@ -1,4 +1,6 @@
 So uh, this is a rather informal changelog.
+From beta6:
+ - Config file for socket-server.palomino.pl to support upgrades.
 
 From beta5:
  - inno-snapshot.pl "human sleeps" reduced from 30s to 5s.
