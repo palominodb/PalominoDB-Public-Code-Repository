@@ -51,10 +51,31 @@ my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
+
 my $nagios_service = "MySQL Backups";
-my $nagios_host = "develbox.linuxfood.net";
+my $nagios_host = "nagios.example.com";
 my $nsca_client = "/usr/sbin/send_nsca";
 my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
+
+if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
+  open CFG, "< /usr/share/mysql-zrm/plugins/socket-server.conf";
+  while(<CFG>) {
+    my ($var, $val) = split /\s+/, $_, 1;
+    $var = lc($var);
+    if($var eq "nagios_service") {
+      $nagios_service = $val;
+    }
+    elsif($var eq "nagios_host") {
+      $nagios_host = $val;
+    }
+    elsif($var eq "nsca_client") {
+      $nsca_client = $val;
+    }
+    elsif($var eq "nsca_cfg") {
+      $nsca_cfg = $val;
+    }
+  }
+}
 
 open LOG, ">>$logFile" or die "Unable to create log file";
 LOG->autoflush(1);
