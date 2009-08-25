@@ -10,13 +10,13 @@ Installing:
   and make it readable by the zrm user, so that socket-server.palomino.pl can
   send status to nagios.
 
-  You must edit socket-server.palomino.pl to point to your real nagios server,
+  You must edit socket_server.conf to point to your real nagios server,
   and the real path to send_nsca, and the real path to a nsca config file readable
-  by the zrm user. The next version will have a config file so that these edits
-  need not be made on every upgrade.
+  by the zrm user.
 
   /etc/xinetd.d/mysql-zrm-socket-server needs to have this line:
   server = /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
+  Or, you can use the provided zrm-palomino.xinetd config file, and reload xinetd.
 
   Included in the tarball is the file example_nagios.cfg, which contains a service
   definition, and a couple command definitions that should work with a stock
@@ -24,7 +24,7 @@ Installing:
 
   Be aware that this socket server (by design) will not interoperate with stock zrm
   plugins. The version number was changed to protect you against any badness from
-  possible incompatibilities I may have introduced.
+  possible incompatibilities introduced.
 
 Files:
   The scripts MUST have the ability to create files in /tmp.
