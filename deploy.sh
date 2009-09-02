@@ -23,7 +23,8 @@ then
   git checkout $tag
   git log > CHANGELOG.git
   tar czvf zrm-innobackupex-$tag.tar.gz socket-copy.palomino.pl socket-server.palomino.pl\
-  inno-snapshot.pl zrm_nsca.cfg example_nagios.cfg mysql-zrm.conf socket_server.conf README CHANGELOG CHANGELOG.git
+    inno-snapshot.pl zrm_nsca.cfg example_nagios.cfg mysql-zrm.conf socket_server.conf\
+    zrm-palomino.xinetd README CHANGELOG CHANGELOG.git
   rm CHANGELOG.git
   git checkout "$prev_head"
   git stash pop
