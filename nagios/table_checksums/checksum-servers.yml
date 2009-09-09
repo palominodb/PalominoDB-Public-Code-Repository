@@ -1,0 +1,35 @@
+---
+# user/pass combination must be able to connect to all servers listed below.
+# sets the user mk-table-checksum should connect as
+user: root
+# sets the password for mk-table-checksum
+pass: pass
+# path to mk-table-checksum, should rarely need to be modified.
+mktablechecksum: /usr/bin/mk-table-checksum
+
+# All the nagios config.
+# The leading spaces are important.
+# Need not be two, just the same. Must not be tabs.
+nagios:
+  # Nagios host to send status to
+  nagioshost: nagios.palominodb.com
+  # host that has the service
+  svchost: somedb01.palominodb.com
+  # Name of the service
+  svcdesc: Table Checksums
+  # where the send_nsca binary is
+  send_nsca: /usr/sbin/send_nsca
+  # where the send_nsca config file is
+  nscaconfig: send_nsca.cfg
+
+# tables to check
+# The leading space is important. Line up your dashes.
+# That's: database_name.table_name.
+# Must be in that format.
+tables:
+  - test.bazbarfoo
+
+# Servers to check. Can be hosts or IPs.
+servers:
+  - testdb1
+  - testdb2

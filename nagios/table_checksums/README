@@ -1,0 +1,22 @@
+checksum-servers.cron - Do a parallel checksum and report back to nagios.
+
+Runs mk-table-checksum on servers and tables specified by a yaml config file.
+
+Dependencies for running are:
+  - YAML::Syck
+  - Pod::Usage
+  - Getopt::Long (should be standard)
+  - File::Temp (also standard, I believe)
+
+It should be added a crontab like so:
+0 */8 * * * checksum-servers.cron --cfgfile csum-servers.yml
+
+It accepts options:
+
+   --help      Print help.
+   --cfgfile   YAML file of tables and IPs, and other configuration.
+   --debug     Print status of what it's doing.
+   --noop      Don't do anything.
+
+
+The sample checksum-servers.yml file documents all available options that the YAML file can have.
