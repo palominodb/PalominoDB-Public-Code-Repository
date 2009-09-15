@@ -34,6 +34,15 @@ $VERSION     = 0.00;
 @EXPORT_OK   = ();
 %EXPORT_TAGS = ();
 
+=pod
+
+=item new(url, user, password)
+
+    url - URI to the root of your nagios install. E.g. http://nagios.example.com/nagios/
+    user - username to authenticate with
+    password - password for the user
+
+=cut
 
 sub new {
   my $class = shift;
@@ -137,3 +146,15 @@ sub add_comment {
 }
 
 1;
+__END__
+
+=head1 NAME
+
+Nagios::RemoteCmd - Do Nagios commands remotely.
+
+=head1 SYNOPSIS
+
+Nagios::RemoteCmd allows you to easily disable or enable notifications, schedule downtimes, and add comments to hosts and serivices.
+
+No support for anything else right now.
+
