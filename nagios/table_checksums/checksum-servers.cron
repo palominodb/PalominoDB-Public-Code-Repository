@@ -46,6 +46,10 @@ if($debug or $noop) {
 unless($noop) {
   my @r = qx($mk_table_checksum --user $user --pass $pass --tables $tables $servers);
 
+  if($debug) {
+    print join("", @r);
+  }
+
   if(($? >> 8) != 0) {
     system("echo -e '$nagios->{'svchost'}\\t$nagios->{'svcdesc'}\\t3\\tmk-table-checksum had an unknown issue.' |$nagios->{'send_nsca'} -H $nagios->{'nagioshost'} -c $nagios->{'nscaconfig'}");
     exit(0);

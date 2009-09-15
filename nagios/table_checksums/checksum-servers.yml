@@ -28,6 +28,7 @@ nagios:
 # Must be in that format.
 tables:
   - test.bazbarfoo
+  - test.bznip
 
 # Servers to check. Can be hosts or IPs.
 servers:
