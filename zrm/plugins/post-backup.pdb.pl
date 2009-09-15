@@ -5,7 +5,7 @@ use Getopt::Long;
 use Nagios::RemoteCmd;
 
 my $nagios_host = "";
-my $nagios_service = "";
+my @nagios_services = qw();
 
 my $nagios_user = "zrm";
 my $nagios_pass = "zrm";
@@ -22,7 +22,7 @@ GetOptions(
   'checksum-finished' => sub {},
   'checksum-pending' => sub {},
   'nagios-host=s' => \$nagios_host,
-  'nagios-service=s' => \$nagios_service,
+  'nagios-service|s=s' => \@nagios_services,
   'backup-set=s' => \$backup_set,
 );
 
@@ -30,4 +30,6 @@ GetOptions(
 my $nagios = Nagios::RemoteCmd->new($nagios_url, $nagios_user, $nagios_pass);
 
 # XXX: See pre-backup.pdb.pl for why we don't not cancel a downtime instead.
-$nagios->enable_notifications($nagios_host, $nagios_service);
+foreach my $s (@nagios_services) {
+  $nagios->enable_notifications($nagios_host, $s);
+}

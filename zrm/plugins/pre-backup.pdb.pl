@@ -5,7 +5,7 @@ use Getopt::Long;
 use Nagios::RemoteCmd;
 
 my $nagios_host = "";
-my $nagios_service = "";
+my @nagios_services = qw();
 
 my $nagios_user = "zrm";
 my $nagios_pass = "zrm";
@@ -20,7 +20,7 @@ my @db_checkips;
 
 my $getopt_result = GetOptions(
   "nagios-host=s" => \$nagios_host,
-  "nagios-services=s" => \$nagios_service,
+  "nagios-service|s=s" => \@nagios_services,
   "backup-directory=s" => \$backup_directory,
   "all-databases" => \$all_databases,
   "databases=s" => \@databases,
@@ -35,4 +35,6 @@ my $nagios = Nagios::RemoteCmd->new($nagios_url, $nagios_user, $nagios_pass);
 # XXX: there is no way to get the 'downtime id' back from nagios
 # XXX: with the limited API provided by nagios.
 # XXX: Technically, it's not even an API, because they say not to use it.
-$nagios->disable_notifications($nagios_host, $nagios_service, "Backup: $backup_directory");
+foreach my $s (@nagios_services) {
+  $nagios->disable_notifications($nagios_host, $s, "Backup: $backup_directory");
+}
