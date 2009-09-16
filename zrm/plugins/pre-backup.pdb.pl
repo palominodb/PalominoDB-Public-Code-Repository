@@ -1,8 +1,10 @@
 #!/usr/bin/perl
+use lib '/usr/share/mysql-zrm/plugins';
 use strict;
 use warnings;
 use Getopt::Long;
 use Nagios::RemoteCmd;
+use Text::ParseWords;
 
 my $nagios_host = "";
 my @nagios_services = qw();
@@ -17,6 +19,8 @@ my $database = "";
 my @databases = qw();
 
 my @db_checkips;
+
+@ARGV = shellwords(@ARGV);
 
 my $getopt_result = GetOptions(
   "nagios-host=s" => \$nagios_host,
@@ -35,6 +39,10 @@ my $nagios = Nagios::RemoteCmd->new($nagios_url, $nagios_user, $nagios_pass);
 # XXX: there is no way to get the 'downtime id' back from nagios
 # XXX: with the limited API provided by nagios.
 # XXX: Technically, it's not even an API, because they say not to use it.
-foreach my $s (@nagios_services) {
-  $nagios->disable_notifications($nagios_host, $s, "Backup: $backup_directory");
+if($nagios_host ne "") {
+  print "Disabling Nagios alerts for $nagios_host\n";
+  foreach my $s (@nagios_services) {
+    print "Disabling: $s service.\n";
+    $nagios->disable_notifications($nagios_host, $s, "Backup: $backup_directory");
+  }
 }

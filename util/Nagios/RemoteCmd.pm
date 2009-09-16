@@ -52,15 +52,36 @@ sub new {
   $self->{USER} = $user || undef;
   $self->{PASSWORD} = $pass || undef;
   $self->{LWP} = LWP::UserAgent->new;
+  $self->{_DEBUG} = 0;
   bless $self, $class;
   return $self;
 }
 
+sub debug {
+ my ($self, $level) = @_;
+ if(defined $level) {
+   $self->{_DEBUG} = $level;
+ }
+ else {
+  $self->{_DEBUG};
+ }
+}
+
 sub _post {
   my ($self, $form) = @_;
+  if($self->{_DEBUG} > 0) {
+    print "Posting form to: ". $self->{NAGIOS} . "/cgi-bin/cmd.cgi\n";
+    print Dumper($form);
+  }
   my $r = POST($self->{NAGIOS} . "/cgi-bin/cmd.cgi", $form);
   $r->authorization_basic($self->{USER}, $self->{PASSWORD});
-  $self->{LWP}->request($r);
+  my $resp = $self->{LWP}->request($r);
+
+  if($self->{_DEBUG} > 0) {
+    print "Got response: \n";
+    print Dumper($resp);
+  }
+  $resp;
 }
 
 sub service_downtime {
