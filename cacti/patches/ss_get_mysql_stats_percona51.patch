@@ -1,0 +1,45 @@
+--- ss_get_mysql_stats_1.1.2.php	2009-05-29 10:41:33.000000000 -0700
++++ ss_get_mysql_stats.php	2009-06-02 20:24:26.000000000 -0700
+@@ -66,7 +66,7 @@
+ # Define whether you want debugging behavior.
+ # ============================================================================
+ #$debug = TRUE;
+-$debug = TRUE;
++$debug = FALSE;
+ error_reporting($debug ? E_ALL : E_ERROR);
+ 
+ # Make this a happy little script even when there are errors.
+@@ -387,6 +387,8 @@
+       $innodb_prg    = false;
+       $is_plugin     = false;
+       $is_percona    = strpos($status['version'], "percona") === FALSE ? false : true;
++      $is_51         = strpos($status['version'], "5.1") === FALSE ? false : true;
++
+       $spin_waits    = array();
+       $spin_rounds   = array();
+       $os_waits      = array();
+@@ -492,18 +494,18 @@
+             $is_plugin = true;
+          }
+          elseif (strpos($line, "Free buffers") !== FALSE ) {
+-            $status['free_pages'] = $is_percona ? tonum($row[13]) : tonum($row[8]);
++             $status['free_pages'] = $is_percona || $is_51 ? tonum($row[13]) : tonum($row[8]);
+          }
+          elseif (strpos($line, "Database pages") !== FALSE ) {
+-            $status['database_pages'] = $is_percona ? tonum($row[11]) : tonum($row[6]);
++             $status['database_pages'] = $is_percona || $is_51 ? tonum($row[11]) : tonum($row[6]);
+          }
+          elseif (strpos($line, "Modified db pages") !== FALSE ) {
+-            $status['modified_pages'] = $is_percona ? tonum($row[9]) : tonum($row[4]);
++             $status['modified_pages'] = $is_percona || $is_51 ? tonum($row[9]) : tonum($row[4]);
+          }
+          elseif (strpos($line, "Pages read") !== FALSE  ) {
+-            $status['pages_read']    = tonum($row[2]);
+-            $status['pages_created'] = tonum($row[4]);
+-            $status['pages_written'] = tonum($row[6]);
++             $status['pages_read']    = tonum($row[2]);
++             $status['pages_created'] = tonum($row[4]);
++             $status['pages_written'] = tonum($row[6]);
+          }
+ 
+          # ROW OPERATIONS
