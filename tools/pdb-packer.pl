@@ -37,6 +37,10 @@ my $ssh_id   = undef;
 
 my $debug = 0;
 
+my $script = "$0 " . join(' ', @ARGV);
+$script =~ s/db-pass=\S+/db-pass=********/g;
+$0 = $script;
+
 GetOptions(
   "help" => sub {
     pod2usage();
