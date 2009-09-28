@@ -213,7 +213,7 @@ Password for mysql connection.
 =item B<--logfile=path>
 
 Alternate path for the logfile.
-Defaults to './pdb-checker.log' (without quotes).
+Defaults to './pdb-packer.log' (without quotes).
 
 =item B<--datadir=path>
 
@@ -230,7 +230,7 @@ Example:
 
 =item B<--email-to=addr>
 
-Where to email failures. No default. If not specified, pdb-checker will not email out.
+Where to email failures. No default. If not specified, pdb-packer will not email out.
 
 =item B<--ssh-user=user>
 
@@ -238,7 +238,7 @@ Username to ssh in with. Defaults to 'root'.
 
 =item B<--ssh-id=path>
 
-Identity file to use. Passwords are Not supported due to insecurity.
+Identity file to use. Passwords are not supported.
 
 =item B<--convert>
 
