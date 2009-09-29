@@ -15,7 +15,7 @@ my $nagios_url  = "https://nagios.example.com/nagios/";
 my $backup_directory = "";
 my $backup_set = "";
 
-@ARGV = shellwords(@ARGV);
+@ARGV = shellwords(@ARGV) if(scalar @ARGV > 1);
 
 GetOptions(
   'all-databases' => sub {},
