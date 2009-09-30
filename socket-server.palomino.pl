@@ -168,6 +168,20 @@ sub doRealHotCopy()
 	while( $fhs->count() > 0 ) {
 		my @r = $fhs->can_read(5);
 		foreach my $fh (@r) {
+			if($fh == \*INNO_LOG) {
+				if( sysread( INNO_LOG, $buf, 10240 ) ) {
+					&printLog($buf);
+					if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+						sendNagiosAlert("CRITICAL: $1", 2);
+						&printAndDie($_);
+					}
+				}
+				else {
+					&printLog("closed log handle\n");
+					$fhs->remove($fh);
+					close(INNO_LOG);
+				}
+			}
 			if($fh == \*INNO_TAR) {
 				if( sysread( INNO_TAR, $buf, 10240 ) ) {
 					my $x = pack( "u*", $buf );
@@ -178,20 +192,11 @@ sub doRealHotCopy()
 					&printLog("closed tar handle\n");
 					$fhs->remove($fh);
 					close(INNO_TAR);
-				}
-			}
-			if($fh == \*INNO_LOG) {
-				if( sysread( INNO_LOG, $buf, 10240 ) ) {
-					&printLog($buf);
-					if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
-						sendNagiosAlert("CRITICAL: $1", 2);
-            &printAndDie($_);
+					if($^O eq "freebsd") {
+						&printLog("closed log handle\n");
+						$fhs->remove(\*INNO_LOG);
+						close(INNO_LOG);
 					}
-				}
-				else {
-					&printLog("closed log handle\n");
-					$fhs->remove($fh);
-					close(INNO_LOG);
 				}
 			}
 		}
@@ -204,6 +209,7 @@ sub sendNagiosAlert {
 	my $alert = shift;
 	my $status = shift;
 	my $host = hostname;
+	$status =~ s/'/\\'/g; # Single quotes are bad in this case.
 	&printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
 	$_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
 }
