@@ -46,7 +46,7 @@ my $tmp_directory;
 my $action;
 my $params;
 my $INNOBACKUPEX="innobackupex-1.5.1";
-my $VERSION="1.8b6_palomino";
+my $VERSION="1.8b7_palomino";
 my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";

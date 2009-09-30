@@ -57,7 +57,7 @@ my $CP="cp -pr";
 my $MYSQL_BINPATH="/usr/bin";
 my $MYSQLHOTCOPY="mysqlhotcopy";
 
-my $VERSION = "1.8b6_palomino";
+my $VERSION = "1.8b7_palomino";
 my $srcHost = "localhost";
 my $destHost = "localhost";
 my $destDir;
