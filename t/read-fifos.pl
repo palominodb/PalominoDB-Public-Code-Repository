@@ -1,103 +1,99 @@
 #!/usr/bin/perl
 use strict;
 use warnings;
-use IPC::Open3;
 use IO::Select;
 use IO::Handle;
 use POSIX;
 use Data::Dumper;
+use Sys::Hostname;
 
-my $MYSQL_BINPATH = "/usr/bin";
+my $MYSQL_BINPATH = $^O eq "freebsd" ? "/usr/local/bin" : "/usr/bin";
 my $INNOBACKUPEX = "innobackupex-1.5.1";
 my $tmp_directory = "/tmp";
 my $new_params = "--user root --password pass";
 
-$SIG{'PIPE'} = sub { print "disconnected pipe.\n", Dumper(\@_) };
+my $nagios_service = "";
+my $nsca_client = "";
+my $nsca_cfg = "";
+my $nagios_host = "";
 
-$| = 1;
+sub printLog {
+  print(scalar(localtime()) . ' [DEBUG]: '. $_[0]);
+}
 
-open LOG, ">/tmp/TEH_LOG";
-open TAR, ">/tmp/bk.raw";
+sub printAndDie {
+  print(scalar(localtime()) . ' [DIE]: '. $_[0]);
+}
 
-LOG->autoflush(1);
-TAR->autoflush(1);
+sub doRealHotCopy()
+{
+	# massage params for innobackup
+  #$params =~ s/--quiet//;
+	#my $new_params = "";
+	#foreach my $i (split(/\s+/, $params)) {
+	#	&printLog("param: $i\n");
+	#	next if($i !~ /^--/);
+	#	next if($i =~ /^--host/);
+	#	$new_params .= "$i ";
+	#}
 
-  my ($tar, $inno_in, $inno_err, $fhs, $buf, $tar_done, $log_done);
-  $tar_done = 0;
-  $log_done = 0;
-  POSIX::mkfifo("/tmp/innobackupex-tar", 0700);
-  POSIX::mkfifo("/tmp/innobackupex-log", 0700);
-  #print("Created FIFOS..\n");
+	my ($fhs, $buf);
+	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
+	&printLog("Created FIFO..\n");
 
-  #my $pid = fork;
-  #if(!$pid) {
-  #  close(STDOUT);
-  #  close(STDERR);
-  #  close(STDIN);
-  system("$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>/tmp/innobackupex-log 1>/tmp/innobackupex-tar &");
-  print(LOG "Started InnobackupEX..\n");
-  #exit(0);
-  #  waitpid($pid, 0);
-  #}
-  #print "In parent, going to read from fifos $$\n";
-  #my $pid = open3(\*NULL, $tar, \*LOG, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory");
-  open INNO_TAR, "+</tmp/innobackupex-tar";
-  #print "Opened TAR 1..\n";
-  open INNO_LOG, "</tmp/innobackupex-log";
-  #print "Opened LOG..\n";
-  open INNO_TAR, "</tmp/innobackupex-tar";
-  #print "Opened TAR 2..\n";
-  binmode(INNO_TAR);
-  #}
-  $fhs = IO::Select->new();
-  $fhs->add(\*INNO_TAR);
-  $fhs->add(\*INNO_LOG);
-  #$fhs->add($inno_err);
-  #print("Got file handles: tar $tar, err $inno_err\n");
-  #$fhs->add($inno_in);
-  while($log_done == 0 || $tar_done == 0) {
-    my @r_ready = $fhs->can_read();
-    #print "fhs: ", scalar @r_ready, "\n";
-    #if(scalar @r_ready == 0) {
-    #  print "Testing FIFOS..\n";
-    #  $tar_done = 1 if(sysread(INNO_TAR, $buf, 10240) == 0);
-    #  $log_done = 1 if(sysread(INNO_LOG, $buf, 10240) == 0);
-    #}
-    foreach my $fh (@r_ready) {
-      if($fh == \*INNO_TAR and $tar_done == 0) {
-        print "Reading from TAR handle..\n";
-        my $b = sysread($fh, $buf, 10240);
-        if( $b == 0 ) {
-          print "TAR DONE\n";
-          $tar_done = 1;
-          next;
-        }
-        #my $x = pack("u*", $buf);
-        #print TAR pack("N", length($x));
-        print TAR $buf;
-      }
-      if($fh == \*INNO_LOG and $log_done == 0) {
-        print "Reading from LOG handle..\n";
-        my $b = sysread($fh, $buf, 10240);
-        if( $b == 0 ) {
-          print "ALL DONE WITH TEH LOGZ.\n";
-          $log_done = 1;
-          next;
-        }
-        if($buf =~ /innobackupex: Error:(.*)/) {
-          print "Big Error: $1\n";
-          exit(1);
-        }
-        print LOG "$buf";
-      }
-    }
-    #last if($tar_done and $log_done);
-  }
-  #waitpid($pid, 0);
-  print "log_done: $log_done; tar_done: $tar_done\n";
+	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	&printLog("Opened InnoBackupEX.\n");
+	open(INNO_LOG, "</tmp/innobackupex-log");
+	&printLog("Opened Inno-Log.\n");
+	$fhs = IO::Select->new();
+	$fhs->add(\*INNO_TAR);
+	$fhs->add(\*INNO_LOG);
+	while( $fhs->count() > 0 ) {
+		my @r = $fhs->can_read(5);
+		foreach my $fh (@r) {
+			if($fh == \*INNO_LOG) {
+				if( sysread( INNO_LOG, $buf, 10240 ) ) {
+					&printLog($buf);
+					if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+						sendNagiosAlert("CRITICAL: $1", 2);
+            &printAndDie($_);
+					}
+				}
+				else {
+					&printLog("closed log handle normally\n");
+					$fhs->remove($fh);
+					close(INNO_LOG);
+				}
+			}
+			if($fh == \*INNO_TAR) {
+				if( sysread( INNO_TAR, $buf, 10240 ) ) {
+          #my $x = pack( "u*", $buf );
+					#print STDOUT pack( "N", length( $x ) );
+					#print STDOUT $x;
+				}
+				else {
+          &printLog("closed tar handle\n");
+          $fhs->remove($fh);
+          close(INNO_TAR);
+          if($^O eq "freebsd") {
+            &printLog("closed log handle\n");
+            $fhs->remove(\*INNO_LOG);
+            close(INNO_LOG);
+          }
+				}
+			}
+		}
+	}
+	unlink("/tmp/innobackupex-log");
+	sendNagiosAlert("OK: Copied data successfully.", 0);
+}
 
-close INNO_TAR;
-close INNO_LOG;
-close LOG;
-unlink("/tmp/innobackupex-tar");
-unlink("/tmp/innobackupex-log");
+sub sendNagiosAlert {
+	my $alert = shift;
+	my $status = shift;
+	my $host = hostname;
+	&printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
+  #$_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
+}
+
+&doRealHotCopy();
