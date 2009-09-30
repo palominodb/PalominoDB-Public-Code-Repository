@@ -22,7 +22,7 @@ then
   git stash
   git checkout $tag
   git log > CHANGELOG.git
-  tar czvf zrm-innobackupex-$tag.tar.gz \
+  tar czvf $do_tarball-$tag.tar.gz \
     plugins/socket-copy.palomino.pl \
     plugins/socket-server.palomino.pl \
     plugins/inno-snapshot.pl \
