@@ -158,7 +158,7 @@ sub doRealHotCopy()
 	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
 	&printLog("Created FIFOS..\n");
 
-	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
 	&printLog("Opened InnoBackupEX.\n");
 	open(INNO_LOG, "</tmp/innobackupex-log");
 	&printLog("Opened Inno-Log.\n");
