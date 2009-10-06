@@ -1,0 +1,43 @@
+---
+# Convention:
+# key: value
+# key: y (true)
+# key: n (false)
+# key: ~ (null)
+# key: [ list1, list2 ]
+servers:
+  192.168.0.3: # Hostnames could be used instead.
+    version: 5.0.45-log
+    writefor: ~
+    readfor: clusterB
+    active: y
+    warm: y # Should have cache-warming run on it.
+  192.168.0.4:
+    version: 5.1.48-percona
+    writefor: ~
+    readfor: [ "clusterA", "clusterB" ]
+    active: y
+    delay: 1h # Slave should be delayed by one hour
+  192.168.0.5:
+    version: 5.0.84-log
+    writefor: clusterA
+    readfor: clusterA
+    active: y
+  192.168.0.6:
+    version: 5.0.84-log
+    writefor: clusterB
+    readfor: ~
+    active: y
+clusters:
+  clusterA:
+    active: y
+    servers: [ "192.168.0.3", "192.168.0.4", "192.168.0.5" ]
+    schemas: clusterA_schema
+  clusterB:
+    active: n
+    servers:
+      - 192.168.0.3
+      - 192.168.0.4
+      - 192.168.0.5
+      - 192.168.0.6
+    schemas: fast_prod
