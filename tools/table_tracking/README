@@ -1,0 +1,45 @@
+== Overview
+
+Table Tracking Toolkit allows simple collecting and reporting on:
+   - Table schema changes (tracking 'show create table' changes over time)
+   - Table volume-metrics (tracking table size over time)
+TTT has a pluggable system for implementing new metrics which could be used
+to track other things like "SHOW STATUS".
+
+TTT also has a pluggable reporting/querying interface which out of the box
+support for generating reports suitable for:
+  - text viewing ( in the moment troubleshooting, see when it went wrong )
+  - email ( being kept apprise of developer madness )
+  - nagios ( being alerted of developer madness )
+
+The API docs contain examples, and reference to get you started.
+
+== Installing
+
+If you're reading this, I suspect you already have, but if not:
+
+    $ sudo gem install table-tracking-toolkit-<version>.gem
+
+Is all that is required for installing.
+
+== Configuring
+
+Minimally, what you need is a config.yml, a PDB dsn file,
+and somewhere to store the tracked data.
+An example of a config.yml, and a dsn.yml are included in the distribution.
+
+It's recommended that you place your configuration somewhere like:
+  - /etc/pdb/ttt
+  - /usr/local/etc/pdb/ttt
+
+But the toolkit does not enforce any particular location.
+
+== Running
+
+For best results 'ttt-collect' should be run daily or every N hours.
+Running it or 'ttt-query' with '--help', or '-h', will show usage information.
+
+In general, though, your 'ttt-collect' commandline will be:
+    $ /usr/bin/ttt-collect --config /usr/local/pdb/ttt/config.yml --dsn /usr/local/pdb/dsn.yml
+
+That should be put in a crontab and run as often as you feel like.
