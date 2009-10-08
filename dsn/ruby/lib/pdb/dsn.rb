@@ -85,14 +85,22 @@ module Pdb
     def get_write_hosts(cluster)
       write_hosts=[]
       @raw["servers"].each do |srv, d|
-        write_hosts << srv if d["writefor"] == cluster and host_active? srv
+        if d["writefor"].class == Array
+          write_hosts << srv if d["writefor"].include? cluster and host_active? srv
+        elsif d["writefor"].class == String
+          write_hosts << srv if d["writefor"] == cluster and host_active? srv
+        end
       end
       write_hosts
     end
     def get_read_hosts(cluster)
       read_hosts=[]
       @raw["servers"].each do |srv, d|
-        read_hosts << srv if d["readfor"] == cluster and host_active? srv
+        if d["readfor"].class == Array
+          read_hosts << srv if d["readfor"].include? cluster and host_active? srv
+        elsif d["readfor"].class == String
+          write_hosts << srv if d["readfor"] == cluster and host_active? srv
+        end
       end
       read_hosts
     end
