@@ -74,6 +74,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     elsif($var eq "nsca_cfg") {
       $nsca_cfg = $val;
     }
+    elsif($var eq "innobackupex_path") {
+      $INNOBACKUPEX=$val;
+    }
   }
 }
 
@@ -158,7 +161,7 @@ sub doRealHotCopy()
 	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
 	&printLog("Created FIFOS..\n");
 
-	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	open(INNO_TAR, "$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
 	&printLog("Opened InnoBackupEX.\n");
 	open(INNO_LOG, "</tmp/innobackupex-log");
 	&printLog("Opened Inno-Log.\n");
@@ -460,20 +463,27 @@ if( $action eq "copy from" ){
 	if(-f "/tmp/zrm-innosnap/running" ) {
 		&printLog(" Redirecting to innobackupex. \n");
 		open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
-		$_ = <FAKESNAPCONF>; # Throw away the timestamp for now
-		$_ = <FAKESNAPCONF>;
+		$_ = <FAKESNAPCONF>; # timestamp
 		chomp($_);
-		$params .= " --user=$_ ";
-		$_ = <FAKESNAPCONF>;
-		chomp($_);
-		$params .= " --password=$_ ";
-
-		$tmp_directory=&getTmpName();
-		my $r = mkdir( $tmp_directory );
-		if( $r == 0 ){
-			&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+		if((time - int($_)) >= 300) {
+			&printLog("  Caught stale inno-snapshot - deleting.");
+			unlink("/tmp/zrm-innosnap/running");
 		}
-		&doRealHotCopy( $tmp_directory );
+		else {
+			$_ = <FAKESNAPCONF>; # user
+			chomp($_);
+			$params .= " --user=$_ ";
+			$_ = <FAKESNAPCONF>; # password
+			chomp($_);
+			$params .= " --password=$_ ";
+
+			$tmp_directory=&getTmpName();
+			my $r = mkdir( $tmp_directory );
+			if( $r == 0 ){
+				&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+			}
+			&doRealHotCopy( $tmp_directory );
+		}
 	}
 	else {
 		my @suf;
