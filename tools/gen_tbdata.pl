@@ -63,7 +63,12 @@ sub generate_timestamp {
 #};
 
 
-open SQL, ">$out";
+unless($out eq "-") {
+  open SQL, ">$out";
+}
+else {
+  *SQL=\*STDOUT
+}
 
 if($generate_table) {
   print SQL "USE $database;";
@@ -74,7 +79,7 @@ if($generate_table) {
     my $t = $columns{$c};
     $sql_columns .= ", $c $t";
   } sort keys %columns;
-  print SQL "CREATE TABLE IF NOT EXISTS $table (id INTEGER PRIMARY KEY AUTO_INCREMENT$sql_columns);\n\n";
+  print SQL "CREATE TABLE IF NOT EXISTS $table (id INTEGER PRIMARY KEY AUTO_INCREMENT$sql_columns) ENGINE='$table_engine';\n\n";
 }
 
 my $cols_str = join(",", sort keys %columns);
@@ -99,3 +104,35 @@ foreach (0..$n_rows) {
   print SQL "INSERT INTO $table ($cols_str) VALUES ($vals);\n";
 }
 close SQL;
+
+__END__
+
+=head1 NAME
+
+gen_tbdata.pl - Generates an SQL "dump" of random data for development/testing purposes.
+
+=head1 SYNOPSIS
+
+gen_tbdata.pl [-h] --table <rand_table> -d <test> [-o <file.sql>] [-g]
+              -c zeet=varchar(100) -c norse=timestamp --rows 500_000
+
+Options:
+    --help, -h            This help.
+
+    --table,-t            Name of table to generate.
+
+    --database,-d         Name of database to use (must exist).
+
+    --out,-o              Filename ot output to, or '-' for STDOUT. Defaults to 'random_test_data.sql'.
+
+    --generate-table,-g   Causes output to issue 'drop table', and 'create table' for the table..
+
+    --column,-c           May be specified multiple times. Format is: column_name=type(length)
+                          'id' column is automatically included, so you need not add that.
+                          Supported types are:
+                              varchar
+                              char
+                              timestamp (weird, but mostly random)
+                              integer
+    --rows,-r             Number of rows to generate. Can have '_' as a comma. E.g., 500_000 is 500,000.
+    --engine,-e           Engine to use. Should be either MyISAM, MEMORY, or InnoDB(default).
