@@ -1,16 +1,19 @@
 == Overview
 
 Table Tracking Toolkit allows simple collecting and reporting on:
-   - Table schema changes (tracking 'show create table' changes over time)
-   - Table volume-metrics (tracking table size over time)
+
+- Table schema changes (tracking 'show create table' changes over time)
+- Table volume-metrics (tracking table size over time)
+
 TTT has a pluggable system for implementing new metrics which could be used
 to track other things like "SHOW STATUS".
 
+
 TTT also has a pluggable reporting/querying interface which out of the box
 support for generating reports suitable for:
-  - text viewing ( in the moment troubleshooting, see when it went wrong )
-  - email ( being kept apprise of developer madness )
-  - nagios ( being alerted of developer madness )
+- text viewing ( in the moment troubleshooting, see when it went wrong )
+- email ( being kept apprise of developer madness )
+- nagios ( being alerted of developer madness )
 
 The API docs contain examples, and reference to get you started.
 

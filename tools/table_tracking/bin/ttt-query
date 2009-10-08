@@ -1,3 +1,4 @@
+#!/usr/bin/ruby
 # == Synopsis
 #
 # ttt-query: Generate a report about tracked tables
