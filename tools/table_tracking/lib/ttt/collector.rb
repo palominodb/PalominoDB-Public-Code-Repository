@@ -17,11 +17,13 @@ module TTT
     Runtime = Time.now
     @@collectors = {}
     @@verbose = true
+    @@debug = false 
+    @@loaded_collectors = false
 
     # Called by subclasses of Collector to, well, register themsevles
     # as a valid collector.
     def self.register(name)
-      say "registering: #{name}(#{self.name})"
+      yell "registering: #{name}(#{self.name})"
       @@collectors[name] = self
     end
 
@@ -42,9 +44,17 @@ module TTT
       puts(text) if @@verbose
     end
 
+    def self.yell(text="")
+      puts(text) if @@debug
+    end
+
     # Returns if collectors should be verbose, or not.
     def self.verbose
       @@verbose
+    end
+
+    def self.debug
+      @@debug
     end
 
     # Set if collectors should be verbose.
@@ -52,11 +62,18 @@ module TTT
       @@verbose=verb
     end
 
+    def self.debug=(deb)
+      @@debug=deb
+    end
+
     # Loads all collectors under: <gems path>/table-tracking-toolkit-<version>/lib/ttt/collector/*
     # This must be called before collectors will function.
     def self.load_all
-      Dir.glob( File.dirname(__FILE__) + "/collector/*" ).each do |col|
-        Kernel.load col
+      unless @@loaded_collectors
+        Dir.glob( File.dirname(__FILE__) + "/collector/*" ).each do |col|
+          Kernel.load col
+        end
+        @@loaded_collectors=true
       end
     end
   end

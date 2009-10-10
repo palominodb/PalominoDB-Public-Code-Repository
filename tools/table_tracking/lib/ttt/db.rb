@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'activerecord'
+require 'ttt/table'
 require 'ttt/information_schema'
 require 'ttt/table_definition'
 require 'ttt/table_volume'

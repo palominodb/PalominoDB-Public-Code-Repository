@@ -1,10 +1,11 @@
 require 'rubygems'
 require 'ttt/db'
+require 'ttt/formatters'
 require 'ttt/table_volume'
 
 module TTT
   class VolumeCollector < Collector
-    register "volume"
+    register :volume
     def self.collect(host,cfg)
       TTT::InformationSchema.connect(host,cfg)
       begin
@@ -15,28 +16,83 @@ module TTT
             :database_name => tbl.TABLE_SCHEMA,
             :table_name => tbl.TABLE_NAME,
             :run_time => Runtime,
-            :bytes => tbl.DATA_LENGTH
+            :data_length => tbl.DATA_LENGTH,
+            :data_free => tbl.DATA_FREE,
+            :index_length => tbl.INDEX_LENGTH
           ).save
-          say "[volume] server:#{host} schema:#{tbl.TABLE_SCHEMA} table:#{tbl.TABLE_NAME} bytes:#{tbl.DATA_LENGTH}" if(verbose)
+          say "[volume] server:#{host} schema:#{tbl.TABLE_SCHEMA} table:#{tbl.TABLE_NAME} data_length:#{tbl.DATA_LENGTH} index_length:#{tbl.INDEX_LENGTH}" if(verbose)
         end # Table.all
+
+        # Dropped table detection
+        TTT::TableVolume.find_most_recent_versions(host).each do |tbl|
+          g=TTT::TABLE.find_by_TABLE_SCHEMA_and_TABLE_NAME(tbl.database_name, tbl.table_name)
+          if g.nil? and !tbl.deleted? then
+            TTT::TableVolume.record_timestamps = false
+            TTT::TableVolume.new(
+              :server => host,
+              :database_name => tbl.database_name,
+              :table_name => tbl.table_name,
+              :data_length => nil,
+              :data_free => nil,
+              :index_length => nil,
+              :run_time => Runtime
+            ).save
+            TTT::TableVolume.record_timestamps = true
+            say "[deleted]: server:#{host} schema:#{tbl.database_name} table:#{tbl.database_name}"
+          end
+        end
 
       rescue Mysql::Error => mye
         if mye.errno == MYSQL_CONNECT_ERROR
           say "[unreachable]: server:#{host}"
           TTT::TableVolume.record_timestamps = false
-          TTT::TableVolume.new(
-            :server => host,
-            :database_name => nil,
-            :table_name => nil,
-            :bytes => nil,
-            :run_time => Runtime,
-            :created_at => "0000-00-00 00:00:00",
-            :updated_at => "0000-00-00 00:00:00"
-          ).save
+          prev=TTT::TableVolume.find_last_by_server(host)
+          if prev.nil? or !prev.unreachable?
+            TTT::TableVolume.new(
+              :server => host,
+              :database_name => nil,
+              :table_name => nil,
+              :data_length => nil,
+              :data_free => nil,
+              :index_length => nil,
+              :run_time => Runtime
+            ).save
+          end
           TTT::TableVolume.record_timestamps = true
         else
           raise mye
         end
+      end
+    end
+  end
+  Formatter.for :volume, :text do |stream,frm,data,options|
+    col_width=frm.page_width/(options[:full] ? 7 : 6)
+    unless options[:header]
+      if options[:full]
+        stream.puts frm.format(
+          # status        server           db_name          tbl_name         data_len  index_len data_free
+          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
+          data.status, data.server, data.database_name, data.table_name,
+            data.data_length.nil? ? nil : data.data_length/1024,
+            data.index_length.nil? ? nil : data.index_length/1024,
+            data.data_free.nil? ? nil : data.data_free/1024)
+      else
+        stream.puts frm.format(
+          # status        server    db_name   tbl_name  size
+          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
+          data.status, data.server, data.database_name, data.table_name,
+            data.data_length.nil? ? nil : (data.data_length + data.index_length)/1024)
+      end
+    else # :header
+      if options[:full]
+        stream.puts frm.format(
+          # status        server           db_name          tbl_name         data_len  index_len data_free
+          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
+          "status", "server", "database name", "table name", "data length(kb)", "index length(kb)", "data free(kb)")
+      else
+        stream.puts frm.format(
+          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
+          "status", "server", "database name", "table name", "size (kb)")
       end
     end
   end

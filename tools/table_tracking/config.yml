@@ -1,29 +1,34 @@
 ---
 # A list of regexes to ignore during reporting
-report_ignore:
-  - bucket_.*
-  - test\..*
+#report_ignore:
+#  - bucket_.*
+#  - ^testdb1\.mysql\..*
+#  - .*test\..*
+
+#report_options:
+#  full: true
 
 # A list of regexes to ignore during collection
-collect_ignore:
-  # mysql database is not interesting
-  - mysql\.*
-  # static never changes
-  - static\..*
+# Does not currently do anything.
+#collect_ignore:
+#  # mysql database is not interesting
+#  - mysql\.*
+#  # static never changes
+#  - static\..*
 
 # Connection information for to-be-collected database servers
 dsn_connection:
   username: root
   password: pass
 
-#ttt_connection:
-#  adapter: sqlite3 # See below for mysql example
-#  database: "db.sqlite3"
+ttt_connection:
+  adapter: sqlite3 # See below for mysql example
+  database: "db.sqlite3"
 
 # Connection information for storing collected information
-ttt_connection:
-  adapter: mysql
-  host: testdb1
-  username: root
-  password: pass
-  database: ttt
+#ttt_connection:
+#  adapter: mysql
+#  host: testdb1
+#  username: root
+#  password: pass
+#  database: ttt

@@ -18,9 +18,10 @@ class CreateTttBaseTables < ActiveRecord::Migration
       t.string :server, :limit => 100
       t.string :database_name, :limit => 50
       t.string :table_name, :limit => 50
-      t.integer :bytes, :limit => 8
+      t.integer :data_length, :limit => 8
+      t.integer :index_length, :limit => 8
+      t.integer :data_free, :limit => 8
       t.timestamp :run_time
-      t.timestamps
     end
     #add_index :table_definitions, [:server, :database, :table]
     #add_index :table_definitions, [:created_at, :updated_at]
