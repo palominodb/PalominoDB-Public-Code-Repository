@@ -19,7 +19,7 @@ module TTT
         end
         Formatter.get_formatter_for(row.class.collector, :text).call(stream,rf,row, options)
       end
-      return 0
+      true
     end
 
   end

@@ -31,7 +31,7 @@ module TTT
       end # TTT::TABLE.all
 
       # Dropped table detection
-      TTT::TableDefinition.find_most_recent_versions(host).each do |tbl|
+      TTT::TableDefinition.find_most_recent_versions(:conditions => ['server = ?', host]).each do |tbl|
         g=TTT::TABLE.find_by_TABLE_SCHEMA_and_TABLE_NAME(tbl.database_name, tbl.table_name)
         if g.nil? and !tbl.deleted? then
           TTT::TableDefinition.record_timestamps = false

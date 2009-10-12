@@ -20,18 +20,18 @@ module TTT
 
     def reject_ignores(rows)
       if @cfg.key? "report_ignore"
-        rows.reject do |r|
+        return rows.reject do |r|
           server_schema_table=[r.server, r.database_name, r.table_name].join(".")
           do_rej=false
           @cfg["report_ignore"].each do |reg|
             do_rej = !Regexp.new(reg).match(server_schema_table).nil?
             do_rej
+            break if do_rej
           end
           do_rej
         end
-      else
-        rows
       end
+      return rows
     end
 
     def self.for(collector,output_media)

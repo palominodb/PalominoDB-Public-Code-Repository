@@ -1,31 +1,73 @@
 ---
 # A list of regexes to ignore during reporting
+# During reporting, each one of these regexes is tested against
+# a string composed like: 'server'.'database'.'table'
+# for each potential record.
+# E.g.,
+#   You've got a server: testdb1
+#   And the table: mysql
+#   The second regex below would match every table under 'mysql'
+#   and only on 'testdb1'.
+#   Leaving off the server will match against any server, basically.
 #report_ignore:
 #  - bucket_.*
 #  - ^testdb1\.mysql\..*
 #  - .*test\..*
 
+report_ignore:
+  - mysql\..*
+  - ^testdb2\..*
+
 #report_options:
+#  display_width: 135
 #  full: true
 
-# A list of regexes to ignore during collection
-# Does not currently do anything.
-#collect_ignore:
-#  # mysql database is not interesting
-#  - mysql\.*
-#  # static never changes
-#  - static\..*
+email_options:
+  subjectprefix: "[TTT] "
+  emailto: brian@palominodb.com
+  # Whether or not to send emails with no changes.
+  send_empty: false
+#  # This can be 'sendmail' or 'smtp'
+#  # Defaults to 'sendmail'
+#  delivery_method: sendmail
+#  sendmail_settings:
+#    # These options are passed more or less verbatim to
+#    # ActionMailer::Base, so looking at the docs for that can be useful.
+#    location: /usr/sbin/sendmail
+#    arguments: ''
+#  smtp_settings:
+#    # These options are passed more or less verbatim to
+#    # ActionMailer::Base, so looking at the docs for that can be useful.
+#    address: localhost
+#    port: 25
+#    domain: example.com
+#    user_name: bob
+#    password: supersecret
+#    authentication: plain
+#    eanble_starttls_auto: true
+
+
+#
+# Connection information
+# 
+# There are two connections involved with 'TTT'
+# First is 'dsn_connection', the information provided
+# will be used to log-in to each of your database servers for reporting.
+# Second is 'ttt_connection'. This is the connection information for 
+# where TTT stores its data.
+#   The default example is to use sqlite, and store it at /usr/local/pdb/ttt/db.sqlite3
+# 
 
 # Connection information for to-be-collected database servers
 dsn_connection:
   username: root
   password: pass
 
+# Connection information for storing collected information
 ttt_connection:
   adapter: sqlite3 # See below for mysql example
   database: "db.sqlite3"
 
-# Connection information for storing collected information
 #ttt_connection:
 #  adapter: mysql
 #  host: testdb1

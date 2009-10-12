@@ -21,7 +21,7 @@
 #    Make the query tool VERY noisy about what it's doing.
 # --since <timespec>, -s <timespec>:
 #    Where <timespec> is something like:
-#    - last-collect (since the last collector run)
+#    - last (since the last collector run)
 #    - 4h (4 hours)
 #    - 1d (1 day)
 #    - 1w (1 week)
@@ -49,6 +49,19 @@
 #    - index_length (size of the index)
 #    - data_free    (unused, but not returned, tablespace
 #
+# --order <by>:
+#    Select columns to order by. Technically an SQL fragment.
+#    Same column list as above.
+#
+# --group <by>:
+#    Comma separated list of columns to group by. Same columns as above.
+#
+# --select <columns>:
+#    SQL fragment. Try running with debug to see your full query.
+#
+# --limit <N>:
+#    Limit to N results.
+#
 require 'rubygems'
 require 'yaml'
 require 'getoptlong'
@@ -67,7 +80,11 @@ opts = GetoptLong.new(
   [ '--width', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--where', '-w', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--full', '-f', GetoptLong::NO_ARGUMENT ],
-  [ '--stat', GetoptLong::REQUIRED_ARGUMENT ]
+  [ '--stat', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--group', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--select', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--limit', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--order', GetoptLong::REQUIRED_ARGUMENT ]
 )
 
 cfg=nil
@@ -76,12 +93,14 @@ debug=false
 query=nil
 stat=:definition
 
-output_full=nil
-output_width=nil #ENV['COLUMNS']-4
+output_full=false
+output_width=nil
 output_cfg={}
 
 find_params={}
 find_params[:conditions] = []
+
+find_type=:normal
 
 opts.each do |opt,val|
   case opt
@@ -100,8 +119,8 @@ opts.each do |opt,val|
     when '--width'
       output_width=val.to_i
     when '--since'
-      if val == "last-collect"
-        find_params = :lastcollect
+      if val == "last"
+        find_type = :last
       elsif val =~ /(\d+(?:\.?\d+)?)([hdwm])?/
         time = case $2
           when 'h'
@@ -120,9 +139,15 @@ opts.each do |opt,val|
         find_params[:conditions].flatten!
       end
       when '--where'
-        unless find_params == :lastcollect
-          find_params[:conditions] << val
-        end
+        find_params[:conditions] << val
+      when '--group'
+        find_params[:group] = val
+      when '--select'
+        find_params[:select] = val
+      when '--order'
+        find_params[:order] = val
+      when '--limit'
+        find_params[:limit] = val.to_i
     end
 end
 
@@ -137,9 +162,9 @@ if cfg.nil?
   RDoc::usage
 end
 
-if find_params[:conditions].empty?
-  find_params = :lastcollect
-end
+#if find_params[:conditions].empty?
+#  find_params = :lastcollect
+#end
 
 if cfg.key? "report_options"
   cfg["report_options"].each { |k,v| output_cfg[k.to_sym] = v }
@@ -156,9 +181,6 @@ else
 end
 
 
-pp output_cfg if(debug)
-
-
 output=:text if output.nil?
 output=TTT::Formatter.get_runner_for(output.to_sym).new($stderr,cfg)
 
@@ -166,7 +188,11 @@ TTT::Db.open(cfg)
 
 
 begin
-  output.format(TTT::TrackingTable.tables[stat.to_sym].find(:all, find_params), output_cfg )
+  if find_type == :normal
+    output.format(TTT::TrackingTable.tables[stat.to_sym].find(:all, find_params), output_cfg )
+  else
+    output.format(TTT::TrackingTable.tables[stat.to_sym].find_most_recent_versions(find_params))
+  end
 rescue Exception => e
   pp e
 end

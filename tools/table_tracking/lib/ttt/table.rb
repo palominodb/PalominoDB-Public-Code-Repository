@@ -15,12 +15,16 @@ module TTT
       base.class_inheritable_accessor :collector
       # Finds only the highest numbered id for each server.database.table
       # Returns them as an array of TableDefiniion objects.
-      def base.find_most_recent_versions(server=nil)
-        unless server.nil? then
-          self.find(:all, :group => "server, database_name, table_name", :select => "MAX(id) AS max_id, *", :conditions => ["server = ?", server])
-        else
-          self.find(:all, :group => "server, database_name, table_name", :select => "MAX(id) AS max_id, *")
-        end
+      def base.find_most_recent_versions(extra_params={})
+        extra_copy = extra_params.clone
+        find_params={
+          :group => "server, database_name, table_name",
+          :select => "MAX(id) AS max_id, *"
+        }
+        extra_copy.delete :select
+        extra_copy.delete :group
+        find_params.merge! extra_copy
+        self.find(:all, find_params)
       end
       def base.collector=(sym)
         write_inheritable_attribute :collector, sym
@@ -50,7 +54,6 @@ module TTT
     end
 
     def status
-      :unknown
       if unreachable?
         :unreachable
       elsif deleted?
@@ -59,6 +62,8 @@ module TTT
         :new
       elsif tchanged?
         :changed
+      else
+        :unchanged
       end
     end
 
