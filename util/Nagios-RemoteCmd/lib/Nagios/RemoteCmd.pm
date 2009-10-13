@@ -36,7 +36,7 @@ $VERSION     = 0.10;
 
 =pod
 
-=item new(url, user, password)
+=item new($url, $user, $password)
 
     url - URI to the root of your nagios install. E.g. http://nagios.example.com/nagios/
     user - username to authenticate with
@@ -56,6 +56,16 @@ sub new {
   bless $self, $class;
   return $self;
 }
+
+=pod
+
+=item debug([$level])
+
+Sets or gets the debug setting.
+
+$level is an integer, but it's treated as a truth value for now.
+
+=cut
 
 sub debug {
  my ($self, $level) = @_;
@@ -84,6 +94,17 @@ sub _post {
   $resp;
 }
 
+=pod
+
+=item service_downtime($host, $service, $start_time, $length, $comment, $type)
+
+Sets a downtime for $service on $host starting at $start_time, etc.
+
+This function is hap-hazard at best right now. It's advised that yous use
+disable/enable_notifications and have good error handling.
+
+=cut
+
 sub service_downtime {
   my ($self, $host, $service, $start_time, $length, $comment, $type) = @_;
   my ($hours, $minutes) = split /\./, $length;
@@ -101,6 +122,14 @@ sub service_downtime {
     ];
   $self->_post($form);
 }
+
+=pod
+
+=item disable_notifications($host, $service)
+
+Turns notifications off for $service on $host.
+
+=cut
 
 sub disable_notifications {
   my ($self, $host, $service, $comment, $author) = @_;
@@ -127,6 +156,14 @@ sub disable_notifications {
   }
 }
 
+=pod
+
+=item enable_notifications($host, $service)
+
+Turns notifications back on for $service on $host.
+
+=cut
+
 sub enable_notifications {
   my ($self, $host, $service) = @_;
   my $form = undef;
@@ -148,6 +185,17 @@ sub enable_notifications {
   $self->_post($form);
 
 }
+
+=pod
+
+=item add_comment($host, $service, $comment, $persistent, $author)
+
+Adds $comment to $service on $host. If $persistent is a true value, then
+the comment will persist between restarts of nagios.
+
+Presently there is NO WAY to delete a comment from nagios.
+
+=cut
 
 sub add_comment {
   my ($self, $host, $service, $comment, $persistent, $author) = @_;
