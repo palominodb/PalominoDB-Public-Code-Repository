@@ -74,6 +74,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     elsif($var eq "nsca_cfg") {
       $nsca_cfg = $val;
     }
+    elsif($var eq "innobackupex_path") {
+      $INNOBACKUPEX=$val;
+    }
   }
 }
 
@@ -158,7 +161,7 @@ sub doRealHotCopy()
 	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
 	&printLog("Created FIFOS..\n");
 
-	open(INNO_TAR, "$MYSQL_BINPATH/$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	open(INNO_TAR, "$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
 	&printLog("Opened InnoBackupEX.\n");
 	open(INNO_LOG, "</tmp/innobackupex-log");
 	&printLog("Opened Inno-Log.\n");
