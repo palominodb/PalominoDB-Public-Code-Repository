@@ -1,0 +1,90 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Getopt::Long;
+use Nagios::RemoteCmd;
+use Pod::Usage;
+use DBI;
+
+use constant START => 0;
+use constant STOP  => 1;
+
+my $nagios_host = "";
+my @nagios_services = qw();
+
+my $nagios_user = "zrm";
+my $nagios_pass = "zrm";
+my $nagios_url = "https://nagios.example.com/nagios/";
+
+my $db_host = "";
+my $db_user = "admin";
+my $db_pass = "adminpass";
+
+my $action=undef;
+
+GetOptions(
+  'h|help' => sub { pod2usage(); },
+  'host=s' => \$db_host,
+  'user=s' => \$db_user,
+  'pass=s' => \$db_pass,
+  'service=s' => \@nagios_services,
+  'start' => sub { $action=START; },
+  'stop' => sub { $action=STOP; },
+  'debug' => \$dbug
+);
+
+unless( defined $action ) {
+  pod2usage("Action must be specified! Try --start or --stop.");
+}
+
+my $dbh = DBI->connect("DBI:mysql:host=$db_host") or die("Unable to connect to $db_host. DBI says: $!");
+
+my $nagios = Nagios::RemoteCmd($nagios_url, $nagios_user, $nagios_pass);
+
+if($action=START) {
+  foreach my $s (@nagios_services) {
+    if($dbug) {
+      print "Enabling notifications for: $s";
+    }
+    $nagios->enable_notifications($db_host, $s);
+  }
+  $dbh->do("START SLAVE");
+}
+
+if($action=STOP) {
+  foreach my $s (@nagios_services) {
+    if($dbug) {
+      print "Disabling notifications for: $s";
+    }
+    $nagios->disable_notifications($db_host, $s);
+  }
+  $dbh->do("STOP SLAVE");
+}
+
+__END__
+
+=head1 NAME
+
+myslave-ctl - Start and Stop slaving and keep nagios informed.
+
+=head1 SYNOPSIS
+
+myslave-ctl [-h] --host=<host> --user=<user> --pass=<pass> {--start|--stop}
+
+Options:
+
+  -h,--help          This help.
+
+  --host=<host>      DB server to operate on.
+
+  --user=<user>      DB user to login with. Must have SUPER privs.
+
+  --service=<svc>    Service to (un)squelch in nagios. Default: "MySQL". May be specified multiple times.
+
+  --debug            Be noisy about actions.
+
+Actions:
+
+  --start            Start slaving, and un-squelch.
+
+  --stop             Stop slaving, and squelch.
