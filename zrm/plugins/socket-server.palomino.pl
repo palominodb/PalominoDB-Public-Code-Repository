@@ -460,20 +460,27 @@ if( $action eq "copy from" ){
 	if(-f "/tmp/zrm-innosnap/running" ) {
 		&printLog(" Redirecting to innobackupex. \n");
 		open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
-		$_ = <FAKESNAPCONF>; # Throw away the timestamp for now
-		$_ = <FAKESNAPCONF>;
+		$_ = <FAKESNAPCONF>; # timestamp
 		chomp($_);
-		$params .= " --user=$_ ";
-		$_ = <FAKESNAPCONF>;
-		chomp($_);
-		$params .= " --password=$_ ";
-
-		$tmp_directory=&getTmpName();
-		my $r = mkdir( $tmp_directory );
-		if( $r == 0 ){
-			&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+		if((time - int($_)) >= 300) {
+			&printLog("  Caught stale inno-snapshot - deleting.");
+			unlink("/tmp/zrm-innosnap/running");
 		}
-		&doRealHotCopy( $tmp_directory );
+		else {
+			$_ = <FAKESNAPCONF>; # user
+			chomp($_);
+			$params .= " --user=$_ ";
+			$_ = <FAKESNAPCONF>; # password
+			chomp($_);
+			$params .= " --password=$_ ";
+
+			$tmp_directory=&getTmpName();
+			my $r = mkdir( $tmp_directory );
+			if( $r == 0 ){
+				&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+			}
+			&doRealHotCopy( $tmp_directory );
+		}
 	}
 	else {
 		my @suf;
