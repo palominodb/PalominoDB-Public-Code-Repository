@@ -14,6 +14,8 @@ module TTT
   class Collector
     # Errno returned by Mysql when it cannot connect.
     MYSQL_CONNECT_ERROR = 2003
+    MYSQL_TOO_MANY_CONNECTIONS = 1040
+    MYSQL_HOST_NOT_PRIVILEGED = 1130
     Runtime = Time.now
     @@collectors = {}
     @@verbose = true

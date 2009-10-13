@@ -49,7 +49,7 @@ module TTT
         end
 
       rescue Mysql::Error => mye
-        if mye.errno == MYSQL_CONNECT_ERROR
+        if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno
           say "[unreachable]: server:#{host}"
           TTT::TableVolume.record_timestamps = false
           prev=TTT::TableVolume.find_last_by_server(host)
