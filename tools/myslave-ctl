@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 use strict;
 use warnings;
 use Getopt::Long;
@@ -16,9 +16,11 @@ my $nagios_user = "zrm";
 my $nagios_pass = "zrm";
 my $nagios_url = "https://nagios.example.com/nagios/";
 
-my $db_host = "";
+my $db_host = undef;
 my $db_user = "admin";
 my $db_pass = "adminpass";
+
+my $dbug=0;
 
 my $action=undef;
 
@@ -37,11 +39,16 @@ unless( defined $action ) {
   pod2usage("Action must be specified! Try --start or --stop.");
 }
 
-my $dbh = DBI->connect("DBI:mysql:host=$db_host") or die("Unable to connect to $db_host. DBI says: $!");
+unless ( defined $db_host ) {
+  pod2usage("Host is required.");
+}
 
-my $nagios = Nagios::RemoteCmd($nagios_url, $nagios_user, $nagios_pass);
+my $dbh = DBI->connect("DBI:mysql:host=$db_host", $db_user, $db_pass) or die("Unable to connect to $db_host. DBI says: $!");
 
-if($action=START) {
+my $nagios = Nagios::RemoteCmd->new($nagios_url, $nagios_user, $nagios_pass);
+$nagios->debug($dbug);
+
+if($action==START) {
   foreach my $s (@nagios_services) {
     if($dbug) {
       print "Enabling notifications for: $s";
@@ -51,7 +58,7 @@ if($action=START) {
   $dbh->do("START SLAVE");
 }
 
-if($action=STOP) {
+if($action==STOP) {
   foreach my $s (@nagios_services) {
     if($dbug) {
       print "Disabling notifications for: $s";
