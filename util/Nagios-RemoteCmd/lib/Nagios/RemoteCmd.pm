@@ -28,7 +28,7 @@ use constant SVC_COMMENT => 3;
 use constant CMD_MOD   => 2; # Means 'go', I think.
 
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-$VERSION     = 0.00;
+$VERSION     = 0.10;
 @ISA         = qw(Exporter);
 @EXPORT      = ();
 @EXPORT_OK   = ();
