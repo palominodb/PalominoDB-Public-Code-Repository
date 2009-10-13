@@ -17,8 +17,8 @@ module TTT
     end
     def format(rows, *args)
       opts=args.extract_options!
-      if ! cfg.key? "email_options"
-        stream.puts "[error]: Need 'email_options' to send email!"
+      if ! cfg.key? "formatter_options" and ! cfg["formatter_options"].key? "email"
+        stream.puts "[error]: Need email formatter options set to send email!"
         return false
       end
 
@@ -29,29 +29,29 @@ module TTT
         end
       end
 
-      if cfg["email_options"].key? "send_empty"
-        if !cfg["email_options"]["send_empty"] and changes==0
+      if cfg["formatter_options"]["email"].key? "send_empty"
+        if !cfg["formatter_options"]["email"]["send_empty"] and changes==0
           return true
         end
       end
       tstream=StringIO.new
       TextFormatter.new(tstream, cfg).format(rows, opts)
-      subj_prefix=case cfg["email_options"].key? "subjectprefix"
+      subj_prefix=case cfg["formatter_options"]["email"].key? "subjectprefix"
                   when true
-                    cfg["email_options"]["subjectprefix"]
+                    cfg["formatter_options"]["email"]["subjectprefix"]
                   when false
                     "[TTT] "
                   end
-      if !cfg["email_options"].key? "emailto"
-        stream.puts "[error]: Need 'email_options.emailto' to send email!"
+      if !cfg["formatter_options"]["email"]["email_options"].key? "emailto"
+        stream.puts "[error]: Need 'formatter_options.email.emailto' to send email!"
         return false
       end
-      if cfg["email_options"].key? "delivery_method"
-        ActionMailer::Base.delivery_method=cfg["email_options"]["delivery_method"].to_sym
+      if cfg["formatter_options"]["email"].key? "delivery_method"
+        ActionMailer::Base.delivery_method=cfg["formatter_options"]["email"]["delivery_method"].to_sym
       else
         ActionMailer::Base.delivery_method=:sendmail
       end
-      TttMailer.deliver_report(cfg["email_options"]["emailto"], "ttt@#{`hostname`}", subj_prefix + "Changes: #{changes}", tstream.string)
+      TttMailer.deliver_report(cfg["formatter_options"]["email"]["emailto"], "ttt@#{`hostname`}", subj_prefix + "#{rows[0].collector.to_s} changes: #{changes}", tstream.string)
       true
     end
   end

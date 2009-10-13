@@ -33,8 +33,14 @@ module TTT
     # If a file containing an ActiveRecord::Migration subclass is found
     # under <gems dir>/table-tracking-toolkit-<version>/lib/ttt/db/
     # Then it will be run. No questions asked.
+    # Every file in that directory must be of the form:
+    # <number>_<description_with_underscores>.rb
+    # ActiveRecord will *actually* throw an exception otherwise.
     def self.migrate
-      ActiveRecord::Migrator.migrate( File.dirname(__FILE__) + "/db", nil )
+      m=ActiveRecord::Migrator.new(:up, File.dirname(__FILE__) + "/db" )
+      unless m.pending_migrations.empty?
+        m.migrate
+      end
     end
   end
 end

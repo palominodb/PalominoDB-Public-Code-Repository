@@ -7,7 +7,7 @@ task :default => :gem
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "0.9.0"
+  s.version = "0.9.9"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"

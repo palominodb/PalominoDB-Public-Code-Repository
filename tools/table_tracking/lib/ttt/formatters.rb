@@ -1,4 +1,5 @@
 require 'rubygems'
+require 'active_record'
 require 'ttt/collector'
 
 module TTT
@@ -8,6 +9,8 @@ module TTT
     @@loaded_formatters = false
     @@formatters = {}
     @@runners = {}
+
+    class_inheritable_accessor :media
 
     def initialize(stream, cfg)
       @stream=stream
@@ -40,6 +43,7 @@ module TTT
     end
     def self.runner_for(media)
       @@runners[media] = self
+      self.media=media
     end
     def self.get_runner_for(media)
       self.load_all
@@ -48,6 +52,21 @@ module TTT
     def self.get_formatter_for(collector, media)
       Collector.load_all
       @@formatters[collector][media]
+    end
+
+    def need_option(key)
+      unless @cfg["formatter_options"].key? media.to_s and @cfg["formatter_options"][media.to_s].key? key
+        raise NameError, "Missing formatter_options.#{media.to_s}.#{key} in config."
+      end
+      @cfg["formatter_options"][media.to_s][key]
+    end
+
+    def want_option(key, value=nil)
+      unless @cfg["formatter_options"][media.to_s].key? key
+        @cfg["formatter_options"][media.to_s][key]
+      else
+        value
+      end
     end
 
     # Loads all formatters under: <gems path>/table-tracking-toolkit-<version>/lib/ttt/format/*

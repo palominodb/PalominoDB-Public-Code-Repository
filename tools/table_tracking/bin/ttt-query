@@ -26,6 +26,9 @@
 #    - 1d (1 day)
 #    - 1w (1 week)
 #
+# --raw:
+#    Disable 'ignore tables' processing.
+#
 # --width <columns>:
 #    Number of columns to format to.
 #        
@@ -76,6 +79,7 @@ opts = GetoptLong.new(
   [ '--config', '-c', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--output', '-o', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--debug', GetoptLong::NO_ARGUMENT ],
+  [ '--raw', GetoptLong::NO_ARGUMENT ],
   [ '--since', '-s', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--width', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--where', '-w', GetoptLong::REQUIRED_ARGUMENT ],
@@ -95,10 +99,12 @@ stat=:definition
 
 output_full=false
 output_width=nil
+output_raw=false
 output_cfg={}
 
 find_params={}
 find_params[:conditions] = []
+sql_conditions={}
 
 find_type=:normal
 
@@ -118,6 +124,8 @@ opts.each do |opt,val|
       stat=val
     when '--width'
       output_width=val.to_i
+    when '--raw'
+      output_raw=true
     when '--since'
       if val == "last"
         find_type = :last
@@ -134,12 +142,15 @@ opts.each do |opt,val|
           else
             $1.to_f.seconds.ago
         end
-        find_params[:conditions].reject! { |v| v =~ /^run_time/ }
-        find_params[:conditions] << ["run_time >= ?", time]
-        find_params[:conditions].flatten!
+        sql_conditions[:since] = time
+        #find_params[:conditions].reject! { |v| v =~ /^run_time/ }
+        #find_params[:conditions] << ["run_time >= ?", time]
+        #find_params[:conditions].flatten!
       end
       when '--where'
-        find_params[:conditions] << val
+        #find_params[:conditions] << val
+        sql_conditions[:where] = [] unless sql_conditions[:where].class == Array
+        sql_conditions[:where] << val
       when '--group'
         find_params[:group] = val
       when '--select'
@@ -162,15 +173,25 @@ if cfg.nil?
   RDoc::usage
 end
 
-#if find_params[:conditions].empty?
-#  find_params = :lastcollect
-#end
+if sql_conditions[:since]
+  find_params[:conditions] << ["run_time >= ?", sql_conditions[:since]]
+  find_params[:conditions].flatten!
+end
+
+if sql_conditions[:where].class == Array
+  if find_params[:conditions][0].nil?
+    find_params[:conditions][0] = sql_conditions[:where].join(" AND ")
+  else
+    find_params[:conditions][0] += " AND " + sql_conditions[:where].join(" AND ")
+  end
+end
 
 if cfg.key? "report_options"
   cfg["report_options"].each { |k,v| output_cfg[k.to_sym] = v }
 end
 
 output_cfg[:full] = output_full unless output_full.nil?
+output_cfg[:raw] = output_raw
 
 if output_width.nil? and output_cfg[:display_width].nil?
   Curses.init_screen
@@ -187,13 +208,15 @@ output=TTT::Formatter.get_runner_for(output.to_sym).new($stderr,cfg)
 TTT::Db.open(cfg)
 
 
+rt=0
 begin
   if find_type == :normal
-    output.format(TTT::TrackingTable.tables[stat.to_sym].find(:all, find_params), output_cfg )
+    rt=output.format(TTT::TrackingTable.tables[stat.to_sym].find(:all, find_params), output_cfg )
   else
-    output.format(TTT::TrackingTable.tables[stat.to_sym].find_most_recent_versions(find_params))
+    rt=output.format(TTT::TrackingTable.tables[stat.to_sym].find_most_recent_versions(find_params))
   end
 rescue Exception => e
   pp e
 end
 
+exit rt

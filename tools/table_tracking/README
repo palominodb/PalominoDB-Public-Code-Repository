@@ -1,6 +1,13 @@
+== Contents
+
+  1. Overview
+  2. Installing
+  3. Configuring
+  4. Examples
+
 == Overview
 
-Table Tracking Toolkit allows simple collecting and reporting on:
+Table Tracking Toolkit allows simple collecting and detailed reporting on:
 
 - Table schema changes (tracking 'show create table' changes over time)
 - Table volume-metrics (tracking table size over time)
@@ -37,12 +44,34 @@ It's recommended that you place your configuration somewhere like:
 
 But the toolkit does not enforce any particular location.
 
-== Running
+== Examples
 
 For best results 'ttt-collect' should be run daily or every N hours.
 Running it or 'ttt-query' with '--help', or '-h', will show usage information.
 
 In general, though, your 'ttt-collect' commandline will be:
     $ /usr/bin/ttt-collect --config /usr/local/pdb/ttt/config.yml --dsn /usr/local/pdb/dsn.yml
-
 That should be put in a crontab and run as often as you feel like.
+
+To be emailed of any table changes that happen:
+    $ /usr/bin/ttt-query --config /usr/local/pdb/ttt/config.yml --stat definition --since last
+
+The report generated shows you what happened with the most recent 'version' 
+of each table. The output is: "compare the most recent entry
+with the previous". For table definitions, only changes are stored, so,
+if a new table was created and then never altered,
+it will always show up as 'new' in that query.
+
+It's a useful display, but often it's better to use --since to prune
+any changes older than a certain age.
+For example, if you run the collector every 4 hours,
+then running this query would probably be more interesting:
+    $ /usr/bin/ttt-query -c /usr/local/pdb/ttt/config.yml --stat definition --since 4h
+
+Which will only show 'new' tables in the 4 hour window that they showed up in.
+
+Volumetrics are collected every time, regardless of changes. This is to support export to rrd and other tools.
+
+    $ /usr/bin/ttt-query -c /usr/local/pdb/ttt/config.yml --stat volume --order 'data_length+index_length desc' --limit 50
+
+This will show you the top 50 tables ordered by size after doing 'ignore tables' handling. To report on all tables add '--raw' to the commandline.

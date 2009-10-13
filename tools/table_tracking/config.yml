@@ -22,30 +22,69 @@ report_ignore:
 #  display_width: 135
 #  full: true
 
-email_options:
-  subjectprefix: "[TTT] "
-  emailto: brian@palominodb.com
-  # Whether or not to send emails with no changes.
-  send_empty: false
-#  # This can be 'sendmail' or 'smtp'
-#  # Defaults to 'sendmail'
-#  delivery_method: sendmail
-#  sendmail_settings:
-#    # These options are passed more or less verbatim to
-#    # ActionMailer::Base, so looking at the docs for that can be useful.
-#    location: /usr/sbin/sendmail
-#    arguments: ''
-#  smtp_settings:
-#    # These options are passed more or less verbatim to
-#    # ActionMailer::Base, so looking at the docs for that can be useful.
-#    address: localhost
-#    port: 25
-#    domain: example.com
-#    user_name: bob
-#    password: supersecret
-#    authentication: plain
-#    eanble_starttls_auto: true
+formatter_options:
+  # This formatter exports to RRD.
+  # Presently, it IGNORES all query options, and simply
+  # updates RRD in a fixed format. This may be changed at
+  # a later time.
+  # The 'path' option specifies where to write out RRDs.
+  # It should be an absolute path.
+  # RRD is sensitive to time, if you are going to export to RRD
+  # you must be prepared to run the RRD export on a regular basis.
+  # If you are just simply looking to generate some "one-time" graphs,
+  # The RRD exporter DOES insert old entries, so you can simple run it,
+  # and do whatever graph creation you want.
+  rrd:
+    path: rrd/
+    # This is needed so RRD knows "how often" you'll be feeding results to it.
+    # This is only used during RRD creation time, after that, if you wait
+    # longer to update the rrd, this formatter will fill in all intervening
+    # entries.
+    update_interval: 2m
+  # This formatter is designed to generate output suitable
+  # for Nagios alerting. It can run stand-alone as a highly
+  # condensed view, but may not be very useful.
+  nagios:
+    # One of 'critical', 'warning', 'unknown', 'ok'
+    # Defines how the formatter should treat
+    # changes to the monitored tables
+    # The default level is 'warning'
+    alert_level: critical
+    # Table regexes to alert on. This is an inclusion mechanism
+    # as opposed to an exclusion mechanism. Tables that you wish
+    # to recieve nagios alerts for must be included by one of your regexes.
+    # It's recommended to make these as specific as reasonable.
+    tables:
+      # Any changes to tables under highpri db are flagged as critical.
+      # But only on testdb1
+      - ^testdb1\.highpri\.bucket_.*
 
+  # This formatter is designed for emailing periodic reports.
+  # Emailing one-time reports should probably be done by using the
+  # 'text' formatter, and piping the output to the `mail` command.
+  email:
+    subjectprefix: "[TTT] "
+    emailto: brian@palominodb.com
+    # Whether or not to send emails with no changes.
+    send_empty: false
+#    # This can be 'sendmail' or 'smtp'
+#    # Defaults to 'sendmail'
+#    delivery_method: sendmail
+#    sendmail_settings:
+#      # These options are passed more or less verbatim to
+#      # ActionMailer::Base, so looking at the docs for that can be useful.
+#      location: /usr/sbin/sendmail
+#      arguments: ''
+#    smtp_settings:
+#      # These options are passed more or less verbatim to
+#      # ActionMailer::Base, so looking at the docs for that can be useful.
+#      address: localhost
+#      port: 25
+#      domain: example.com
+#      user_name: bob
+#      password: supersecret
+#      authentication: plain
+#      eanble_starttls_auto: true
 
 #
 # Connection information

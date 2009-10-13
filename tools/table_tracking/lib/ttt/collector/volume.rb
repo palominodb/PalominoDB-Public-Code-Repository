@@ -11,13 +11,19 @@ module TTT
       begin
         TTT::TABLE.all.each do |tbl|
           next if tbl.TABLE_SCHEMA == "information_schema"
+          datafree=nil
+          if tbl.TABLE_COMMENT =~ /InnoDB free: (\d+)/
+            datafree=($1.to_i)*1024
+          else
+            datafree=tbl.DATA_FREE
+          end
           TTT::TableVolume.new(
             :server => host,
             :database_name => tbl.TABLE_SCHEMA,
             :table_name => tbl.TABLE_NAME,
             :run_time => Runtime,
             :data_length => tbl.DATA_LENGTH,
-            :data_free => tbl.DATA_FREE,
+            :data_free => datafree,
             :index_length => tbl.INDEX_LENGTH
           ).save
           say "[volume] server:#{host} schema:#{tbl.TABLE_SCHEMA} table:#{tbl.TABLE_NAME} data_length:#{tbl.DATA_LENGTH} index_length:#{tbl.INDEX_LENGTH}" if(verbose)
