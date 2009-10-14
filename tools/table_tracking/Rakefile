@@ -1,0 +1,43 @@
+require 'rubygems'
+require 'rubygems/package_task'
+require 'active_record'
+require 'yaml'
+
+task :default => :gem
+
+spec = Gem::Specification.new do |s|
+  s.name = "table-tracking-toolkit"
+  s.version = "0.9.9"
+  s.author = "Brian Smith"
+  s.email = "dba@palominodb.com"
+  s.homepage = "http://blog.palominodb.com/blog/"
+  s.platform = Gem::Platform::RUBY
+  s.summary = "Track Database table schema, and size changes"
+  s.description =<<E_DESC
+Table Tracking Toolkit allows simple collecting and reporting on:
+ - Table schema changes (tracking 'show create table' changes over time)
+ - Table volume-metrics (tracking table size over time)
+TTT has a pluggable system for implementing new metrics which could be used
+to track other things like "SHOW STATUS".
+
+TTT also has a pluggable reporting/querying interface which out of the box
+support for generating reports suitable for:
+- text viewing ( in the moment troubleshooting, see when it went wrong )
+- email ( being kept apprise of developer madness )
+- nagios ( being alerted of developer madness )
+
+The API docs contain examples, and reference to get you started.
+E_DESC
+  s.files = FileList["{bin,lib}/**/*"].to_a
+  s.executables = ["ttt-collect", "ttt-query"]
+  s.require_path = "lib"
+  s.has_rdoc = true
+  s.extra_rdoc_files = ["README"]
+  s.add_dependency("pdb-dsn", ">= 0.0.2")
+  s.add_dependency("activerecord", ">= 2.3.4")
+  s.add_dependency("text-reform", ">= 0.2.0")
+end
+
+Gem::PackageTask.new(spec) do |pkg|
+  pkg.need_tar = true
+end

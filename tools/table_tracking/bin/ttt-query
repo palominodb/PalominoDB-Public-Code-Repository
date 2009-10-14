@@ -1,0 +1,222 @@
+#!/usr/bin/ruby
+# == Synopsis
+#
+# ttt-query: Generate a report about tracked tables
+#
+# == Usage
+#
+# ttt-query [-h] -c config.yml -o text
+#
+# -h, --help:
+#    This help
+# --config file, -c file:
+#    Path to ttt config file.
+# --output type, -o type:
+#    Specifies an output formatter.
+#    One of:
+#    - email
+#    - text
+#    - nagios
+# --debug:
+#    Make the query tool VERY noisy about what it's doing.
+# --since <timespec>, -s <timespec>:
+#    Where <timespec> is something like:
+#    - last (since the last collector run)
+#    - 4h (4 hours)
+#    - 1d (1 day)
+#    - 1w (1 week)
+#
+# --raw:
+#    Disable 'ignore tables' processing.
+#
+# --width <columns>:
+#    Number of columns to format to.
+#        
+# --where <clause>, -w <clause>:
+#    Cannot presently be specified when 'last-collect' is used with --since.
+#    Can be specified multiple times.
+#    Allows you to place contraints based on columns.
+#    Constraints are any valid sql fragment.
+#    Recognized common columns:
+#    - id (primary_key, used for versioning, and discrete lookups)
+#    - server
+#    - database_name
+#    - table_name
+#    - run_time (when the collect ran)
+#    Recognized columns for syntax tracking:
+#    - created_at
+#    - updated_at
+#    - create_syntax
+#    Recognized columns for volume tracking:
+#    - data_length  (size of the table)
+#    - index_length (size of the index)
+#    - data_free    (unused, but not returned, tablespace
+#
+# --order <by>:
+#    Select columns to order by. Technically an SQL fragment.
+#    Same column list as above.
+#
+# --group <by>:
+#    Comma separated list of columns to group by. Same columns as above.
+#
+# --select <columns>:
+#    SQL fragment. Try running with debug to see your full query.
+#
+# --limit <N>:
+#    Limit to N results.
+#
+require 'rubygems'
+require 'yaml'
+require 'getoptlong'
+require 'rdoc/usage'
+require 'pp'
+require 'ttt/db'
+require 'ttt/formatters'
+require 'curses'
+
+opts = GetoptLong.new(
+  [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
+  [ '--config', '-c', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--output', '-o', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--debug', GetoptLong::NO_ARGUMENT ],
+  [ '--raw', GetoptLong::NO_ARGUMENT ],
+  [ '--since', '-s', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--width', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--where', '-w', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--full', '-f', GetoptLong::NO_ARGUMENT ],
+  [ '--stat', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--group', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--select', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--limit', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--order', GetoptLong::REQUIRED_ARGUMENT ]
+)
+
+cfg=nil
+output=nil
+debug=false
+query=nil
+stat=:definition
+
+output_full=false
+output_width=nil
+output_raw=false
+output_cfg={}
+
+find_params={}
+find_params[:conditions] = []
+sql_conditions={}
+
+find_type=:normal
+
+opts.each do |opt,val|
+  case opt
+    when '--help'
+      RDoc::usage
+    when '--config'
+      cfg = YAML.load_file(val)
+    when '--output'
+      output=val
+    when '--debug'
+      debug=true
+    when '--full'
+      output_full=true
+    when '--stat'
+      stat=val
+    when '--width'
+      output_width=val.to_i
+    when '--raw'
+      output_raw=true
+    when '--since'
+      if val == "last"
+        find_type = :last
+      elsif val =~ /(\d+(?:\.?\d+)?)([hdwm])?/
+        time = case $2
+          when 'h'
+            $1.to_f.hours.ago
+          when 'd'
+            $1.to_f.days.ago
+          when 'w'
+            $1.to_f.weeks.ago
+          when 'm'
+            $1.to_f.minutes.ago
+          else
+            $1.to_f.seconds.ago
+        end
+        sql_conditions[:since] = time
+        #find_params[:conditions].reject! { |v| v =~ /^run_time/ }
+        #find_params[:conditions] << ["run_time >= ?", time]
+        #find_params[:conditions].flatten!
+      end
+      when '--where'
+        #find_params[:conditions] << val
+        sql_conditions[:where] = [] unless sql_conditions[:where].class == Array
+        sql_conditions[:where] << val
+      when '--group'
+        find_params[:group] = val
+      when '--select'
+        find_params[:select] = val
+      when '--order'
+        find_params[:order] = val
+      when '--limit'
+        find_params[:limit] = val.to_i
+    end
+end
+
+if debug then
+  ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDERR, ActiveSupport::BufferedLogger::Severity::DEBUG)
+else
+  ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDERR, ActiveSupport::BufferedLogger::Severity::INFO)
+end
+
+if cfg.nil?
+  puts "Must specify configuration."
+  RDoc::usage
+end
+
+if sql_conditions[:since]
+  find_params[:conditions] << ["run_time >= ?", sql_conditions[:since]]
+  find_params[:conditions].flatten!
+end
+
+if sql_conditions[:where].class == Array
+  if find_params[:conditions][0].nil?
+    find_params[:conditions][0] = sql_conditions[:where].join(" AND ")
+  else
+    find_params[:conditions][0] += " AND " + sql_conditions[:where].join(" AND ")
+  end
+end
+
+if cfg.key? "report_options"
+  cfg["report_options"].each { |k,v| output_cfg[k.to_sym] = v }
+end
+
+output_cfg[:full] = output_full unless output_full.nil?
+output_cfg[:raw] = output_raw
+
+if output_width.nil? and output_cfg[:display_width].nil?
+  Curses.init_screen
+  output_cfg[:display_width] = Curses.cols-4 || 80
+  Curses.close_screen
+else
+  output_cfg[:display_width] = output_width unless output_width.nil?
+end
+
+
+output=:text if output.nil?
+output=TTT::Formatter.get_runner_for(output.to_sym).new($stderr,cfg)
+
+TTT::Db.open(cfg)
+
+
+rt=0
+begin
+  if find_type == :normal
+    rt=output.format(TTT::TrackingTable.tables[stat.to_sym].find(:all, find_params), output_cfg )
+  else
+    rt=output.format(TTT::TrackingTable.tables[stat.to_sym].find_most_recent_versions(find_params))
+  end
+rescue Exception => e
+  pp e
+end
+
+exit rt
