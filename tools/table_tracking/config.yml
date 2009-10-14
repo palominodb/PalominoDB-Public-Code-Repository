@@ -16,7 +16,7 @@
 
 report_ignore:
   - mysql\..*
-  - ^testdb2\..*
+#  - ^testdb2\..*
 
 #report_options:
 #  display_width: 135
@@ -25,8 +25,10 @@ report_ignore:
 formatter_options:
   # This formatter exports to RRD.
   # Presently, it IGNORES all query options, and simply
-  # updates RRD in a fixed format. This may be changed at
-  # a later time.
+  # updates RRD in a fixed format. This may be changed at a later time.
+  # The RRD formatter also does not store create syntax changes right now
+  # Extending it to do so should be trival, but seemed less important than
+  # volumetrics for the first release.
   # The 'path' option specifies where to write out RRDs.
   # It should be an absolute path.
   # RRD is sensitive to time, if you are going to export to RRD
@@ -35,11 +37,14 @@ formatter_options:
   # The RRD exporter DOES insert old entries, so you can simple run it,
   # and do whatever graph creation you want.
   rrd:
-    path: rrd/
+    path: rrd
     # This is needed so RRD knows "how often" you'll be feeding results to it.
     # This is only used during RRD creation time, after that, if you wait
     # longer to update the rrd, this formatter will fill in all intervening
-    # entries.
+    # entries. Additionally, if you change this after RRDs have been created,
+    # only new rrds will pickup the change.
+    # Syntax is: X[hmd], where 'h' is hours, 'm' is minutes, and 'd' is days
+    # There is a maximum of two days for any interval.
     update_interval: 2m
   # This formatter is designed to generate output suitable
   # for Nagios alerting. It can run stand-alone as a highly

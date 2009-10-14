@@ -5,7 +5,7 @@ require 'ttt/table_volume'
 
 module TTT
   class VolumeCollector < Collector
-    register :volume
+    collect_for :volume, "table, index, and free size tracking"
     def self.collect(host,cfg)
       TTT::InformationSchema.connect(host,cfg)
       begin

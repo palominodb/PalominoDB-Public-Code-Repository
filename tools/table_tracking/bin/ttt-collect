@@ -21,7 +21,7 @@ require 'yaml'
 require 'getoptlong'
 require 'rdoc/usage'
 require 'open-uri'
-require 'pp'
+require 'text/reform'
 
 require 'pdb/dsn'
 require 'ttt/db'
@@ -31,12 +31,17 @@ opts = GetoptLong.new(
   [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
   [ '--config', '-c', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--dsn', '-d', GetoptLong::REQUIRED_ARGUMENT ],
-  [ '--debug', GetoptLong::NO_ARGUMENT ]
+  [ '--debug', GetoptLong::NO_ARGUMENT ],
+  [ '--verbose', GetoptLong::NO_ARGUMENT ],
+  [ '--stat', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--list-stats', '-l', GetoptLong::NO_ARGUMENT ]
 )
 
 dsn=nil
 cfg=nil
 debug=false
+verbose=false
+stat=:all
 
 opts.each do |opt, val|
   case opt
@@ -49,6 +54,19 @@ opts.each do |opt, val|
       dsn.validate
     when '--debug'
       debug=true
+    when '--verbose'
+      verbose=true
+    when '--stat'
+      stat=val.to_sym
+    when '--list-stats'
+      rf=Text::Reform.new
+      rf.trim=true
+      TTT::Collector.load_all
+      cols=TTT::Collector.collectors
+      names= cols.map { |c| c.stat }
+      descs= cols.map { |c| c.desc }
+      puts rf.format("Available statistics:", "[[[[[[[[[[[ - "+ ("["*80), names,descs)
+      exit(0)
   end
 end
 
@@ -72,7 +90,7 @@ TTT::Db.open(cfg)
 # and will upgrade it too!
 TTT::Db.migrate
 
-TTT::Collector.verbose = false
+TTT::Collector.verbose = verbose
 TTT::Collector.load_all
 
 TTT::TableDefinition.transaction do
@@ -81,8 +99,12 @@ TTT::TableDefinition.transaction do
       next
     end
     TTT::Collector.say "[host] #{host}"
-    TTT::Collector.each do |coller|
-      coller.collect(host,cfg)
+    if stat==:all
+      TTT::Collector.each do |coller|
+        coller.collect(host,cfg)
+      end
+    else
+      TTT::Collector[stat].collect(host,cfg)
     end
   end
 end

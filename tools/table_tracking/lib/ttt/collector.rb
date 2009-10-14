@@ -22,11 +22,15 @@ module TTT
     @@debug = false 
     @@loaded_collectors = false
 
+    class_inheritable_reader :stat, :desc
+
     # Called by subclasses of Collector to, well, register themsevles
     # as a valid collector.
-    def self.register(name)
-      yell "registering: #{name}(#{self.name})"
+    def self.collect_for(name, desc="")
+      yell "collecter for: #{name}(#{self.name})"
       @@collectors[name] = self
+      write_inheritable_attribute :stat, name
+      write_inheritable_attribute :desc, desc
     end
 
     # Abstract method to be reimplemented by subclasses.
@@ -36,6 +40,11 @@ module TTT
 
     def self.each
       @@collectors.each_value { |x| yield(x) }
+      true
+    end
+
+    def self.collectors
+      @@collectors.values
     end
 
     def self.[](x)

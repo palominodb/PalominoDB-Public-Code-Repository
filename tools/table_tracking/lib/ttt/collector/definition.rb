@@ -5,7 +5,7 @@ require 'ttt/table_definition'
 
 module TTT
   class DefinitionCollector < Collector
-    register :definition
+    collect_for :definition, "'create syntax' tracking"
     def self.collect(host,cfg)
       TTT::InformationSchema.connect(host, cfg)
       begin
