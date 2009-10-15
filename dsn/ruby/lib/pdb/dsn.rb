@@ -24,9 +24,9 @@ module Pdb
   def self.truth(str)
     trues  = [ "y", "t", "true", "yes" ]
     falses = [ "n", "f", "false", "no" ]
-    if trues.include? str
+    if trues.include? str.downcase
       return true
-    elsif falses.include? str
+    elsif falses.include? str.downcase
       return false
     end
   end
@@ -145,7 +145,7 @@ module Pdb
         if d["readfor"].class == Array
           read_hosts << srv if d["readfor"].include? cluster and host_active? srv
         elsif d["readfor"].class == String
-          write_hosts << srv if d["readfor"] == cluster and host_active? srv
+          read_hosts << srv if d["readfor"] == cluster and host_active? srv
         end
       end
       read_hosts
