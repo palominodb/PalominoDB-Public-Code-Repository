@@ -1,0 +1,10 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+require 'pdb/dsn'
+
+if ARGV[0].nil?
+  $stderr.puts "usage: pdb-dsn-validate <dsn uri>"
+  exit false
+end
+
+exit Pdb::DSN.new(ARGV[0]).validate

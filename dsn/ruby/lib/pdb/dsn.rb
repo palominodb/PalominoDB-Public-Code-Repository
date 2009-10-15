@@ -13,6 +13,7 @@ module Pdb
     Unknown = :Unknown
     UnknownCluster = :UnknownCluster
     ClusterMismatch = :ClusterMismatch
+    EmptyDSN = :ClusterMismatch
     
     def initialize(type=Unknown)
       @type=type
@@ -78,19 +79,22 @@ module Pdb
     # A SemanticsError is thrown if there is disagreement in the DSN.
     # Presently, that means missing clusters, or disagreement between servers and clusters.
     def validate
+      if @raw.nil?
+        raise SemanticsError.new(SemanticsError::EmptyDSN), "Can not validate an empty dsn."
+      end
       host_keys = [ "version", "active", "readfor", "writefor" ]
       cluster_keys = [ "active", "servers", "schemas" ]
       @raw["servers"].each do |srv,d|
         host_keys.each do |k|
           if !d.has_key? k
-            raise SyntaxError.new "Server '#{srv}' missing required key '#{k}'"
+            raise SyntaxError.new(), "Server '#{srv}' missing required key '#{k}'"
           end
         end
       end
       @raw["clusters"].each do |clu,d|
         cluster_keys.each do |k|
           if !d.has_key? k
-            raise SyntaxError.new "Cluster '#{clu}' missing required key '#{k}'"
+            raise SyntaxError.new() "Cluster '#{clu}' missing required key '#{k}'"
           end
         end
       end
