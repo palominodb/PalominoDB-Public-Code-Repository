@@ -94,7 +94,7 @@ module Pdb
       @raw["clusters"].each do |clu,d|
         cluster_keys.each do |k|
           if !d.has_key? k
-            raise SyntaxError.new() "Cluster '#{clu}' missing required key '#{k}'"
+            raise SyntaxError.new(), "Cluster '#{clu}' missing required key '#{k}'"
           end
         end
       end
