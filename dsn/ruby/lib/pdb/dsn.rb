@@ -156,6 +156,11 @@ module Pdb
       @raw["servers"].keys
     end
 
+    # Returns names of all defined clusters.
+    def get_all_clusters
+      @raw["clusters"].keys
+    end
+
     # Returns true or false depending on whether or not the
     # host is active. If there is no such host, 'nil' is returned.
     def host_active?(server)
