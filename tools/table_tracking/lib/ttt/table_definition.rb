@@ -21,29 +21,5 @@ module TTT
       last.nil? or last.deleted? or last.created_at != created_at
     end
     
-    # Finds only the 'x' highest numbered id(s) for each server.database.table
-    # Returns them as an array of TableDefiniion objects.
-    # TODO: Currently broken.
-    def self.find_table_versions(x=:all,*args)
-      selector=case args.first
-      when :all, :first, :last
-        args.shift
-        args=args.first
-      else
-        unless args.empty?
-          args=args.first
-        else
-          args={}
-        end
-        :all
-      end
-      unless x==:all
-        args[:limit] = x
-      end
-      pp args
-      pp selector
-      pp x
-      self.find(selector, args)
-    end
   end
 end

@@ -21,15 +21,26 @@ module TTT
       raise Exception, "Use a real formatter."
     end
 
+    def self.humanize(name)
+      ActiveRecord::Base.human_attribute_name(name)
+    end
+
     def reject_ignores(rows)
       if @cfg.key? "report_ignore"
         return rows.reject do |r|
           server_schema_table=[r.server, r.database_name, r.table_name].join(".")
           do_rej=false
-          @cfg["report_ignore"].each do |reg|
-            do_rej = !Regexp.new(reg).match(server_schema_table).nil?
-            do_rej
-            break if do_rej
+          unless @cfg["report_ignore"][r.collector.to_s].nil?
+            @cfg["report_ignore"][r.collector.to_s].each do |reg|
+              do_rej = !Regexp.new(reg).match(server_schema_table).nil?
+              break if do_rej
+            end
+          end
+          if !do_rej
+            @cfg["report_ignore"]["global"].each do |reg|
+              do_rej = !Regexp.new(reg).match(server_schema_table).nil?
+              break if do_rej
+            end
           end
           do_rej
         end
@@ -49,9 +60,9 @@ module TTT
       self.load_all
       @@runners[media]
     end
-    def self.get_formatter_for(collector, media)
+    def self.get_formatter_for(collector, mtype=self.media)
       Collector.load_all
-      @@formatters[collector][media]
+      @@formatters[collector][mtype]
     end
 
     def need_option(key)

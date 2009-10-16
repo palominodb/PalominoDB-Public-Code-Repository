@@ -19,10 +19,25 @@ module TTT
   # Access to the "TABLES" table from information_schema database
   class TABLE < InformationSchema
     set_table_name :TABLES
+    # Returns the table's data definition.
+    # If the table is a regular table, then a statement
+    # such as "CREATE TABLE.." will be returned.
+    # If the table is a view, then a statement such as "CREATE VIEW.."
+    # will be returned.
     def create_syntax
       schema=read_attribute(:TABLE_SCHEMA)
       name=read_attribute(:TABLE_NAME)
-      connection.execute("SHOW CREATE TABLE #{schema}.#{name}").fetch_hash()["Create Table"]
+      syn=connection.execute("SHOW CREATE TABLE #{schema}.#{name}").fetch_hash()
+      if read_attribute(:TABLE_TYPE) == "VIEW"
+        syn["Create View"]
+      else
+        syn["Create Table"]
+      end
+    end
+    # Returns true, if the table is determined to be a "system table".
+    # That is, a table generated dynamically by MySQL.
+    def system_table?
+      read_attribute(:TABLE_TYPE) == "SYSTEM VIEW" or (read_attribute(:CREATE_TIME).nil? and read_attribute(:UPDATE_TIME).nil?)
     end
   end
 

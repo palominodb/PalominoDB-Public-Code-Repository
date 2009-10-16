@@ -4,6 +4,7 @@ require 'ttt/table'
 require 'ttt/information_schema'
 require 'ttt/table_definition'
 require 'ttt/table_volume'
+require 'ttt/table_view'
 
 module TTT
   # This class wraps some implementation details about accessing

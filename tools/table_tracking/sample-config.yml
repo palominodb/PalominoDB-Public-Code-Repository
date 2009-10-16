@@ -9,15 +9,34 @@
 #   The second regex below would match every table under 'mysql'
 #   and only on 'testdb1'.
 #   Leaving off the server will match against any server, basically.
+# Reporting ignores work on a per-statistic basis, except the
+# ones in the global category.
+# See `ttt-query --list-stats` for a list of available statistics.
+#
 #report_ignore:
+#  global:
 #  - bucket_.*
 #  - ^testdb1\.mysql\..*
 #  - .*test\..*
-
-report_ignore:
-  - mysql\..*
+#  volume:
+#  - nogrowthdb\..*
 #  - ^testdb2\..*
+#  definition:
+#  - nochangedb\..*
+#  - freqchangedb\..*
 
+# Default is to always ignore the mysql db.
+report_ignore:
+  global:
+  - mysql\..*
+
+
+# display_width will force a pre-defined display width,
+# instead of relying on the automatic detection which can be wrong
+# occassionally. But, only when Curses would get it wrong.
+#
+# full is just like the command-line flag, which causes
+# more detailed output.
 #report_options:
 #  display_width: 135
 #  full: true
@@ -69,7 +88,7 @@ formatter_options:
   # 'text' formatter, and piping the output to the `mail` command.
   email:
     subjectprefix: "[TTT] "
-    emailto: brian@palominodb.com
+    emailto: dba@palominodb.com
     # Whether or not to send emails with no changes.
     send_empty: false
 #    # This can be 'sendmail' or 'smtp'
@@ -99,7 +118,7 @@ formatter_options:
 # will be used to log-in to each of your database servers for reporting.
 # Second is 'ttt_connection'. This is the connection information for 
 # where TTT stores its data.
-#   The default example is to use sqlite, and store it at /usr/local/pdb/ttt/db.sqlite3
+#   The default example is to use sqlite, and store it at /usr/local/etc/pdb/ttt.sqlite3
 # 
 
 # Connection information for to-be-collected database servers
@@ -110,7 +129,7 @@ dsn_connection:
 # Connection information for storing collected information
 ttt_connection:
   adapter: sqlite3 # See below for mysql example
-  database: "db.sqlite3"
+  database: "/usr/local/etc/pdb/ttt.sqlite3"
 
 #ttt_connection:
 #  adapter: mysql

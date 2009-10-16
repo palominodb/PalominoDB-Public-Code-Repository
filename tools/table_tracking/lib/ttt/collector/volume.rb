@@ -10,7 +10,7 @@ module TTT
       TTT::InformationSchema.connect(host,cfg)
       begin
         TTT::TABLE.all.each do |tbl|
-          next if tbl.TABLE_SCHEMA == "information_schema"
+          next if tbl.system_table?
           datafree=nil
           if tbl.TABLE_COMMENT =~ /InnoDB free: (\d+)/
             datafree=($1.to_i)*1024
@@ -72,33 +72,33 @@ module TTT
     end
   end
   Formatter.for :volume, :text do |stream,frm,data,options|
-    col_width=frm.page_width/(options[:full] ? 7 : 6)
+    col_width=frm.page_width/(options[:full] ? 6 : 5)
     unless options[:header]
       if options[:full]
         stream.puts frm.format(
           # status        server           db_name          tbl_name         data_len  index_len data_free
-          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
+          "<<<<<<<<<<< #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
           data.status, data.server, data.database_name, data.table_name,
-            data.data_length.nil? ? nil : data.data_length/1024,
-            data.index_length.nil? ? nil : data.index_length/1024,
-            data.data_free.nil? ? nil : data.data_free/1024)
+            data.data_length.nil? ? nil : data.data_length/1024/1024,
+            data.index_length.nil? ? nil : data.index_length/1024/1024,
+            data.data_free.nil? ? nil : data.data_free/1024/1024)
       else
         stream.puts frm.format(
           # status        server    db_name   tbl_name  size
-          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
+          "<<<<<<<<<<< #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
           data.status, data.server, data.database_name, data.table_name,
-            data.data_length.nil? ? nil : (data.data_length + data.index_length)/1024)
+            data.data_length.nil? ? nil : (data.data_length + data.index_length)/1024/1024)
       end
     else # :header
       if options[:full]
         stream.puts frm.format(
           # status        server           db_name          tbl_name         data_len  index_len data_free
-          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
-          "status", "server", "database name", "table name", "data length(kb)", "index length(kb)", "data free(kb)")
+          "<<<<<<<<<<< #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18} #{'<'*18} #{'<'*18}",
+          "status", "server", "database name", "table name", "data length(mb)", "index length(mb)", "data free(mb)")
       else
         stream.puts frm.format(
-          "[>>>>>>>>>>>]: #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
-          "status", "server", "database name", "table name", "size (kb)")
+          "<<<<<<<<<<< #{'<'*col_width} #{'<'*col_width} #{'<'*col_width} #{'<'*18}",
+          "status", "server", "database name", "table name", "size (mb)")
       end
     end
   end

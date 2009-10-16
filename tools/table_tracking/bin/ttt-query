@@ -9,16 +9,27 @@
 #
 # -h, --help:
 #    This help
+#
 # --config file, -c file:
 #    Path to ttt config file.
+#
+# --stat <stat>:
+#    Statistic to query.
+#
+# --list-stats:
+#    List available statistics.
+#
 # --output type, -o type:
 #    Specifies an output formatter.
 #    One of:
 #    - email
 #    - text
 #    - nagios
+#    - rrd
+#
 # --debug:
 #    Make the query tool VERY noisy about what it's doing.
+#
 # --since <timespec>, -s <timespec>:
 #    Where <timespec> is something like:
 #    - last (since the last collector run)
@@ -72,6 +83,7 @@ require 'rdoc/usage'
 require 'pp'
 require 'ttt/db'
 require 'ttt/formatters'
+require 'text/reform'
 require 'curses'
 
 opts = GetoptLong.new(
@@ -85,6 +97,7 @@ opts = GetoptLong.new(
   [ '--where', '-w', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--full', '-f', GetoptLong::NO_ARGUMENT ],
   [ '--stat', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--list-stats', GetoptLong::NO_ARGUMENT ],
   [ '--group', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--select', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--limit', GetoptLong::REQUIRED_ARGUMENT ],
@@ -122,6 +135,15 @@ opts.each do |opt,val|
       output_full=true
     when '--stat'
       stat=val
+    when '--list-stats'
+      rf=Text::Reform.new
+      rf.trim=true
+      TTT::Collector.load_all
+      cols=TTT::Collector.collectors
+      names= cols.map { |c| c.stat }
+      descs= cols.map { |c| c.desc }
+      puts rf.format("Available statistics:", "[[[[[[[[[[[ - "+ ("["*80), names,descs)
+      exit(0)
     when '--width'
       output_width=val.to_i
     when '--raw'
@@ -217,6 +239,7 @@ begin
   end
 rescue Exception => e
   pp e
+  puts e.backtrace if debug
 end
 
 exit rt
