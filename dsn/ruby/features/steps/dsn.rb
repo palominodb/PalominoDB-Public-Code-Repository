@@ -30,3 +30,10 @@ end
 Then /^validate should pass$/ do
   @dsn.validate
 end
+
+And /^getting the key (\w+) from server (\w+) should return (.+)$/ do |key,srv,val|
+  real_val=@dsn.send "server_#{key}", srv
+  unless real_val == val
+    raise Exception, "Did not get the expected result '#{val}', got: '#{real_val}'"
+  end
+end

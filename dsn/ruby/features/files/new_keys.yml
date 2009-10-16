@@ -1,0 +1,16 @@
+---
+servers:
+  s1:
+    active: y
+    version: ~
+    readfor: cluster1
+    writefor: cluster1
+    frozbit: 10d
+clusters:
+  cluster1:
+    active: y
+    schemas: test
+    primary: s1
+    failover: ~
+    servers:
+    - s1
