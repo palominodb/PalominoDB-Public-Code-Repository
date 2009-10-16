@@ -1,0 +1,8 @@
+---
+servers:
+  server1:
+    version: ~
+    active: y
+    readfor: missing_cluster
+    writefor: missing_cluster
+clusters: {}

@@ -1,6 +1,6 @@
 spec = Gem::Specification.new do |s|
   s.name = "pdb-dsn"
-  s.version = "0.2.2"
+  s.version = "0.2.3"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"

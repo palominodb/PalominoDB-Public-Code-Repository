@@ -1,0 +1,28 @@
+---
+servers:
+  server1:
+    active: y
+    version: ~
+    readfor: cluster2
+    writefor: cluster2
+  server2:
+    active: y
+    version: ~
+    readfor: cluster1
+    writefor: cluster1
+
+clusters:
+  cluster1:
+    active: y
+    schemas: test
+    primary: server2
+    failover: ~
+    servers:
+    - server1
+  cluster2:
+    active: y
+    schemas: test
+    primary: server1
+    failover: ~
+    servers:
+    - server1

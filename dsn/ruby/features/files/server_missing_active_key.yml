@@ -1,0 +1,14 @@
+---
+servers:
+  server1:
+    version: ~
+    readfor: cluster1
+    writefor: cluster1
+clusters:
+  cluster1:
+    active: y
+    schemas: test
+    primary: server1
+    failover: ~
+    servers:
+    - server1

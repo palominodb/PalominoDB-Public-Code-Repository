@@ -13,7 +13,9 @@ module Pdb
     Unknown = :Unknown
     UnknownCluster = :UnknownCluster
     ClusterMismatch = :ClusterMismatch
-    EmptyDSN = :ClusterMismatch
+    EmptyDSN = :EmptyDSN
+    PrimaryMismatch = :PrimaryMismatch
+    FailoverMismatch = :FailoverMismatch
     
     def initialize(type=Unknown)
       @type=type
@@ -79,11 +81,11 @@ module Pdb
     # A SemanticsError is thrown if there is disagreement in the DSN.
     # Presently, that means missing clusters, or disagreement between servers and clusters.
     def validate
-      if @raw.nil?
+      if !@raw or @raw.nil? or @raw.empty?
         raise SemanticsError.new(SemanticsError::EmptyDSN), "Can not validate an empty dsn."
       end
       host_keys = [ "version", "active", "readfor", "writefor" ]
-      cluster_keys = [ "active", "servers", "schemas" ]
+      cluster_keys = [ "active", "servers", "schemas", "primary", "failover" ]
       @raw["servers"].each do |srv,d|
         host_keys.each do |k|
           if !d.has_key? k
@@ -96,6 +98,12 @@ module Pdb
           if !d.has_key? k
             raise SyntaxError.new(), "Cluster '#{clu}' missing required key '#{k}'"
           end
+        end
+        if !@raw["servers"][d["primary"]]["writefor"].include? clu
+          raise SemanticsError.new(SemanticsError::PrimaryMismatch), "Cluster lists #{d["primary"]} as the primary, but the server doesn't agree."
+        end
+        if !d["failover"].nil? and !@raw["servers"][d["failover"]]["writefor"].include? clu
+          raise SemanticsError.new(SemanticsError::FailoverMismatch), "Cluster lists #{d["primary"]} as the failover, but the server doesn't agree."
         end
       end
 
@@ -181,8 +189,18 @@ module Pdb
     end
 
     # Gets the version of mysql running on a host.
-    def get_version(server)
-      @raw["servers"][server]["version"]
+    #def get_version(server)
+    #  @raw["servers"][server]["version"]
+    #end
+    def method_missing(meth, *args)
+      str = meth.id2name
+      e = args[0]
+      if str =~ /^server_(.+)$/ and @raw["servers"][e].key? $1
+        return @raw["servers"][e][$1]
+      end
+      if str =~ /^cluster_(.+)$/ and @raw["clusters"][e].key? $1
+        return @raw["clusters"][e][$1]
+      end
     end
   end
 end

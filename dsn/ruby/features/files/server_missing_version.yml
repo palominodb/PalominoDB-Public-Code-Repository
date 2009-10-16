@@ -1,0 +1,12 @@
+---
+servers:
+  server1:
+    active: y
+    readfor: cluster1
+    writefor: cluster1
+clusters:
+  cluster1:
+    active: y
+    schemas: test
+    severs:
+    - server1
