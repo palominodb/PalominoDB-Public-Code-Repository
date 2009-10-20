@@ -53,10 +53,10 @@ if($selection_method==USE_TABLE_NAME and not defined $time_format) {
   pod2usage(-message => "Error: If using --by-create you must use --time-format.", -verbose => 1);
 }
 
-if($selection_method==USE_TABLE_NAME and $table_prefix !~ /^[A-Za-z0-9_\$]+$/) {
+if($selection_method==USE_TABLE_NAME and $table_prefix !~ /^[A-Za-z0-9_\$\-]+$/) {
   pod2usage(-message => "Error: When using --by-create, --table-prefix must only contain allowable characters for mysql table names.", -verbose => 1);
 }
-elsif($selection_method==USE_TABLE_NAME and $table_prefix =~ /^[A-Za-z0-9_\$]+$/) {
+elsif($selection_method==USE_TABLE_NAME and $table_prefix =~ /^[A-Za-z0-9_\$\-]+$/) {
   $time_format->pattern("$table_prefix". $time_format->pattern());
   print "format: ". $time_format->pattern ."\n";
 }
