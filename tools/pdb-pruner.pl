@@ -103,11 +103,11 @@ __END__
 
 =head1 NAME
 
-table-pruner.pl - v0.1 - Prune matching tables older than some age.
+pdb-pruner.pl - v0.1 - Prune matching tables older than some age.
 
 =head1 SYNOPSIS
 
-table-pruner.pl [--help] -h host -d schema -u user -p pass -tf regex {--by-create|--by-is}
+pdb-pruner.pl [--help] -h host -d schema -u user -p pass -tf regex {--by-create|--by-is}
 
 =head1 OPTIONS
 
