@@ -56,7 +56,7 @@ if($selection_method==USE_TABLE_NAME and not defined $time_format) {
 if($selection_method==USE_TABLE_NAME and $table_prefix !~ /^[A-Za-z0-9_\$]+$/) {
   pod2usage(-message => "Error: When using --by-create, --table-prefix must only contain allowable characters for mysql table names.", -verbose => 1);
 }
-else {
+elsif($selection_method==USE_TABLE_NAME and $table_prefix =~ /^[A-Za-z0-9_\$]+$/) {
   $time_format->pattern("$table_prefix". $time_format->pattern());
   print "format: ". $time_format->pattern ."\n";
 }
@@ -98,7 +98,7 @@ foreach my $tbl (@tables) {
     }
 
     print "Dropping: '$tbl' created at: ". scalar(localtime($age)) ."\n";
-    $dbh->do("DROP TABLE $tbl");
+    $dbh->do("DROP TABLE \`$tbl\`");
 
     sleep($drop_sleep) if($drop_sleep);
   }
