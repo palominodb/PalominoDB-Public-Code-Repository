@@ -103,7 +103,7 @@ __END__
 
 =head1 NAME
 
-pdb-pruner.pl - v0.1 - Prune matching tables older than some age.
+pdb-pruner.pl - v0.2 - Prune matching tables older than some age.
 
 =head1 SYNOPSIS
 
