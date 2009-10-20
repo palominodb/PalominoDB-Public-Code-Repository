@@ -121,6 +121,10 @@ Help text.
 
 Database server.
 
+=item B<-d,--db-schema=s>
+
+Database schema.
+
 =item B<-u,--db-user=u>
 
 Database user.
