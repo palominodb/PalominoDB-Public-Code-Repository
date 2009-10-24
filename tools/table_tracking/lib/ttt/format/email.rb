@@ -42,7 +42,7 @@ module TTT
                   when false
                     "[TTT] "
                   end
-      if !cfg["formatter_options"]["email"]["email_options"].key? "emailto"
+      if !cfg["formatter_options"]["email"].key? "emailto"
         stream.puts "[error]: Need 'formatter_options.email.emailto' to send email!"
         return false
       end
