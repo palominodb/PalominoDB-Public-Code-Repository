@@ -5,9 +5,7 @@ require 'ttt/table_view'
 
 module TTT
   class ViewCollector < Collector
-    collect_for :view, "view syntax tracking"
-    def self.collect(host,cfg)
-      TTT::InformationSchema.connect(host, cfg)
+    collect_for :view, "view syntax tracking" do |host,cfg,runtime|
       begin
         TTT::TABLE.all.each do |tbl|
           next if tbl.TABLE_TYPE != "VIEW"
@@ -17,7 +15,7 @@ module TTT
             :database_name => tbl.TABLE_SCHEMA,
             :table_name => tbl.TABLE_NAME,
             :create_syntax => tbl.create_syntax,
-            :run_time => Runtime
+            :run_time => runtime
             # Views do not hold creation or update times, so we rely 
             # on our runtime to determine when it first appeared
           )
@@ -31,7 +29,7 @@ module TTT
           end
           TTT::TableView.record_timestamps = true
         end
-      end # TTT::TABLE.all
+      #end # TTT::TABLE.all
 
       # Dropped table detection
       TTT::TableView.find_most_recent_versions(:conditions => ['server = ?', host]).each do |tbl|
@@ -43,7 +41,7 @@ module TTT
             :database_name => tbl.database_name,
             :table_name  => tbl.table_name,
             :create_syntax => nil,
-            :run_time => Runtime
+            :run_time => runtime
           ).save
           TTT::TableView.record_timestamps = true
           say "[deleted]: server:#{host} database:#{tbl.database_name} table:#{tbl.table_name}"
@@ -60,7 +58,7 @@ module TTT
             :database_name => nil,
             :table_name  => nil,
             :create_syntax => nil,
-            :run_time => Runtime
+            :run_time => runtime
           ).save
         end
         TTT::TableView.record_timestamps = true
@@ -68,6 +66,7 @@ module TTT
         raise mye
       end
     end
+  end
   end
   Formatter.for :view, :text do |stream,frm,data,options|
     col_width=frm.page_width/data.attribute_names.length

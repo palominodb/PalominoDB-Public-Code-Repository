@@ -3,11 +3,10 @@ require 'ttt/db'
 require 'ttt/formatters'
 require 'ttt/table_definition'
 
+      #def self.collect(host,cfg)
 module TTT
   class DefinitionCollector < Collector
-    collect_for :definition, "'create syntax' tracking"
-    def self.collect(host,cfg)
-      TTT::InformationSchema.connect(host, cfg)
+    collect_for :definition, "'create syntax' tracking" do |host,cfg,runtime|
       begin
         TTT::TABLE.all.each do |tbl|
           next if tbl.system_table?
@@ -18,19 +17,19 @@ module TTT
             :table_name => tbl.TABLE_NAME,
             :create_syntax => tbl.create_syntax,
             :created_at => tbl.CREATE_TIME,
-            :run_time => Runtime,
+            :run_time => runtime,
             :updated_at => tbl.UPDATE_TIME) # InnoDB tables do not have this flag, so it will be null when the table is InnoDB.
-            oldtbl = TTT::TableDefinition.find_last_by_server_and_database_name_and_table_name(host, tbl.TABLE_SCHEMA, tbl.TABLE_NAME)
-            if oldtbl.nil? or oldtbl.create_syntax.nil? then
-              newtbl.save
-              say "[new]: server:#{host} database:#{newtbl.database_name} table:#{newtbl.table_name}"
-            elsif newtbl.created_at != oldtbl.created_at then
-              newtbl.save
-              say "[changed]: server:#{host} database:#{newtbl.database_name} table:#{newtbl.table_name}"
-            end
-            TTT::TableDefinition.record_timestamps = true
+          oldtbl = TTT::TableDefinition.find_last_by_server_and_database_name_and_table_name(host, tbl.TABLE_SCHEMA, tbl.TABLE_NAME)
+          if oldtbl.nil? or oldtbl.create_syntax.nil? then
+            newtbl.save
+            say "[new]: server:#{host} database:#{newtbl.database_name} table:#{newtbl.table_name}"
+          elsif newtbl.created_at != oldtbl.created_at then
+            newtbl.save
+            say "[changed]: server:#{host} database:#{newtbl.database_name} table:#{newtbl.table_name}"
+          end
+          TTT::TableDefinition.record_timestamps = true
         end
-      end # TTT::TABLE.all
+      #end # TTT::TABLE.all
 
       # Dropped table detection
       TTT::TableDefinition.find_most_recent_versions(:conditions => ['server = ?', host]).each do |tbl|
@@ -42,7 +41,7 @@ module TTT
             :database_name => tbl.database_name,
             :table_name  => tbl.table_name,
             :create_syntax => nil,
-            :run_time => Runtime,
+            :run_time => runtime,
             :created_at => tbl.created_at,
             :updated_at => "0000-00-00 00:00:00"
           ).save
@@ -50,27 +49,28 @@ module TTT
           say "[deleted]: server:#{host} database:#{tbl.database_name} table:#{tbl.table_name}"
         end
       end
-    rescue Mysql::Error => mye
-      if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno 
-        say "[unreachable]: server:#{host}"
-        TTT::TableDefinition.record_timestamps = false
-        prev=TTT::TableDefinition.find_last_by_server(host)
-        if prev.nil? or !prev.unreachable?
-          TTT::TableDefinition.new(
-            :server => host,
-            :database_name => nil,
-            :table_name  => nil,
-            :create_syntax => nil,
-            :run_time => Runtime,
-            :created_at => "0000-00-00 00:00:00",
-            :updated_at => "0000-00-00 00:00:00"
-          ).save
+      rescue Mysql::Error => mye
+        if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno 
+          say "[unreachable]: server:#{host}"
+          TTT::TableDefinition.record_timestamps = false
+          prev=TTT::TableDefinition.find_last_by_server(host)
+          if prev.nil? or !prev.unreachable?
+            TTT::TableDefinition.new(
+              :server => host,
+              :database_name => nil,
+              :table_name  => nil,
+              :create_syntax => nil,
+              :run_time => runtime,
+              :created_at => "0000-00-00 00:00:00",
+              :updated_at => "0000-00-00 00:00:00"
+            ).save
+          end
+          TTT::TableDefinition.record_timestamps = true
+        else
+          raise mye
         end
-        TTT::TableDefinition.record_timestamps = true
-      else
-        raise mye
-      end
     end
+  end
   end
   Formatter.for :definition, :text do |stream,frm,data,options|
     col_width=frm.page_width/data.attribute_names.length

@@ -3,6 +3,15 @@ require 'rubygems/package_task'
 require 'active_record'
 require 'yaml'
 
+$: << "#{Dir.pwd}/lib"
+
+require 'ttt/db'
+
+ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
+
+TTT::Db.open(ttt_config)
+ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
+
 task :default => :gem
 
 spec = Gem::Specification.new do |s|
@@ -42,4 +51,11 @@ end
 
 Gem::PackageTask.new(spec) do |pkg|
   pkg.need_tar = true
+end
+
+namespace :db do
+  task :rollback do
+    step = ENV['STEP'] ? ENV['STEP'].to_i : 1
+    ActiveRecord::Migrator.rollback('lib/ttt/db/', step)
+  end
 end

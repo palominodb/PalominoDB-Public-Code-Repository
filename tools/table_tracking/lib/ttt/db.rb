@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'activerecord'
+require 'sqlite3' # For catching exceptions
 require 'ttt/table'
 require 'ttt/information_schema'
 require 'ttt/table_definition'
@@ -43,5 +44,6 @@ module TTT
         m.migrate
       end
     end
+
   end
 end

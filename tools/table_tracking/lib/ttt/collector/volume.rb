@@ -5,9 +5,7 @@ require 'ttt/table_volume'
 
 module TTT
   class VolumeCollector < Collector
-    collect_for :volume, "table, index, and free size tracking"
-    def self.collect(host,cfg)
-      TTT::InformationSchema.connect(host,cfg)
+    collect_for :volume, "table, index, and free size tracking" do |host,cfg,runtime|
       begin
         TTT::TABLE.all.each do |tbl|
           next if tbl.system_table?
@@ -21,7 +19,7 @@ module TTT
             :server => host,
             :database_name => tbl.TABLE_SCHEMA,
             :table_name => tbl.TABLE_NAME,
-            :run_time => Runtime,
+            :run_time => runtime,
             :data_length => tbl.DATA_LENGTH,
             :data_free => datafree,
             :index_length => tbl.INDEX_LENGTH
@@ -41,7 +39,7 @@ module TTT
               :data_length => nil,
               :data_free => nil,
               :index_length => nil,
-              :run_time => Runtime
+              :run_time => runtime
             ).save
             TTT::TableVolume.record_timestamps = true
             say "[deleted]: server:#{host} schema:#{tbl.database_name} table:#{tbl.database_name}"
@@ -61,7 +59,7 @@ module TTT
               :data_length => nil,
               :data_free => nil,
               :index_length => nil,
-              :run_time => Runtime
+              :run_time => runtime
             ).save
           end
           TTT::TableVolume.record_timestamps = true

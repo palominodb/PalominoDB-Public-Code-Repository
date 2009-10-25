@@ -15,6 +15,11 @@
 #    Make the tool VERY noisy.
 # --dsn file, -d file:
 #    Path to PalominoDB dsn.yml
+# --stat statistic:
+#    Collect a single <statistic>.
+#    See --list-stats for available statistics.
+# --list-stats, -l:
+#    List available statistics.
 #
 require 'rubygems'
 require 'yaml'
@@ -93,18 +98,26 @@ TTT::Db.migrate
 TTT::Collector.verbose = verbose
 TTT::Collector.load_all
 
-TTT::TableDefinition.transaction do
-  dsn.get_all_hosts.each do |host|
-    if !dsn.host_active? host
-      next
-    end
-    TTT::Collector.say "[host] #{host}"
-    if stat==:all
-      TTT::Collector.each do |coller|
-        coller.collect(host,cfg)
+Runtime=Time.now
+
+begin
+  TTT::CollectorRun.transaction do
+    dsn.get_all_hosts.each do |host|
+      if !dsn.host_active? host
+        next
       end
-    else
-      TTT::Collector[stat].collect(host,cfg)
+      TTT::Collector.say "[host] #{host}"
+      if stat==:all
+        TTT::Collector.each do |coller|
+          coller.collect(host,cfg,Runtime)
+        end
+      else
+        TTT::Collector[stat].collect(host,cfg,Runtime)
+      end
     end
   end
+rescue SQLite3::BusyException => e
+  puts "Two collectors cannot be running concurrently."
+rescue TTT::CollectorRunningError => e
+  puts e.message
 end

@@ -8,18 +8,76 @@ module TTT
   class TableVolume < ActiveRecord::Base
     include TrackingTable
     self.collector= :volume
+
     # Returns the most recent size (in bytes) for 'server'
     def self.aggregate_by_server(server)
-      self.sum('data_length+index_length', :group => :server, :conditions => ['server = ? AND data_length NOT NULL', server])[server].to_i
+      self.server_size(server)
+    end
+
+    # Returns the most recent size (in bytes) for 'server'
+    def self.server_size(server)
+      s=self.server_sizes(server)
+      if s.data_length.nil? or s.index_length.nil?
+        nil
+      else
+        s.size
+      end
+    end
+    def self.server_sizes(server, time=:latest)
+      r=nil
+      if time==:latest
+        r=find_most_recent_versions(:conditions => ["server = ?", server])
+      else
+        r=find_most_recent_versions({:conditions => ["server = ?", server]}, time)
+      end
+      d_length=0
+      i_length=0
+      r.each do |t|
+        next if t.unreachable?
+        d_length+=t.data_length
+        i_length+=t.index_length
+      end
+      v=self.new(:server => server, :data_length => d_length == 0 ? nil : d_length, :index_length => i_length == 0 ? nil : i_length, :run_time => r[-1].run_time)
+      v.readonly!
+      v
     end
     # Returns the most recent size (in bytes) for 'schema' on 'server'.
     def self.aggregate_by_schema(server,schema)
-      self.sum('data_length+index_length', :group => 'server,database_name', :conditions => ['server = ? AND database_name = ? ', server, schema])[schema].to_i
+      self.database_size
     end
-    # Returns the most recent size (in bytes) for 'table' in 'schema' on 'server'.
-    def self.aggregate_by_table(server,schema,table)
-      self.sum('data_length+index_length', :group => 'server,database_name,table_name', :conditions => ['server = ? AND database_name = ? AND table_name = ?', server, schema, table])[table].to_i
+    # Returns the most recent size (in bytes) for 'schema' on 'server'.
+    def self.database_size(server,database)
+      self.database_sizes(server,database).size
     end
+    # Returns the most recent size (in bytes) for 'schema' on 'server'.
+    def self.database_sizes(server,database,time=:latest)
+      r=nil
+      if time==:latest
+        r=find_most_recent_versions(:conditions => ["server = ? and database_name = ?", server, database])
+      else
+        r=find_most_recent_versions({:conditions => ["server = ? and database_name = ?", server, database]}, time)
+      end
+
+      d_length=0
+      i_length=0
+      r.each do |t|
+        next if t.unreachable?
+        d_length+=t.data_length
+        i_length+=t.index_length
+      end
+      v=self.new(:server => server, :database_name => database, :data_length => d_length == 0 ? nil : d_length, :index_length => i_length == 0 ? nil : i_length, :run_time => r[-1].run_time)
+      v.readonly!
+      v
+    end
+    ## Returns the most recent size (in bytes) for 'table' in 'schema' on 'server'.
+    #def self.aggregate_by_table(server,schema,table)
+    #  r=find_most_recent_versions(:conditions => ["server = ? and database_name = ? and table_name = ?", server, schema, table])
+    #  size=0
+    #  r.each do |t|
+    #    size+= t.size # N.B. Data free not included, may not return the number you expect.
+    #  end
+    #  size
+    #end
 
     def unreachable?
       database_name().nil? and table_name().nil? and data_length().nil? and index_length().nil? and data_free().nil?
@@ -38,6 +96,9 @@ module TTT
       end
     end
 
+    def size
+      data_length+index_length
+    end
 
   end
 end

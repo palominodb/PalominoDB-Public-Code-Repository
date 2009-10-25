@@ -3,6 +3,7 @@ require 'ttt/db'
 require 'pp'
 
 module TTT
+  class CollectorRunningError < Exception; end
   # Base class for all collectors.
   # A collector is actually a set of classes.
   # A class derived from ActiveRecord::Base (such as TableDefinition)
@@ -16,26 +17,47 @@ module TTT
     MYSQL_CONNECT_ERROR = 2003
     MYSQL_TOO_MANY_CONNECTIONS = 1040
     MYSQL_HOST_NOT_PRIVILEGED = 1130
-    Runtime = Time.now
+    #Runtime = Time.now
     @@collectors = {}
     @@verbose = true
     @@debug = false 
     @@loaded_collectors = false
 
-    class_inheritable_reader :stat, :desc
+    class_inheritable_reader :stat, :desc, :run
 
     # Called by subclasses of Collector to, well, register themsevles
     # as a valid collector.
-    def self.collect_for(name, desc="")
+    def self.collect_for(name, desc="" )
       yell "collecter for: #{name}(#{self.name})"
       @@collectors[name] = self
       write_inheritable_attribute :stat, name
       write_inheritable_attribute :desc, desc
+      write_inheritable_attribute :run, Proc.new
     end
 
     # Abstract method to be reimplemented by subclasses.
-    def self.collect(host,cfg)
-      raise NotImplementedError, "This is an abstract class."
+    def self.collect(host,cfg,runtime=Time.now)
+      #raise NotImplementedError, "This is an abstract class."
+      CollectorRun.transaction do
+        r=CollectorRun.find_or_create_by_collector(stat.to_s)
+        if(cfg["ttt_connection"]["adapter"] == "mysql")
+          if(CollectorRun.connection.select_value("SELECT IS_FREE_LOCK('ttt.collector.#{stat.to_s}')").to_i == 1)
+            CollectorRun.connection.execute("SELECT GET_LOCK('ttt.collector.#{stat.to_s}',0.25)")
+          else
+            raise CollectorRunningError, "Only one collector per statistic may run at a time."
+          end
+        end
+        r.lock!
+        TTT::InformationSchema.connect(host, cfg)
+        self.run[host,cfg,runtime]
+        r.last_run=Runtime
+        r.save
+        CollectorRun.connection.execute("SELECT RELEASE_LOCK('ttt.collector.#{stat.to_s}')")
+      end
+    end
+
+    def self.get_last_run(stat=self.stat)
+      CollectorRun.find_by_collector(stat.to_s).reload.last_run
     end
 
     def self.each
@@ -87,5 +109,8 @@ module TTT
         @@loaded_collectors=true
       end
     end
+  end
+
+  class CollectorRun < ActiveRecord::Base
   end
 end
