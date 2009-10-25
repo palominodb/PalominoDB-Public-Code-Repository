@@ -1,0 +1,21 @@
+<h1>Database <span class='italic'><%= @database.server %>.<%= @database.name %></span></h1>
+  <h3> Current size: <%= number_to_human_size @database.get_size %></h3>
+
+<div style="float:right; margin: 1em">
+  <%= image_tag("graphs/database_#{@database.server}_#{@database.name}_#{@since_string}.png") %>
+</div>
+
+<h3>Tables:</h3>
+<table>
+  <tr><td>Name</td><td>Size</td></tr>
+  <% @database.tables.each do |tbl| %>
+    <tr>
+      <td>
+        <%= link_to tbl.name, server_database_table_path(@database.server,@database.name,tbl.name) %>
+      </td>
+      <td>
+        <%= number_to_human_size tbl.get_size %>
+      </td>
+  </tr>
+  <% end %>
+</table>

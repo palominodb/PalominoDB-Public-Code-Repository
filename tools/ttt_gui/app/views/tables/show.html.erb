@@ -1,0 +1,7 @@
+
+<h1>Table <span class='italic'><%= [@table.server, @table.database, @table.name].join('.') %></span></h1>
+<h3>Current size: <%=  number_to_human_size @table.get_size %></h3>
+<div style="float:right; margin: 1em"><%= image_tag("graphs/table_#{@table.server}_#{@table.database}_#{@table.name}_#{@since_string}.png" ) %></div>
+<pre>
+  <%= @table.get_create %>
+</pre>

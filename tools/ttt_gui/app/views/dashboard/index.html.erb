@@ -1,0 +1,14 @@
+<div>
+<div id="dashboards">
+  <% if @stats.class == Array %>
+    <% @stats.each do |tbl| %>
+      <div style="background-color: inherit; float: left; margin-right: 1em; margin-left: 1em">
+        <%= render :partial => "dashboard/#{tbl}_summary" %>
+      </div>
+    <% end %>
+  <% else %>
+    <div style="background-color: inherit; float: left; margin-right: 1em; margin-left: 1em">
+      <%= render :partial => "dashboard/#{tbl}_full" %>
+    </div>
+  <% end %>
+</div>

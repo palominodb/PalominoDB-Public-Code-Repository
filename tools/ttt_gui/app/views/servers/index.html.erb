@@ -1,0 +1,12 @@
+<h1>Servers</h1>
+<table>
+  <tr>
+    <td>Server</td><td>Size</td>
+  </tr>
+<% @servers.each do |srv| %>
+  <tr>
+    <td><%= link_to srv, server_path(srv) %></td> <td><%= number_to_human_size @server_sizes[srv] %></td> 
+    <%#= render :partial => 'shared/server_graph', :locals => { :server => srv } %>
+  </tr>
+<% end %>
+<table>

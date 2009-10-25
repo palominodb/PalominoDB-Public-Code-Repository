@@ -1,0 +1,1 @@
+require 'ttt/db'

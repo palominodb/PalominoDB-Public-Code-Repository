@@ -1,0 +1,11 @@
+
+<h1><%= @server.name %></h1>
+<h3>Current size: <%=  number_to_human_size @server.get_size %></h3>
+<div style="float:right; margin: 1em"><%= image_tag("graphs/server_#{@server.name}_#{@since_string}.png" ) %></div>
+<h3>Databases:</h3>
+<ul>
+  <% @server.databases().each do |db| %>
+    <li><%= link_to db.name, server_database_path(@server.name,db.name) %>:  <%= number_to_human_size db.get_size %></li>
+  <% end %>
+</ul>
+

@@ -1,0 +1,8 @@
+<div id="#menu" style="clear: both; height: 3em">
+  <%= link_to_unless_current "Dashboard", :controller => "dashboard", :action => "index" %>,
+  <%= link_to_unless_current "Servers", servers_path %>,
+  <%= link_to_unless_current "Databases", "/databases" %>,
+  <%= link_to_unless_current "History", "/history" %>
+<span style="float:right">Displaying changes since: <span class="bold"><%= time_ago_in_words since_t %> ago</span> <% form_tag({}, {:method => "get"}) do %><%= label_tag 'since', "  Change: " %><%= text_field_tag 'since', since_str, :size => 8 %><% end %></span>
+</div>
+<br/>
