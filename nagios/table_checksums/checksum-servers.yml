@@ -5,7 +5,7 @@ user: root
 # sets the password for mk-table-checksum
 pass: pass
 # path to mk-table-checksum, should rarely need to be modified.
-mktablechecksum: /usr/bin/mk-table-checksum
+mktablechecksum: ./mk-table-checksum
 
 # All the nagios config.
 # The leading spaces are important.
@@ -27,10 +27,106 @@ nagios:
 # That's: database_name.table_name.
 # Must be in that format.
 tables:
-  - test.bazbarfoo
-  - test.bznip
+- csum.ar_10409
+- csum.ar_14952
+- csum.ar_2231
+- csum.ar_22704
+- csum.ar_24521
+- csum.ar_28156
+- csum.ar_29973
+- csum.ar_4957
+- csum.br_12651
+- csum.br_14469
+- csum.br_17195
+- csum.br_19920
+- csum.br_2173
+- csum.br_23555
+- csum.br_32216
+- csum.br_5808
+- csum.cr_12168
+- csum.cr_14894
+- csum.cr_16711
+- csum.cr_1690
+- csum.cr_19437
+- csum.cr_22163
+- csum.cr_29915
+- csum.cr_4416
+- csum.dr_12318
+- csum.dr_15953
+- csum.dr_16862
+- csum.dr_1840
+- csum.dr_19587
+- csum.dr_20496
+- csum.dr_30974
+- csum.dr_5475
+- csum.er_10018
+- csum.er_1357
+- csum.er_13652
+- csum.er_16378
+- csum.er_2266
+- csum.er_27765
+- csum.er_28673
+- csum.er_31399
+- csum.fr_11352
+- csum.fr_12261
+- csum.fr_21830
+- csum.fr_22739
+- csum.fr_25464
+- csum.fr_26373
+- csum.fr_30007
+- csum.fr_7717
+- csum.gr_16827
+- csum.gr_1806
+- csum.gr_19553
+- csum.gr_21370
+- csum.gr_25005
+- csum.gr_6349
+- csum.gr_7258
+- csum.gr_9984
+- csum.hr_1299
+- csum.hr_15412
+- csum.hr_21772
+- csum.hr_30433
+- csum.hr_3116
+- csum.hr_391
+- csum.hr_4025
+- csum.hr_6751
+- csum.ir_17712
+- csum.ir_21347
+- csum.ir_22255
+- csum.ir_24981
+- csum.ir_25890
+- csum.ir_2691
+- csum.ir_3600
+- csum.ir_7234
+- csum.toprune_11664
+- csum.toprune_12940
+- csum.toprune_17368
+- csum.toprune_18760
+- csum.toprune_19358
+- csum.toprune_20750
+- csum.toprune_21061
+- csum.toprune_21601
+- csum.toprune_25546
+- csum.toprune_26938
+- csum.toprune_27421
+- csum.toprune_27904
+- csum.toprune_28928
+- csum.toprune_29353
+- csum.toprune_3797
+- csum.toprune_4279
+- csum.zing_1381
+- csum.zing_14585
+- csum.zing_16402
+- csum.zing_20036
+- csum.zing_22762
+- csum.zing_24579
+- csum.zing_26397
+- csum.zing_27788
+
 
 # Servers to check. Can be hosts or IPs.
 servers:
   - testdb1
   - testdb2
+  - freebsd

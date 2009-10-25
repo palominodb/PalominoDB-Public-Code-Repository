@@ -40,11 +40,11 @@ my $pass = $yml->{'pass'};
 if($debug or $noop) {
   use Data::Dumper;
   print Dumper($yml);
-  print("$mk_table_checksum --checksum --user $user --pass $pass --tables $tables $servers\n"); 
+  print("$mk_table_checksum --checksum --user $user --pass '$pass' --tables $tables $servers\n"); 
 }
 
 unless($noop) {
-  my @r = qx($mk_table_checksum --user $user --pass $pass --tables $tables $servers);
+  my @r = qx($mk_table_checksum --user $user --pass '$pass' --tables $tables $servers);
 
   if($debug) {
     print join("", @r);
@@ -57,21 +57,40 @@ unless($noop) {
 
   # Loop over tables, and check for the bad.
   my %tbls;
+  my $all_ok=1;
   foreach my $l (@r) {
     next if($l =~ /^DATABASE\s+TABLE/);
     my ($db, $table, $chunk, $host, $engine, $count, $csum, $time, $wait, $stat, $lag) = split /\s+/, $l;
     my $db_table = "$db.$table";
     if(not exists $tbls{$db_table}) {
-      $tbls{$db_table} = $csum;
+      $tbls{$db_table} = {"csum" => $csum } ;
+      $tbls{$db_table}{"ok"} = ();
+      push @{$tbls{$db_table}{"ok"}}, $host;
     }
-    elsif($tbls{$db_table} != $csum) {
-      $result_str .= "$db_table BAD on $host; $result_str";
-      $result = CRITICAL;
+    elsif($tbls{$db_table}{"csum"} != $csum) {
+      push @{$tbls{$db_table}{"bad"}}, $host;
+      #$result_str .= "$db_table BAD on $host; $result_str";
+      #$result = CRITICAL;
     }
     else {
-      $result_str .= "; $db_table OK";
+      push @{$tbls{$db_table}{"ok"}}, $host;
+        #$result_str .= "; $db_table OK";
     }
   }
+
+  print Dumper(\%tbls);
+
+  foreach my $t (sort keys %tbls) {
+    if(exists $tbls{$t}{"bad"}) {
+      $all_ok=0;
+      $result_str = "; $t BAD on ". join(",", @{$tbls{$t}{"bad"}}) ."$result_str";
+      $result=CRITICAL;
+    }
+    else {
+      $result_str .= "; $t OK";
+    }
+  }
+
   $result_str =~ s/^; //;
 
   if($result == OK) {
