@@ -1,11 +1,20 @@
 
 <h1><%= @server.name %></h1>
+<%= link_to "Top Tables", server_top_tables_path(@server.name) %>
 <h3>Current size: <%=  number_to_human_size @server.get_size %></h3>
-<div style="float:right; margin: 1em"><%= image_tag("graphs/server_#{@server.name}_#{@since_string}.png" ) %></div>
+<div style="float:right; margin: 1em"><%= render :partial => 'graphs/server_full', :locals => { :server => @server } %></div>
 <h3>Databases:</h3>
-<ul>
+<table>
+  <tr><td>Name</td><td>Size</td></tr>
   <% @server.databases().each do |db| %>
-    <li><%= link_to db.name, server_database_path(@server.name,db.name) %>:  <%= number_to_human_size db.get_size %></li>
+    <% if db.name.nil? %>
+      <tr><td colspan="2">Unreachable</td></tr>
+    <% else %>
+      <tr>
+        <td><%= link_to(db.name, server_database_path(@server.name,db.name)) %></td>
+        <td><%= number_to_human_size db.get_size %></td>
+      </tr>
+    <% end %>
   <% end %>
-</ul>
+</table>
 

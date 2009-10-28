@@ -4,7 +4,13 @@ require 'ttt/table'
 
 class TablesController < ApplicationController
   def show
-    @table=Table.find(params[:server_id], params[:database_id], params[:id])
-    #update_graph
+    if params[:at]
+      @table=Table.find_at(params[:server_id], params[:database_id], params[:id], params[:at])
+    else
+      @table=Table.find(params[:server_id], params[:database_id], params[:id])
+    end
+    r=Rrdtool.new('/opt/local/bin/rrdtool')
+    r.table_graph(@table, @since_string, :full)
   end
+
 end

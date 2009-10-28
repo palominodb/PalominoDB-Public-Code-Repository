@@ -10,5 +10,5 @@
 # end
 
 ActiveSupport::Inflector.inflections do |inflect|
-  inflect.uncountable %w( dashboard history )
+  inflect.uncountable %w( dashboard history search )
 end

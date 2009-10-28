@@ -1,12 +1,12 @@
 <h1>Servers</h1>
+<%= link_to "Top Tables", top_tables_path %><%= link_to "Top Databases", top_databases_path %>
 <table>
   <tr>
     <td>Server</td><td>Size</td>
   </tr>
 <% @servers.each do |srv| %>
   <tr>
-    <td><%= link_to srv, server_path(srv) %></td> <td><%= number_to_human_size @server_sizes[srv] %></td> 
-    <%#= render :partial => 'shared/server_graph', :locals => { :server => srv } %>
+    <td><%= link_to srv, server_path(srv) %></td> <td><%= number_to_human_size(@server_sizes[srv]) || "No cached size" %></td> 
   </tr>
 <% end %>
 <table>

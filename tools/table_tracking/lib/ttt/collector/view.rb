@@ -2,13 +2,17 @@ require 'rubygems'
 require 'ttt/db'
 require 'ttt/formatters'
 require 'ttt/table_view'
+require 'set'
 
 module TTT
   class ViewCollector < Collector
-    collect_for :view, "view syntax tracking" do |host,cfg,runtime|
+    collect_for :view, "view syntax tracking" do |cr,host,cfg,runtime|
+      ids=(TTT::TableView.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
       begin
+        srv=TTT::Server.find_or_create_by_name(host)
         TTT::TABLE.all.each do |tbl|
           next if tbl.TABLE_TYPE != "VIEW"
+          srv.schemas.find_or_create_by_name(tbl.TABLE_SCHEMA).tables.find_or_create_by_name(tbl.TABLE_NAME)
           TTT::TableView.record_timestamps = false
           newtbl = TTT::TableView.new(
             :server => host,
@@ -22,51 +26,70 @@ module TTT
           oldtbl = TTT::TableView.find_last_by_server_and_database_name_and_table_name(host, tbl.TABLE_SCHEMA, tbl.TABLE_NAME)
           if oldtbl.nil? or oldtbl.create_syntax.nil? then
             newtbl.save
+            ids<<newtbl.id
+            say "[new-id]: #{newtbl.id}"
             say "[new]: server:#{host} database:#{newtbl.database_name} view:#{newtbl.table_name}"
           elsif newtbl.create_syntax != oldtbl.create_syntax then
             newtbl.save
+            ids<<[newtbl.id,oldtbl.id]
+            ids.delete oldtbl.id
+            say "[changed-id]: #{newtbl.id}"
             say "[changed]: server:#{host} database:#{newtbl.database_name} view:#{newtbl.table_name}"
           end
           TTT::TableView.record_timestamps = true
         end
-      #end # TTT::TABLE.all
+        #end # TTT::TABLE.all
 
-      # Dropped table detection
-      TTT::TableView.find_most_recent_versions(:conditions => ['server = ?', host]).each do |tbl|
-        g=TTT::TABLE.find_by_TABLE_SCHEMA_and_TABLE_NAME(tbl.database_name, tbl.table_name)
-        if g.nil? and !tbl.deleted? then
+        # Dropped table detection
+        TTT::TableView.find_most_recent_versions({:conditions => ['server = ?', host]}).each do |tbl|
+          g=TTT::TABLE.find_by_TABLE_SCHEMA_and_TABLE_NAME(tbl.database_name, tbl.table_name)
+          if g.nil? and !tbl.deleted? then
+            TTT::TableView.record_timestamps = false
+            t=TTT::TableView.new(
+              :server => host,
+              :database_name => tbl.database_name,
+              :table_name  => tbl.table_name,
+              :create_syntax => nil,
+              :run_time => runtime
+            )
+            t.save
+            ids<<[t.id, tbl.id]
+            ids.delete tbl.id
+            say "[deleted-id]: #{t.id}"
+            TTT::TableView.record_timestamps = true
+            say "[deleted]: server:#{host} database:#{tbl.database_name} table:#{tbl.table_name}"
+          else
+
+          end
+        end
+      rescue Mysql::Error => mye
+        if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno 
+          say "[unreachable]: server:#{host}"
           TTT::TableView.record_timestamps = false
-          TTT::TableView.new(
-            :server => host,
-            :database_name => tbl.database_name,
-            :table_name  => tbl.table_name,
-            :create_syntax => nil,
-            :run_time => runtime
-          ).save
+          prev=TTT::TableView.find_last_by_server(host)
+          if prev.nil? or !prev.unreachable?
+            t=TTT::TableView.new(
+              :server => host,
+              :database_name => nil,
+              :table_name  => nil,
+              :create_syntax => nil,
+              :run_time => runtime
+            )
+            t.save
+            ids<<t.id
+            say "[unreachable-id]: #{t.id}"
+          end
           TTT::TableView.record_timestamps = true
-          say "[deleted]: server:#{host} database:#{tbl.database_name} table:#{tbl.table_name}"
+        else
+          raise mye
         end
       end
-    rescue Mysql::Error => mye
-      if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno 
-        say "[unreachable]: server:#{host}"
-        TTT::TableView.record_timestamps = false
-        prev=TTT::TableView.find_last_by_server(host)
-        if prev.nil? or !prev.unreachable?
-          TTT::TableView.new(
-            :server => host,
-            :database_name => nil,
-            :table_name  => nil,
-            :create_syntax => nil,
-            :run_time => runtime
-          ).save
-        end
-        TTT::TableView.record_timestamps = true
+      if ids != (TTT::TableView.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
+        ids.to_a
       else
-        raise mye
+        []
       end
     end
-  end
   end
   Formatter.for :view, :text do |stream,frm,data,options|
     col_width=frm.page_width/data.attribute_names.length

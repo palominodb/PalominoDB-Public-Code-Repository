@@ -5,10 +5,15 @@ require 'ttt/table'
 class DatabasesController < ApplicationController
   def index
     @databases=Database.all
+    
   end
   def show
     @database=Database.find(params[:server_id], params[:id])
+    if @database.nil?
+      render :file => 'shared/404', :status => 404
+    else
     update_graph(params[:server_id], @database.name, "Database Aggregate - #{@database.server}.#{@database.name}")
+    end
   end
   private
   def update_graph(server_name, database_name, title, type=:full)

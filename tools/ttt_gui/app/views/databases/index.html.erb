@@ -1,0 +1,12 @@
+<h1>Databases</h1>
+<table>
+  <tr><td>Server</td><td>Name</td><td>Size</td></tr>
+  <% @databases.each do |db| %>
+    <tr>
+      <td><%= link_to db.server, server_path(db.server) %></td>
+      <td><%= db.name.nil? ? "unreachable" : link_to(db.name, server_database_path(db.server, db.name))  %></td>
+      <td><%= number_to_human_size db.get_size %></td>
+    </tr>
+  <% end %>
+</table>
+

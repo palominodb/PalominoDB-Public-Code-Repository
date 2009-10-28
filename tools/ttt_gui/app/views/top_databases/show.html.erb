@@ -1,0 +1,30 @@
+<h1>Top Databases</h1>
+<% form_tag('',:method => 'get') do %>
+  <%= label_tag(:limit, "N: ") %>
+  <%= text_field_tag(:limit, params[:limit], :size => 5) %>
+  <%= label_tag(:limit, "Pct: ") %>
+  <%= text_field_tag(:percent, params[:percent], :size => 5)%>
+  <%= label_tag(:limit, "Days: ") %>
+  <%= text_field_tag(:days, params[:days], :size => 5)%>
+  <%= submit_tag('Update') %>
+<% end %>
+
+<% if params[:percent].nil? %>
+  <span class='bold'>Must enter percentage and stuff</span>
+<% else %>
+  <table>
+    <tr>
+      <td>Server</td>
+      <td>Database</td>
+      <td>Percent Growth</td>
+    </tr>
+    <% @databases.each do |t| %>
+      <tr>
+        <td><%= t[0][0] %></td>
+        <td><%= link_to t[0][1], server_database_path(t[0][0], t[0][1]) %></td>
+        <td><%= number_to_percentage t[1]%></td>
+      </tr>
+    <% end %>
+  </table>
+<% end %>
+

@@ -40,25 +40,25 @@ module TTT
           update_rrd(rrd_path, run, [s.data_length, s.index_length, 'U'])
         end
         TTT::TableVolume.schemas(srv).each do |sch|
-          next if sch.unreachable?
-          rrd_path="#{path}/#{srv}/database_#{sch.database_name}.rrd"
+          #next if sch.unreachable?
+          rrd_path="#{path}/#{srv}/database_#{sch.name}.rrd"
           last=lastupd_rrd(rrd_path)
-          rt=TTT::TableVolume.first(:conditions => ['server = ? and database_name = ?', srv, sch.database_name], :order => :id)
+          rt=TTT::TableVolume.first(:conditions => ['server = ? and database_name = ?', srv, sch.name], :order => :id)
           unless rt.nil?
             create_rrd(rrd_path, updint, rt.run_time)
           end
           TTT::TableVolume.runs(last).each do |run|
-            d=TTT::TableVolume.database_sizes(srv, sch.database_name, run)
+            d=TTT::TableVolume.database_sizes(srv, sch.name, run)
             next if d.deleted?
             update_rrd(rrd_path, run, [d.data_length, d.index_length, 'U'])
           end
         end
         TTT::TableVolume.tables(srv).each do |tbl|
-          next if tbl.unreachable?
-          rrd_path="#{path}/#{srv}/#{tbl.database_name}/#{tbl.table_name}.rrd"
+          #next if tbl.unreachable?
+          rrd_path="#{path}/#{srv}/#{tbl.schema.name}/#{tbl.name}.rrd"
           last=lastupd_rrd(rrd_path)
           create_rrd(rrd_path, updint, TTT::TableVolume.first(:conditions => ['server = ?', srv], :order => :id).run_time)
-          TTT::TableVolume.find(:all, :conditions => ['server = ? and database_name = ? and table_name = ? and run_time > ?', srv, tbl.database_name, tbl.table_name, last]).each do |r|
+          TTT::TableVolume.find(:all, :conditions => ['server = ? and database_name = ? and table_name = ? and run_time > ?', srv, tbl.schema.name, tbl.name, last]).each do |r|
             update_rrd(rrd_path, r.run_time, [r.data_length, r.index_length, r.data_free])
           end
         end

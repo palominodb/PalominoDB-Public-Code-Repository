@@ -11,12 +11,13 @@ ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/
 
 TTT::Db.open(ttt_config)
 ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
+ActiveRecord::Base.colorize_logging = false
 
 task :default => :gem
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "1.0.0"
+  s.version = "1.3.0"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"
@@ -57,5 +58,8 @@ namespace :db do
   task :rollback do
     step = ENV['STEP'] ? ENV['STEP'].to_i : 1
     ActiveRecord::Migrator.rollback('lib/ttt/db/', step)
+  end
+  task :migrate do
+    TTT::Db.migrate
   end
 end

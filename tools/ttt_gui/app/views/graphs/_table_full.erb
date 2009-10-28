@@ -1,0 +1,5 @@
+<% if table.name.nil? %>
+  Unreachable
+<% else %>
+  <%= image_tag("graphs/table_#{table.server}_#{table.database}_#{table.name}.#{@since_string}.full.png") %>
+<% end %>

@@ -14,7 +14,7 @@ module TTT
     end
     def tchanged?
       last=previous_version()
-      last.nil? or last.deleted? or last.create_syntax() != create_synax()
+      (last.nil? and TTT::Snapshot.stat_is_new? self) or !last.nil? and (last.deleted? or last.create_syntax() != create_syntax())
     end
   end
 end

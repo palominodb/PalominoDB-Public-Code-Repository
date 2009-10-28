@@ -101,18 +101,33 @@ TTT::Collector.load_all
 Runtime=Time.now
 
 begin
-  TTT::CollectorRun.transaction do
-    dsn.get_all_hosts.each do |host|
-      if !dsn.host_active? host
-        next
-      end
-      TTT::Collector.say "[host] #{host}"
-      if stat==:all
-        TTT::Collector.each do |coller|
-          coller.collect(host,cfg,Runtime)
+  TTT::Snapshot.transaction do
+    runs=[]
+    hosts=dsn.get_all_hosts.reject { |h| !dsn.host_active? h }
+    if stat==:all
+      TTT::Collector.each { |c| runs<<c.collect_hosts(hosts, cfg, Runtime);  }
+    else
+      runs<< TTT::Collector[stat].collect_hosts(hosts, cfg, Runtime)
+    end
+    runs.flatten!
+    txn=TTT::Snapshot.head || -1
+    txn+=1
+    runs.each do |r|
+      r.run_ids.each do |i|
+        TTT::Snapshot.create do |snap|
+          snap.collector_run_id = r.id
+          snap.txn = txn
+          snap.run_time = r.last_run
+          if i.class == Array
+            snap.statistic_id = i[0]
+            p_txn=TTT::Snapshot.find_last_by_collector_run_id_and_statistic_id(r.id,i[1])
+            unless p_txn.nil?
+              snap.parent_txn = p_txn.id
+            end
+          else
+            snap.statistic_id = i
+          end
         end
-      else
-        TTT::Collector[stat].collect(host,cfg,Runtime)
       end
     end
   end

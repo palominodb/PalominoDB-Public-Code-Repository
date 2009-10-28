@@ -6,8 +6,8 @@ class CreateTttBaseTables < ActiveRecord::Migration
     say "Creating table schema table.."
     create_table :table_definitions do |t|
       t.string :server, :limit => 100
-      t.string :database_name, :limit => 50
-      t.string :table_name, :limit => 50
+      t.string :database_name, :limit => 64
+      t.string :table_name, :limit => 64
       t.text :create_syntax
       t.timestamp :run_time
       t.timestamps
@@ -16,8 +16,8 @@ class CreateTttBaseTables < ActiveRecord::Migration
     say "Creating table volume table.."
     create_table :table_volumes do |t|
       t.string :server, :limit => 100
-      t.string :database_name, :limit => 50
-      t.string :table_name, :limit => 50
+      t.string :database_name, :limit => 64
+      t.string :table_name, :limit => 64
       t.integer :data_length, :limit => 8
       t.integer :index_length, :limit => 8
       t.integer :data_free, :limit => 8

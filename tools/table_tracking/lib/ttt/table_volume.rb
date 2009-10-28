@@ -9,6 +9,8 @@ module TTT
     include TrackingTable
     self.collector= :volume
 
+    after_create :update_cached_table_size
+
     # Returns the most recent size (in bytes) for 'server'
     def self.aggregate_by_server(server)
       self.server_size(server)
@@ -37,7 +39,7 @@ module TTT
         d_length+=t.data_length
         i_length+=t.index_length
       end
-      v=self.new(:server => server, :data_length => d_length == 0 ? nil : d_length, :index_length => i_length == 0 ? nil : i_length, :run_time => r[-1].run_time)
+      v=self.new(:server => server, :data_length => d_length == 0 ? nil : d_length, :index_length => i_length == 0 ? nil : i_length, :run_time => r[-1].nil? ? nil : r[-1].run_time)
       v.readonly!
       v
     end
@@ -97,7 +99,22 @@ module TTT
     end
 
     def size
-      data_length+index_length
+      unless data_length.nil? or index_length.nil?
+        data_length+index_length
+      else
+        nil
+      end
+    end
+
+    private
+    def update_cached_table_size
+      s=TTT::Server.find_by_name(server)
+      sch=s.schemas.find_by_name(database_name)
+      unless sch.nil?
+        t=sch.tables.find_by_name(table_name)
+        t.cached_size=size
+        t.save
+      end
     end
 
   end

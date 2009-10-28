@@ -9,7 +9,6 @@ module ApplicationHelper
   def str_to_time(str)
     time=nil
     if !str.nil? and str =~ /(\d+(?:\.?\d+)?)([hdwm])?/
-      logger.debug "str_to_time: got valid time sting"
       time = case $2
              when 'h'
                $1.to_f.hours.ago
@@ -23,7 +22,6 @@ module ApplicationHelper
                $1.to_f.seconds.ago
              end
     end
-    logger.debug"str_to_time: #{time}"
     time
   end
 

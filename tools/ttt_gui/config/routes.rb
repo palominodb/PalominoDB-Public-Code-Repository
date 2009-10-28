@@ -1,12 +1,22 @@
+SrvID=/[0-9a-zA-Z\._\-]+/
+DbID=/[a-zA-Z\$][0-9A-Za-z\$_]+/
+TblID=DbID
 ActionController::Routing::Routes.draw do |map|
   map.resources :dashboard
-  map.resources :servers do |servers|
-    servers.resources :databases do |tables|
-      tables.resources :tables
+  map.resources( :servers, :requirements => { :id => SrvID }) do |servers|
+    servers.resource(:top_tables, :requirements => {:server_id => SrvID })
+    servers.resources(:databases,:requirements => { :server_id =>SrvID, :id =>DbID }) do |tables|
+      tables.resources :tables, :requirements => { :server_id =>SrvID, :id => TblID }
+      tables.resources :history, :requirements => { :server_id =>SrvID, :database_id => DbID, :id => TblID }
+      tables.resource :top_tables, :requirements => { :server_id =>SrvID, :database_id => DbID, :id => TblID }
     end
   end
-
+  map.resource :top_tables
+  map.resource :top_databases
   map.resources :history
+
+  map.resources :graphs
+  map.resource :search
 
   # The priority is based upon order of creation: first created -> highest priority.
 

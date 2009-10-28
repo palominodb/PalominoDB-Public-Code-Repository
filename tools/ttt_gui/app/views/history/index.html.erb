@@ -1,1 +1,66 @@
 <h1>History</h1>
+<%#= link_to_unless_current "Definition", history_path('definition') %>
+<%#= link_to_unless_current "View", history_path('view') %>
+
+<div style="float:left">
+<h3>Table Defintions</h3>
+<table>
+  <tr>
+    <td><span class="bold">Status</span></td>
+    <td><span class="bold">Server</span></td>
+    <td><span class="bold">Database</span></td>
+    <td><span class="bold">Table</span></td>
+  </tr>
+  <% tdef_time=nil %>
+  <% TTT::TableDefinition.find_time_history(since_t).each do |defn| %>
+    <% if tdef_time!=defn.run_time %>
+      <tr>
+        <td colspan="4" style="background-color: #ffffff"><span class="bold" ><%= defn.run_time %></span></td>
+      </tr>
+      <% tdef_time=defn.run_time %>
+    <% end %>
+  <tr>
+    <td><%= defn.status %></td>
+    <td><%= link_to defn.server, server_path(defn.server) %></td>
+    <td><%= link_to defn.database_name, server_database_path(defn.server, defn.database_name) unless defn.database_name.nil? %></td>
+    <%if defn.deleted? %>
+      <td><%= defn.table_name %></td>
+    <% else %>
+      <td><%= link_to defn.table_name, server_database_table_path(defn.server, defn.database_name, defn.table_name, :at => defn.run_time.to_i) unless defn.database_name.nil? %></td>
+    <% end %>
+  </tr>
+<% end %>
+</table>
+</div>
+<div style="float:right">
+<h3>Table Views</h3>
+<table>
+  <tr>
+    <td><span class="bold">Status</span></td>
+    <td><span class="bold">Server</span></td>
+    <td><span class="bold">Database</span></td>
+    <td><span class="bold">Table</span></td>
+  </tr>
+  <% run_t=nil %>
+  <% TTT::TableView.find_time_history(since_t).each do |defn| %>
+    <% if run_t != defn.run_time %>
+      <% run_t = defn.run_time %>
+      <tr>
+        <td colspan="4" style="background-color: #ffffff"><span class='bold'><%= run_t %></span></td>
+      </tr>
+    <% end %>
+    <% unless defn.status == :unchanged %>
+      <tr>
+        <td><%= defn.status %></td>
+        <td><%= link_to defn.server, server_path(defn.server) %></td>
+        <td><%= link_to defn.database_name, server_database_path(defn.server, defn.database_name) unless defn.database_name.nil? %></td>
+        <%if defn.deleted? %>
+          <td><%= defn.table_name %></td>
+        <% else %>
+          <td><%= link_to defn.table_name, server_database_table_path(defn.server, defn.database_name, defn.table_name, :at => defn.run_time.to_i) unless defn.database_name.nil? %></td>
+        <% end %>
+      </tr>
+    <% end %>
+<% end %>
+</table>
+</div>

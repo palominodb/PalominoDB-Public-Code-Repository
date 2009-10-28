@@ -2,7 +2,9 @@
   <tr><td colspan="2" style="font-weight: bold"><%= link_to "Volume", dashboard_path(:volume) %></td></tr>
   <tr><td colspan="2" style="font-weight: bold"><%= TTT::Collector.get_last_run(:volume) %></td></tr>
   <% Server.each do |v| %>
-    <tr><td><%= v.name %></td>
-      <td><%= number_to_human_size v.get_size %></td></tr>
+    <tr>
+      <td><%= v.name %></td>
+      <td><%= number_to_human_size v.get_size || "No cached size" %></td>
+    </tr>
   <% end %>
 </table>

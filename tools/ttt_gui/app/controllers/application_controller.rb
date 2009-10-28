@@ -29,6 +29,10 @@ class ApplicationController < ActionController::Base
     time
   end
 
+  def since_t
+    str_to_time @since_string
+  end
+
   def last_collector_run(s)
     TTT::Collector.get_last_run(s)
   end
@@ -41,9 +45,9 @@ class ApplicationController < ActionController::Base
       @since_string=params[:since]
     elsif session[:since_string]
       @since_string=session[:since_string]
-    elsif params[:since] == "last"
-      session[:since_string] = nil
-      @since_string=nil
+    else
+      session[:since_string] = "24h"
+      @since_string="24h"
     end
   end
 end

@@ -1,5 +1,7 @@
 require 'rubygems'
 require 'ttt/db'
+require 'ttt/information_schema'
+require 'ttt/history'
 require 'pp'
 
 module TTT
@@ -35,7 +37,14 @@ module TTT
       write_inheritable_attribute :run, Proc.new
     end
 
-    # Abstract method to be reimplemented by subclasses.
+    def self.collect_hosts(hosts, cfg, runtime=Time.now)
+      runs=[]
+      hosts.each do |h|
+        runs<<self.collect(h,cfg,runtime)
+      end
+      runs
+    end
+
     def self.collect(host,cfg,runtime=Time.now)
       #raise NotImplementedError, "This is an abstract class."
       CollectorRun.transaction do
@@ -49,10 +58,13 @@ module TTT
         end
         r.lock!
         TTT::InformationSchema.connect(host, cfg)
-        self.run[host,cfg,runtime]
-        r.last_run=Runtime
+        r.run_ids=self.run[r,host,cfg,runtime]
+        r.last_run=runtime
         r.save
-        CollectorRun.connection.execute("SELECT RELEASE_LOCK('ttt.collector.#{stat.to_s}')")
+        if cfg['ttt_connection']['adapter'] == "mysql" then
+          CollectorRun.connection.execute("SELECT RELEASE_LOCK('ttt.collector.#{stat.to_s}')")
+        end
+        r
       end
     end
 
@@ -112,5 +124,12 @@ module TTT
   end
 
   class CollectorRun < ActiveRecord::Base
+    has_many :snapshots, :class_name => 'TTT::Snapshot'
+    def run_ids=(ids)
+      @run_ids=ids
+    end
+    def run_ids
+      @run_ids
+    end
   end
 end

@@ -1,0 +1,49 @@
+<h1>Top Tables <%= params[:server_id].nil? ? "" : "for " %><span class="italic"><%= params[:server_id] %>.<%= params[:database_id] %></span></h1>
+<% form_tag('',:method => 'get') do %>
+  <%= label_tag(:limit, "N: ") %>
+  <%= text_field_tag(:limit, params[:limit], :size => 5) %>
+  <%= label_tag(:limit, "Pct: ") %>
+  <%= text_field_tag(:percent, params[:percent], :size => 5)%>
+  <%= label_tag(:limit, "Days: ") %>
+  <%= text_field_tag(:days, params[:days], :size => 5)%>
+  <%= submit_tag('Update') %>
+<% end %>
+
+<% if params[:percent].nil? %>
+  <table>
+    <tr>
+      <% if params[:server_id].nil? %>
+        <td>Server</td>
+      <% end %>
+      <td>Database</td>
+      <td>Table</td>
+      <td>Size</td>
+    </tr>
+    <% @tables.each do |t| %>
+      <tr>
+        <% if params[:server_id].nil? %>
+          <td><%= t.schema.server.name %></td>
+        <% end %>
+        <td><%= t.schema.name %></td>
+        <td><%= link_to t.name, server_database_table_path(t.schema.server.name, t.schema.name, t.name) %></td>
+        <td><%= number_to_human_size t.cached_size%></td>
+    <% end %>
+  </table>
+<% else %>
+  <table>
+    <tr>
+      <td>Server</td>
+      <td>Database</td>
+      <td>Table</td>
+      <td>Percent Growth</td>
+    </tr>
+    <% @tables.each do |t| %>
+      <tr>
+        <td><%= t[0][0] %></td>
+        <td><%= t[0][1] %></td>
+        <td><%= link_to t[0][2], server_database_table_path(t[0][0], t[0][1], t[0][2]) %></td>
+        <td><%= number_to_percentage t[1]%></td>
+      </tr>
+    <% end %>
+  </table>
+<% end %>

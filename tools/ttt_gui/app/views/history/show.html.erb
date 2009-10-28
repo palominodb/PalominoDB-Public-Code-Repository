@@ -1,0 +1,48 @@
+<h1>Table History <span class='italic'><%= [@table.server, @table.database, @table.name].join('.') %></span></h1>
+
+<div style="float:left">
+  <h3><%= @history[:view].nil? ? "Definition" : "View" %></h3>
+  <table>
+    <tr>
+      <td><span class="bold">Run date</span></td>
+      <% if @history[:view].nil? %>
+        <td><span class="bold">Create Date</span></td>
+      <% end %>
+    </tr>
+    <tr>
+      <td colspan="2"><span class="bold">Change</span></td>
+    </tr>
+    <% (@history[:view].nil? ? @history[:definition] : @history[:view]).each do |defn| %>
+      <tr>
+        <td><%= defn.run_time %></td>
+        <% if @history[:view].nil? %>
+          <td><%= defn.created_at %></td>
+        <% end %>
+      </tr>
+      <tr>
+        <td><%= defn.create_syntax %></td>
+      </tr>
+    <% end %>
+  </table>
+</div>
+<% unless @history[:view] %>
+  <div style="float:right">
+    <h3>Volume</h3>
+    <table>
+      <tr>
+        <td><span class="bold">Run time</span></td>
+        <td><span class="bold">Data length</span></td>
+        <td><span class="bold">Index length</span></td>
+        <td><span class="bold">Data free</span></td>
+      </tr>
+      <% (@history[:volume] || []).each do |defn| %>
+        <tr>
+          <td><%= defn.run_time %></td>
+          <td><%= number_to_human_size defn.data_length %></td>
+          <td><%= number_to_human_size defn.index_length %></td>
+          <td><%= number_to_human_size defn.data_free %></td>
+        </tr>
+      <% end %>
+    </table>
+  </div>
+<% end %>

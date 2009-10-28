@@ -1,5 +1,5 @@
 <table>
-  <tr><td colspan="2" style="font-weight: bold"><%= link_to "Volume", dashboard_path(:volume) %></td></td>
+  <tr><td colspan="2" style="font-weight: bold">Volume<%#= link_to "Volume", dashboard_path(:volume) %></td></td>
   <tr><td colspan="2" style="font-weight: bold"><%= TTT::Collector.get_last_run(:volume) %></td></tr>
   <% Server.each do |v| %>
     <tr><td><%= link_to v.name, server_path(v.name) %></td>

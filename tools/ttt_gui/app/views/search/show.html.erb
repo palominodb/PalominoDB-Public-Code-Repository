@@ -1,0 +1,7 @@
+<h1>Search</h1>
+
+<% @matched.each do |m| %>
+  <div class='match-result'>
+    <%= link_to m[0].name, server_path(m[0].name) %>.<%= link_to m[1].name, server_database_path(m[0].name, m[1].name) unless m[1].nil? %>.<%= link_to m[2].name, server_database_table_path(m[0].name, m[1].name, m[2].name) unless m[2].nil? %>
+  </div>
+<% end %>
