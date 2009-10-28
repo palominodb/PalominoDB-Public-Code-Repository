@@ -9,7 +9,7 @@ class TablesController < ApplicationController
     else
       @table=Table.find(params[:server_id], params[:database_id], params[:id])
     end
-    r=Rrdtool.new('/opt/local/bin/rrdtool')
+    r=Rrdtool.new
     r.table_graph(@table, @since_string, :full)
   end
 

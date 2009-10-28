@@ -5,7 +5,7 @@ class DashboardController < ApplicationController
     if params[:id] and TTT::TrackingTable.tables.key? params[:id]
       @stats=[params[:id]]
     else
-      @stats=(TTT::TrackingTable.tables.each_key.map {|k| k.to_s }).sort
+      @stats=(TTT::TrackingTable.tables.map {|k,v| k.to_s }).sort
     end
     @changes={}
     #@stats.each do |s|
