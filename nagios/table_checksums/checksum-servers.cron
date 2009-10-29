@@ -73,7 +73,7 @@ unless($noop) {
       $tbls{$db_table}{"ok"} = ();
       push @{$tbls{$db_table}{"ok"}}, $host;
     }
-    elsif($tbls{$db_table}{"csum"} != $csum) {
+    elsif($tbls{$db_table}{"csum"} ne $csum) {
       push @{$tbls{$db_table}{"bad"}}, $host;
       #$result_str .= "$db_table BAD on $host; $result_str";
       #$result = CRITICAL;
