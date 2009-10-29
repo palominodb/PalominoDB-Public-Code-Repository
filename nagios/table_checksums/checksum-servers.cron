@@ -31,20 +31,26 @@ if(not defined $cfgfile) {
 
 my $yml = YAML::Syck::LoadFile($cfgfile);
 $mk_table_checksum = $yml->{'mktablechecksum'} if( exists $yml->{'mktablechecksum'} );
-my $tables = join(",", @{$yml->{'tables'}});
+my %tables = %{$yml->{'tables'}};
 my $servers = join(" ", @{$yml->{'servers'}});
 my $nagios = $yml->{'nagios'};
 my $user = $yml->{'user'};
 my $pass = $yml->{'pass'};
 
-if($debug or $noop) {
+if($noop) {
   use Data::Dumper;
   print Dumper($yml);
-  print("$mk_table_checksum --checksum --user $user --pass '$pass' --tables $tables $servers\n"); 
+  foreach my $tbl (sort keys %tables) {
+    print("$mk_table_checksum --algorithm BIT_XOR --user $user --pass '$pass' --columns $tables{$tbl} --tables $tbl $servers\n");
+  }
 }
 
 unless($noop) {
-  my @r = qx($mk_table_checksum --user $user --pass '$pass' --tables $tables $servers);
+  my @r;
+  foreach my $tbl (sort keys %tables) {
+    print("$mk_table_checksum --algorithm BIT_XOR --user $user --pass '$pass' --columns $tables{$tbl} --tables $tbl $servers\n") if($debug);
+    push @r, qx($mk_table_checksum --algorithm BIT_XOR --user $user --pass '$pass' --columns $tables{$tbl} --tables $tbl $servers);
+  }
 
   if($debug) {
     print join("", @r);
