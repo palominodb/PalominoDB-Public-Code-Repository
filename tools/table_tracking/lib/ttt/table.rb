@@ -136,7 +136,7 @@ module TTT
     end
 
     def history(since=Time.at(0))
-      self.class.all(:conditions => ['id < ? AND run_time > ? AND server = ? AND database_name = ? AND table_name = ?', id, since, server, database_name, table_name])
+      self.class.all(:conditions => ['id <= ? AND run_time >= ? AND server = ? AND database_name = ? AND table_name = ?', id, since, server, database_name, table_name])
     end
 
     def unreachable?
