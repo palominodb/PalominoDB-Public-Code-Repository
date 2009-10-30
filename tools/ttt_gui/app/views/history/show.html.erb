@@ -9,9 +9,6 @@
         <td><span class="bold">Create Date</span></td>
       <% end %>
     </tr>
-    <tr>
-      <td colspan="2"><span class="bold">Change</span></td>
-    </tr>
     <% (@history[:view].nil? ? @history[:definition] : @history[:view]).each do |defn| %>
       <tr>
         <td><%= defn.run_time %></td>
@@ -20,7 +17,7 @@
         <% end %>
       </tr>
       <tr>
-        <td><%= defn.create_syntax %></td>
+        <td><div class='code'><%= defn.create_syntax %></div></td>
       </tr>
     <% end %>
   </table>

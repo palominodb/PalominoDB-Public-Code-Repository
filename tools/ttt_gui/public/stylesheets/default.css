@@ -10,6 +10,7 @@ body {
 
 div.code {
   font-family: monospace;
+  white-space: pre;
 }
 
 h1 {

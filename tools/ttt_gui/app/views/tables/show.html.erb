@@ -1,8 +1,6 @@
-
 <h1>Table <span class='italic'><%= [@table.server, @table.database, @table.name].join('.') %></span></h1>
-<h3>Current size: <%=  number_to_human_size @table.get_size %></h3>
-<div style="float:right; margin: 1em"><%= render( :partial => 'graphs/table_full', :locals => { :table =>  @table })  %></div>
+<h3>Current size: <%=  number_to_human_size @table.get_size %></h3> <%= link_to "Change History..", server_database_history_path(@table.server, @table.database, @table.name) %>
+<div style="clear:left; margin: 1em"><%= render( :partial => 'graphs/table_full', :locals => { :table =>  @table })  %></div>
 <div class="code" style="width: 50em; height: 25em;">
   <%= @table.get_create %>
 </div>
-<%= link_to "Changes..", server_database_history_path(@table.server, @table.database, @table.name) %>

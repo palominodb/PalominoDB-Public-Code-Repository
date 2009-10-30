@@ -4,7 +4,7 @@
   <% @databases.each do |db| %>
     <tr>
       <td><%= link_to db.server.name, server_path(db.server.name) %></td>
-      <td><%= db.name.nil? ? "unreachable" : link_to(db.name, server_database_path(db.server, db.name))  %></td>
+      <td><%= db.name.nil? ? "unreachable" : link_to(db.name, server_database_path(db.server.name, db.name))  %></td>
       <td><%= number_to_human_size db.cached_size %></td>
     </tr>
   <% end %>
