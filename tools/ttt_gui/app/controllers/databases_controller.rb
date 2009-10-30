@@ -4,7 +4,7 @@ require 'ttt/table'
 
 class DatabasesController < ApplicationController
   def index
-    @databases=Database.all
+    @databases=TTT::Schema.all(:order => 'cached_size DESC')
     
   end
   def show
