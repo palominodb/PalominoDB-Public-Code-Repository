@@ -153,7 +153,7 @@ module TTT
 
     def new?
       last=previous_version
-      (self.history.empty?) or (!last.nil? and last.deleted?)
+      (self.history.length == 1) or (!last.nil? and last.deleted?)
       #last=self.class.last(:conditions => ['id < ? AND server = ? AND database_name = ? AND table_name = ?', id, server, database_name, table_name])
       #if last.nil?
       #  TTT::Snapshot.find_all_by_statistic_id_and_collector_run_id(id,self.class.collector_id).empty?

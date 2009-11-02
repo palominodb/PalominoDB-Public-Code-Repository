@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'rubygems/package_task'
+require 'spec/rake/spectask'
 require 'active_record'
 require 'yaml'
 
@@ -13,7 +14,7 @@ TTT::Db.open(ttt_config)
 ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
 ActiveRecord::Base.colorize_logging = false
 
-task :default => :gem
+task :default => :test
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
@@ -52,6 +53,11 @@ end
 
 Gem::PackageTask.new(spec) do |pkg|
   pkg.need_tar = true
+end
+
+Spec::Rake::SpecTask.new('test') do |t|
+  t.spec_files = FileList['test/**/[0-9]*_*.rb']
+  t.spec_opts = ['--format', 'specdoc']
 end
 
 namespace :db do
