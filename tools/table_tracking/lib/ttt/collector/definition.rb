@@ -28,7 +28,7 @@ module TTT
               newtbl.save
               ids<<newtbl.id
               say "[new]: server:#{host} database:#{newtbl.database_name} table:#{newtbl.table_name}"
-            elsif newtbl.created_at != oldtbl.created_at then
+            elsif newtbl.created_at != oldtbl.created_at and newtbl.create_syntax != oldtbl.create_syntax then
               newtbl.save
               ids<<[newtbl.id,oldtbl.id]
               ids.delete oldtbl.id
