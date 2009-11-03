@@ -7,7 +7,7 @@ require 'ttt/table_definition'
 module TTT
   class DefinitionCollector < Collector
     collect_for :definition, "'create syntax' tracking" do |cr,host,cfg,runtime|
-      ids=(TTT::TableView.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
+      ids=(TTT::TableDefinition.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
       begin
         srv=TTT::Server.find_or_create_by_name(host)
 
@@ -81,7 +81,7 @@ module TTT
           raise mye
         end
       end
-      if ids != (TTT::TableView.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
+      if ids != (TTT::TableDefinition.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
         ids.to_a
       else
         []
