@@ -1,6 +1,6 @@
 spec = Gem::Specification.new do |s|
   s.name = "pdb-dsn"
-  s.version = "0.2.3"
+  s.version = "0.2.4"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"
@@ -11,4 +11,5 @@ The reference implementation of an API for validating and
 interacting with PalominoDB DSN.yml files.
 E_DESC
   s.files = ["lib/pdb/dsn.rb", "bin/pdb-dsn-validate"]
+  s.executables = [ "pdb-dsn-validate" ]
 end

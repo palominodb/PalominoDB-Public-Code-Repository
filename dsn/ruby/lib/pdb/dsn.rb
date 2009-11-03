@@ -99,11 +99,11 @@ module Pdb
             raise SyntaxError.new(), "Cluster '#{clu}' missing required key '#{k}'"
           end
         end
-        if !@raw["servers"][d["primary"]]["writefor"].include? clu
-          raise SemanticsError.new(SemanticsError::PrimaryMismatch), "Cluster lists #{d["primary"]} as the primary, but the server doesn't agree."
+        if @raw["servers"][d["primary"]].nil? or !@raw["servers"][d["primary"]]["writefor"].include? clu
+          raise SemanticsError.new(SemanticsError::PrimaryMismatch), "Cluster (#{clu}) lists #{d["primary"]} as the primary, but the server doesn't agree."
         end
         if !d["failover"].nil? and !@raw["servers"][d["failover"]]["writefor"].include? clu
-          raise SemanticsError.new(SemanticsError::FailoverMismatch), "Cluster lists #{d["primary"]} as the failover, but the server doesn't agree."
+          raise SemanticsError.new(SemanticsError::FailoverMismatch), "Cluster (#{clu}) lists #{d["failover"]} as the failover, but the server doesn't agree."
         end
       end
 
