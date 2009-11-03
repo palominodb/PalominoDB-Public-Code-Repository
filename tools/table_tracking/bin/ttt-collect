@@ -1,30 +1,7 @@
 #!/usr/bin/ruby
-# == Synopsis
-#
-# ttt-collect: Run a table tracking collection
-#
-# == Usage
-#
-# ttt-collect [--help] --config config.yml --dsn servers.yml
-#
-# -h, --help:
-#    This help
-# --config file, -c file:
-#    Path to ttt config file.
-# --debug:
-#    Make the tool VERY noisy.
-# --dsn file, -d file:
-#    Path to PalominoDB dsn.yml
-# --stat statistic:
-#    Collect a single <statistic>.
-#    See --list-stats for available statistics.
-# --list-stats, -l:
-#    List available statistics.
-#
 require 'rubygems'
 require 'yaml'
 require 'getoptlong'
-require 'rdoc/usage'
 require 'open-uri'
 require 'text/reform'
 
@@ -51,7 +28,30 @@ stat=:all
 opts.each do |opt, val|
   case opt
     when '--help'
-      RDoc::usage
+      puts <<DOC_EOF
+== Synopsis
+
+ttt-collect: Run a table tracking collection
+
+== Usage
+
+ttt-collect [--help] --config config.yml --dsn servers.yml
+
+-h, --help:
+   This help
+--config file, -c file:
+   Path to ttt config file.
+--debug:
+   Make the tool VERY noisy.
+--dsn file, -d file:
+   Path to PalominoDB dsn.yml
+--stat statistic:
+   Collect a single <statistic>.
+   See --list-stats for available statistics.
+--list-stats, -l:
+   List available statistics.
+DOC_EOF
+      exit 1
     when '--config'
       cfg = YAML.load_file(val)
     when '--dsn'
@@ -77,11 +77,13 @@ end
 
 if cfg.nil?
   puts "Must specify configuration."
-  RDoc::usage
+  puts "Use --help for more."
+  exit 1
 end
 if dsn.nil?
   puts "Must specify dsn."
-  RDoc::usage
+  puts "Use --help for more."
+  exit 1
 end
 
 if debug then

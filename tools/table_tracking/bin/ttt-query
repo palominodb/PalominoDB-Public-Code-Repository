@@ -1,85 +1,8 @@
 #!/usr/bin/ruby
-# == Synopsis
-#
-# ttt-query: Generate a report about tracked tables
-#
-# == Usage
-#
-# ttt-query [-h] -c config.yml -o text
-#
-# -h, --help:
-#    This help
-#
-# --config file, -c file:
-#    Path to ttt config file.
-#
-# --stat <stat>:
-#    Statistic to query.
-#
-# --list-stats:
-#    List available statistics.
-#
-# --output type, -o type:
-#    Specifies an output formatter.
-#    One of:
-#    - email
-#    - text
-#    - nagios
-#    - rrd
-#
-# --debug:
-#    Make the query tool VERY noisy about what it's doing.
-#
-# --since <timespec>, -s <timespec>:
-#    Where <timespec> is something like:
-#    - last (since the last collector run)
-#    - 4h (4 hours)
-#    - 1d (1 day)
-#    - 1w (1 week)
-#
-# --raw:
-#    Disable 'ignore tables' processing.
-#
-# --width <columns>:
-#    Number of columns to format to.
-#        
-# --where <clause>, -w <clause>:
-#    Cannot presently be specified when 'last-collect' is used with --since.
-#    Can be specified multiple times.
-#    Allows you to place contraints based on columns.
-#    Constraints are any valid sql fragment.
-#    Recognized common columns:
-#    - id (primary_key, used for versioning, and discrete lookups)
-#    - server
-#    - database_name
-#    - table_name
-#    - run_time (when the collect ran)
-#    Recognized columns for syntax tracking:
-#    - created_at
-#    - updated_at
-#    - create_syntax
-#    Recognized columns for volume tracking:
-#    - data_length  (size of the table)
-#    - index_length (size of the index)
-#    - data_free    (unused, but not returned, tablespace
-#
-# --order <by>:
-#    Select columns to order by. Technically an SQL fragment.
-#    Same column list as above.
-#
-# --group <by>:
-#    Comma separated list of columns to group by. Same columns as above.
-#
-# --select <columns>:
-#    SQL fragment. Try running with debug to see your full query.
-#
-# --limit <N>:
-#    Limit to N results.
-#
+
 require 'rubygems'
 require 'yaml'
 require 'getoptlong'
-require 'rdoc/usage'
 require 'pp'
 require 'ttt/db'
 require 'ttt/formatters'
@@ -124,7 +47,85 @@ find_type=:normal
 opts.each do |opt,val|
   case opt
     when '--help'
-      RDoc::usage
+      puts <<DOC_EOF
+== Synopsis
+
+ttt-query: Generate a report about tracked tables
+
+== Usage
+
+ttt-query [-h] -c config.yml -o text
+
+-h, --help:
+   This help
+
+--config file, -c file:
+   Path to ttt config file.
+
+--stat <stat>:
+   Statistic to query.
+
+--list-stats:
+   List available statistics.
+
+--output type, -o type:
+   Specifies an output formatter.
+   One of:
+   - email
+   - text
+   - nagios
+   - rrd
+
+--debug:
+   Make the query tool VERY noisy about what it's doing.
+
+--since <timespec>, -s <timespec>:
+   Where <timespec> is something like:
+   - last (since the last collector run)
+   - 4h (4 hours)
+   - 1d (1 day)
+   - 1w (1 week)
+
+--raw:
+   Disable 'ignore tables' processing.
+
+--width <columns>:
+   Number of columns to format to.
+       
+--where <clause>, -w <clause>:
+   Cannot presently be specified when 'last-collect' is used with --since.
+   Can be specified multiple times.
+   Allows you to place contraints based on columns.
+   Constraints are any valid sql fragment.
+   Recognized common columns:
+   - id (primary_key, used for versioning, and discrete lookups)
+   - server
+   - database_name
+   - table_name
+   - run_time (when the collect ran)
+   Recognized columns for syntax tracking:
+   - created_at
+   - updated_at
+   - create_syntax
+   Recognized columns for volume tracking:
+   - data_length  (size of the table)
+   - index_length (size of the index)
+   - data_free    (unused, but not returned, tablespace
+
+ --order <by>:
+    Select columns to order by. Technically an SQL fragment.
+    Same column list as above.
+
+ --group <by>:
+    Comma separated list of columns to group by. Same columns as above.
+
+ --select <columns>:
+    SQL fragment. Try running with debug to see your full query.
+
+ --limit <N>:
+    Limit to N results.
+DOC_EOF
+    exit 1
     when '--config'
       cfg = YAML.load_file(val)
     when '--output'
@@ -192,7 +193,8 @@ end
 
 if cfg.nil?
   puts "Must specify configuration."
-  RDoc::usage
+  puts "Use --help for more."
+  exit 1
 end
 
 if sql_conditions[:since]
