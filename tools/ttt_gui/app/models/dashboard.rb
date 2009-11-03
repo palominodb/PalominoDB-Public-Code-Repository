@@ -7,7 +7,7 @@ class Dashboard
     @@dashboards
   end
 
-  def self.[x]
+  def self.[](x)
     @@dashboards[x]
   end
 

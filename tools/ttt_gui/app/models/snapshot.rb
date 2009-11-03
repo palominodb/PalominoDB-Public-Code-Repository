@@ -1,8 +1,8 @@
-include 'ttt/db'
-include 'ttt/collector'
-include 'ttt/table_view'
-include 'ttt/table_definition'
-include 'ttt/table_volume'
+require  'ttt/db'
+require  'ttt/collector'
+require  'ttt/table_view'
+require  'ttt/table_definition'
+require  'ttt/table_volume'
 
 class Snapshot
   attr_reader :time
