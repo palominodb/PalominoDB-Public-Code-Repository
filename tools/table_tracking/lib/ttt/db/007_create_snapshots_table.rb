@@ -6,10 +6,8 @@ require 'ttt/table_volume'
 require 'ttt/table_view'
 require 'ttt/table_definition'
 require 'set'
-require 'ruby-debug'
 
 TTT::Collector.load_all
-Debugger.start
 
 
 class CreateSnapshotsTable < ActiveRecord::Migration
