@@ -1,9 +1,9 @@
 <div id="#menu" style="clear: both; height: 3em">
   <%= link_to_unless_current "Dashboard", :controller => "dashboard", :action => "index" %>,
   <%= link_to_unless_current "Servers", servers_path %>,
-  <%= link_to_unless_current "Databases", "/databases" %>,
-  <%= link_to_unless_current "History", "/history" %>,
-  <%= link_to_unless_current "All Graphs", "/graphs" %>
+  <%= link_to_unless_current "Databases", databases_path %>,
+  <%= link_to_unless_current "History", history_path %>,
+  <%= link_to_unless_current "All Graphs", graphs_path %>
 <div style="float:right"><% form_tag(:search, :method => 'get') do %><%= label_tag(:q, "Search:") %><%= text_field_tag(:q, '', :size => 32) %><% end %>
   <% form_tag({:controller => :search, :action => 'server_sel'}, :method => 'get') do %><%= select_tag(:server, options_from_collection_for_select(TTT::Server.all, :name, :name)) %><%= submit_tag("go") %><% end %>
   <% unless since_t.nil? %>

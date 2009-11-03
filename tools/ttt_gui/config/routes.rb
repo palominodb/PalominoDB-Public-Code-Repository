@@ -3,6 +3,7 @@ DbID=/[a-zA-Z\$][0-9A-Za-z\$_]+/
 TblID=DbID
 ActionController::Routing::Routes.draw do |map|
   map.resources :dashboard
+  map.history 'history', :controller => 'history', :action => 'index'
   map.resources( :servers, :requirements => { :id => SrvID }) do |servers|
     servers.resource(:top_tables, :requirements => {:server_id => SrvID })
     servers.resources(:databases,:requirements => { :server_id =>SrvID, :id =>DbID }) do |tables|
@@ -13,8 +14,8 @@ ActionController::Routing::Routes.draw do |map|
   end
   map.resource :top_tables
   map.resource :top_databases
-  map.resources :history
 
+  map.resources :databases
   map.resources :graphs
   map.resource :search
 
