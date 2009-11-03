@@ -26,9 +26,9 @@ module Pdb
   def self.truth(str)
     trues  = [ "y", "t", "true", "yes" ]
     falses = [ "n", "f", "false", "no" ]
-    if trues.include? str.downcase
+    if str == true or trues.include? str.downcase
       return true
-    elsif falses.include? str.downcase
+    elsif str == false or falses.include? str.downcase
       return false
     end
   end
