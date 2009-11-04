@@ -27,7 +27,7 @@ module TTT
     def create_syntax
       schema=read_attribute(:TABLE_SCHEMA)
       name=read_attribute(:TABLE_NAME)
-      syn=connection.execute("SHOW CREATE TABLE #{schema}.#{name}").fetch_hash()
+      syn=connection.execute("SHOW CREATE TABLE `#{schema}`.`#{name}`").fetch_hash()
       if read_attribute(:TABLE_TYPE) == "VIEW"
         syn["Create View"]
       else
