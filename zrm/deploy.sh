@@ -21,7 +21,7 @@ then
   prev_head=$(git branch | grep '^*' | awk '{print $2}')
   git stash
   git checkout $tag
-  git log > CHANGELOG.git
+  git log . > CHANGELOG.git
   tar czvf $do_tarball-$tag.tar.gz \
     plugins/socket-copy.palomino.pl \
     plugins/socket-server.palomino.pl \
