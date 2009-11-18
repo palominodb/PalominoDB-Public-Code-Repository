@@ -61,7 +61,7 @@ module TTT
       @@runners[media]
     end
     def self.get_formatter_for(collector, mtype=self.media)
-      Collector.load_all
+      CollectorRegistry.load
       @@formatters[collector][mtype]
     end
 

@@ -106,6 +106,18 @@ module TTT
       end
     end
 
+    def self.create_unreachable_entry(host, runtime)
+      self.new(
+        :server => host,
+        :database_name => nil,
+        :table_name => nil,
+        :data_free => nil,
+        :index_length => nil,
+        :data_length => nil,
+        :run_time => runtime
+      )
+    end
+
     private
     def update_cached_table_size
       s=TTT::Server.find_by_name(server)

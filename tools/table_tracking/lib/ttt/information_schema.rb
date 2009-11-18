@@ -6,7 +6,9 @@ module TTT
   # Please see ActiveRecord for how these classes work.
   class InformationSchema < ActiveRecord::Base
     self.abstract_class = true
+    @@connected_host=nil
     def self.connect(host, cfg)
+      @@connected_host=host
       establish_connection( {
         "adapter" => "mysql",
         "host" => host,
@@ -14,11 +16,19 @@ module TTT
         }.merge(cfg["dsn_connection"])
       )
     end
+    def self.get_connected_host
+      @@connected_host
+    end
+    private
+    def establish_connection(*args)
+      super(args)
+    end
   end
 
   # Access to the "TABLES" table from information_schema database
   class TABLE < InformationSchema
     set_table_name :TABLES
+    
     # Returns the table's data definition.
     # If the table is a regular table, then a statement
     # such as "CREATE TABLE.." will be returned.

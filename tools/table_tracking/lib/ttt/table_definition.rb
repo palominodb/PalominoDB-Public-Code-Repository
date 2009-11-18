@@ -20,6 +20,21 @@ module TTT
       last=previous_version()
       last.nil? or last.deleted? or last.created_at != created_at
     end
+
+    def self.create_unreachable_entry(host,runtime)
+      TTT::TableDefinition.new(
+        :server => host,
+        :database_name => nil,
+        :table_name  => nil,
+        :create_syntax => nil,
+        :run_time => runtime,
+        :created_at => "0000-00-00 00:00:00",
+        :updated_at => "0000-00-00 00:00:00"
+      )
+    end
+
+    def self.create_deleted_entry(host,runtime,schema,table)
+    end
     
   end
 end

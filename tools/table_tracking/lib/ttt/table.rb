@@ -18,19 +18,12 @@ module TTT
     end
 
     def self.included(base)
+      base.record_timestamps=false # Do no magic for tracking tables.
       base.class_inheritable_accessor :collector
       # Finds only the highest numbered id for each server.database.table
       # Returns them as an array of TableDefiniion objects.
       def base.find_most_recent_versions(extra_params={},txn=nil)
-#        self.connection.execute(
-#          %Q{CREATE TEMPORARY TABLE IF NOT EXISTS #{self.collector}_version_find (id INTEGER , run_time TIMESTAMP )}
-          #%Q{CREATE TEMPORARY TABLE #{self.collector}_version_find SELECT MAX(id) as id, MAX(run_time) as run_time from table_volumes where run_time<'#{run_time}' group by server,database_name,table_name}
-#        )
-#        self.connection.execute(
-#          %Q{INSERT INTO #{self.collector}_version_find (id, run_time) SELECT MAX(id) as id, MAX(run_time) as run_time from table_volumes where table_volumes.run_time<'#{run_time}' group by server,database_name,table_name}
-#        )
         c_id=TTT::CollectorRun.find_by_collector(self.collector.to_s).id
-        #txn=TTT::Snapshot.last_by_collector_run_id(c_id) || TTT::Snapshot.head if txn.nil? or txn.class != Fixnum
         latest_txn=nil
         begin
           latest_txn=TTT::Snapshot.find_last_by_collector_run_id(c_id).txn || TTT::Snapshot.head
@@ -49,17 +42,8 @@ module TTT
         find_params={
           :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{c_id} AND snapshots.txn=#{txn} AND #{self.table_name}.id=snapshots.statistic_id}
         }
-        #find_params={
-        #  :joins => %Q{INNER JOIN #{self.collector}_version_find USING(id)}
-        #  #:group => "server, database_name, table_name",
-
-        #  #:select => "*, MAX(id) AS max_id"
-        #}
-        #extra_copy.delete :select
-        #extra_copy.delete :group
         find_params.merge! extra_copy
         res=self.find(:all, find_params)
-        #self.connection.execute(%Q{TRUNCATE #{self.collector}_version_find})
         res
       end
 
@@ -73,6 +57,10 @@ module TTT
         TTT::CollectorRun.find_by_collector(self.collector.to_s).id
       end
 
+      def base.find_last_by_table(server, i_s_table)
+        self.find_last_by_server_and_database_name_and_table_name(server, i_s_table.TABLE_SCHEMA, i_s_table.TABLE_NAME)
+      end
+
       def base.last_run
         self.find(:last).run_time
       end
@@ -83,7 +71,6 @@ module TTT
 
       def base.servers
         TTT::Server.all.map { |f| f.name }
-        #self.find(:all, :group => [:server], :select => "server").map { |f| f.server }
       end
 
       def base.schemas(server=:all)
@@ -92,7 +79,6 @@ module TTT
         else
           TTT::Schema.all
         end
-        #self.find(:all, :group => "server, database_name", :select => "server, database_name", :conditions => server == :all ? [] : ['server = ?', server ] ).map { |f| s=self.new(:server => f.server, :database_name => f.database_name); s.readonly!; s }
       end
 
       def base.tables(server=:all, schema=:all)
@@ -101,29 +87,20 @@ module TTT
         elsif server != :all and schema == :all
           TTT::Server.find_by_name(server).tables.all
         elsif server == :all and schema != :all
-          TTT::Schema.find_by_name(schema).tablesa.all
+          TTT::Schema.find_by_name(schema).tables.all
         else
           TTT::Table.all
         end
 
-        #whr_str = ""
-        #conditions = []
-        #if server != :all
-        #  whr_str += "server = ?"
-        #  conditions << server
-        #end
-        #if schema != :all
-        #  whr_str += ( whr_str == "" ? "database_name = ?" : " and database_name = ?" )
-        #  conditions << schema
-        #end
-        #conditions << whr_str
-        #conditions.reverse!
-        #self.find(:all, :group => 'server, database_name, table_name', :select => "server, database_name, table_name", :conditions => conditions).map { |f| s=self.new(:server => f.server, :database_name => f.database_name, :table_name => f.table_name); s.readonly!; s }
       end
 
       def base.collector=(sym)
         write_inheritable_attribute :collector, sym
         @@tables[sym]=self
+      end
+
+      def base.create_unreachable_entry(host,runtime)
+        raise NotImplementedError, "This is an abstract method."
       end
     end
 
@@ -154,12 +131,6 @@ module TTT
     def new?
       last=previous_version
       (self.history.length == 1) or (!last.nil? and last.deleted?)
-      #last=self.class.last(:conditions => ['id < ? AND server = ? AND database_name = ? AND table_name = ?', id, server, database_name, table_name])
-      #if last.nil?
-      #  TTT::Snapshot.find_all_by_statistic_id_and_collector_run_id(id,self.class.collector_id).empty?
-      #else
-      #  last.deleted?
-      #end
     end
 
     def status

@@ -7,7 +7,7 @@ require 'ttt/table_view'
 require 'ttt/table_definition'
 require 'set'
 
-TTT::Collector.load_all
+TTT::CollectorRegistry.load
 
 
 class CreateSnapshotsTable < ActiveRecord::Migration

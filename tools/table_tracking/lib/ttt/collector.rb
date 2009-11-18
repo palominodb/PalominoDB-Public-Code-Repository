@@ -1,11 +1,211 @@
 require 'rubygems'
+#require 'ttt/information_schema'
 require 'ttt/db'
-require 'ttt/information_schema'
 require 'ttt/history'
-require 'pp'
+require 'set'
 
 module TTT
+
   class CollectorRunningError < Exception; end
+
+  module CollectorRegistry
+    @@collectors=Set.new
+    @@loaded=false
+
+    def self.all
+      @@collectors.to_a
+    end
+
+    def self.<<(o)
+      register(o)
+    end
+
+    def self.register(obj)
+      @@collectors<<obj
+      @@collectors.to_a
+    end
+    # Forces a reload of all the collectors.
+    # Useful for a long-running application (such as a web interface)
+    def self.reload!
+      @@loaded=false
+      load_all
+    end
+    # Loads all collectors under: <gems path>/table-tracking-toolkit-<version>/lib/ttt/collector/*
+    # This must be called before collectors will function.
+    def self.load(from=File.dirname(__FILE__)+"/collector/*")
+      unless @@loaded
+        Dir.glob( from ).each do |col|
+          next if File.directory? col
+          Kernel.load col
+        end
+        @@loaded=true
+      end
+    end
+  end
+
+  class CollectorRun < ActiveRecord::Base
+    has_many :snapshots, :class_name => 'TTT::Snapshot'
+    def self.find_by_collector(collector)
+      if collector.class == String
+        find_or_create_by_collector(collector)
+      else
+        find_or_create_by_collector(collector.stat.collector.to_s)
+      end
+    end
+  end
+
+  class CollectionDirector
+    MYSQL_CONNECT_ERROR = 2003
+    MYSQL_TOO_MANY_CONNECTIONS = 1040
+    MYSQL_HOST_NOT_PRIVILEGED = 1130
+    class RunData
+      attr_reader :host, :tables, :runref, :logger
+      attr_accessor :cur_snapshot
+      def initialize(host, tables, collector, runtime)
+        @host=host
+        @collector=collector
+        @tables=tables
+        @prev_snapshot=(collector.stat.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
+        @cur_snapshot=@prev_snapshot.dup
+        @runref=CollectorRun.find_by_collector(collector)
+        @runref.last_run=runtime
+        @logger=ActiveRecord::Base.logger
+      end
+
+      def this
+        @collector
+      end
+
+      def stat
+        @collector.stat
+      end
+
+      def runtime
+        @runref.last_run
+      end
+
+      def get_prev_version
+        stat.find(@prev_snapshot.to_a)
+      end
+
+      def <<(ids)
+        @cur_snapshot<<ids
+      end
+
+      def delete(_id)
+        @cur_snapshot.delete _id
+      end
+
+      def snapshot
+        @cur_snapshot
+      end
+
+      def changed?
+        @prev_snapshot != @cur_snapshot
+      end
+
+      def save(txn)
+        @runref.save
+        save_run_ids(txn) # if changed? # be trusting for the time being.
+      end
+      private
+      def save_run_ids(txn)
+        @cur_snapshot.each do |i|
+          puts i
+          @runref.snapshots.create do |snap|
+            snap.txn = txn
+            snap.run_time = @runref.last_run
+            if i.class == Array
+              snap.statistic_id = i[0]
+              p_txn=@runref.snapshots.find_last_by_statistic_id(i[1])
+              unless p_txn.nil?
+                snap.parent_txn = p_txn.id
+              end
+            else
+              snap.statistic_id = i
+            end
+          end
+        end
+      end
+    end
+    class TableCache < Array
+      def initialize(*args)
+        args.flatten!
+        super(args)
+        #self.reject! { |t| t.system_table? }
+      end
+      def find_by_schema_and_table(schema,table)
+        (self.select { |t| t.TABLE_SCHEMA==schema and t.TABLE_NAME==table })[0]
+      end
+    end
+
+    def initialize(cfg,runtime)
+      @host=nil
+      @runtime=runtime
+      @cfg=cfg
+      @cached_tables=nil
+      CollectorRegistry.load # Make sure collectors are loaded.
+    end
+
+    def recache_tables!
+      @cached_tables=TableCache.new(TTT::TABLE.all)
+    end
+
+    def collect(host, collector)
+      CollectorRun.transaction do
+        rd=nil
+        if @host != host
+          @host=host
+          TTT::InformationSchema.connect(@host, @cfg)
+          begin
+            ActiveRecord::Base.logger.info "[cache tables]: #{@host} - #{collector.stat}"
+            recache_tables!
+
+            srv=TTT::Server.find_or_create_by_name(host)
+            srv.save # Should reset updated_at.
+            @cached_tables.each do |tbl|
+              sch=srv.schemas.find_or_create_by_name(tbl.TABLE_SCHEMA)
+              sch.save # reset updated_at.
+              t=sch.tables.find_or_create_by_name(tbl.TABLE_NAME)
+              t.save
+            end
+          rescue Mysql::Error => mye
+            if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno
+              prev=collector.stat.find_last_by_server(@host)
+              rd=RunData.new(host, nil, collector, @runtime)
+              if prev.nil? or !prev.unreachable?
+                rd.logger.info "[unreachable]: #{@host} - #{rd.stat}"
+                t=collector.stat.create_unreachable_entry(@host, @runtime)
+                t.save
+                rd<<t.id
+              end
+              @host=nil # To force recheck for each stat.
+            else
+              raise mye
+            end
+          end
+
+        end
+
+        unless rd
+          if(@cfg["ttt_connection"]["adapter"].downcase == "mysql")
+            unless(CollectorRun.connection.select_value("SELECT GET_LOCK('ttt.collector.#{collector.stat.collector.to_s}',0.25)").to_i == 1)
+              raise CollectorRunningError, "Only one collector per statistic may run at a time."
+            end
+          end # if mysql
+
+          rd=RunData.new(@host, @cached_tables, collector, @runtime)
+          collector.run(rd)
+
+          if(@cfg["ttt_connection"]["adapter"].downcase == "mysql")
+            CollectorRun.connection.execute("SELECT RELEASE_LOCK('ttt.collector.#{collector.stat.collector.to_s}')")
+          end
+        end
+        rd
+      end
+    end # def collect
+
+  end
   # Base class for all collectors.
   # A collector is actually a set of classes.
   # A class derived from ActiveRecord::Base (such as TableDefinition)
@@ -15,121 +215,29 @@ module TTT
   #       Do not depend on any particular order.
   # See: DefinitionCollector and VolumeCollector for examples.
   class Collector
-    # Errno returned by Mysql when it cannot connect.
-    MYSQL_CONNECT_ERROR = 2003
-    MYSQL_TOO_MANY_CONNECTIONS = 1040
-    MYSQL_HOST_NOT_PRIVILEGED = 1130
-    #Runtime = Time.now
-    @@collectors = {}
-    @@verbose = true
-    @@debug = false 
-    @@loaded_collectors = false
-
-    class_inheritable_reader :stat, :desc, :run
-
-    # Called by subclasses of Collector to, well, register themsevles
-    # as a valid collector.
-    def self.collect_for(name, desc="" )
-      yell "collecter for: #{name}(#{self.name})"
-      @@collectors[name] = self
-      write_inheritable_attribute :stat, name
-      write_inheritable_attribute :desc, desc
-      write_inheritable_attribute :run, Proc.new
+    attr_reader :stat, :desc
+    cattr_accessor :verbose
+    # stat is a trackingtable constant
+    # e.g., TTT::TableDefinition which this collector will use.
+    def initialize(stat, desc, &actions)
+      @stat = stat
+      @desc = desc
+      @actions = actions
+      CollectorRegistry << self
     end
 
-    def self.collect_hosts(hosts, cfg, runtime=Time.now)
-      runs=[]
-      hosts.each do |h|
-        runs<<self.collect(h,cfg,runtime)
-      end
-      runs
+    def run(c_runner)
+      c_runner.logger.info "[host-start] #{c_runner.host} - #{c_runner.stat}"
+      res=@actions.call(c_runner)
+      c_runner.logger.info "[host-end] #{c_runner.host} - #{c_runner.stat}"
+      res
     end
 
-    def self.collect(host,cfg,runtime=Time.now)
-      #raise NotImplementedError, "This is an abstract class."
-      CollectorRun.transaction do
-        r=CollectorRun.find_or_create_by_collector(stat.to_s)
-        if(cfg["ttt_connection"]["adapter"] == "mysql")
-          if(CollectorRun.connection.select_value("SELECT IS_FREE_LOCK('ttt.collector.#{stat.to_s}')").to_i == 1)
-            CollectorRun.connection.execute("SELECT GET_LOCK('ttt.collector.#{stat.to_s}',0.25)")
-          else
-            raise CollectorRunningError, "Only one collector per statistic may run at a time."
-          end
-        end
-        r.lock!
-        TTT::InformationSchema.connect(host, cfg)
-        r.run_ids=self.run[r,host,cfg,runtime]
-        r.last_run=runtime
-        r.save
-        if cfg['ttt_connection']['adapter'] == "mysql" then
-          CollectorRun.connection.execute("SELECT RELEASE_LOCK('ttt.collector.#{stat.to_s}')")
-        end
-        r
-      end
-    end
-
-    def self.get_last_run(stat=self.stat)
-      CollectorRun.find_by_collector(stat.to_s).reload.last_run
-    end
-
-    def self.each
-      @@collectors.each_value { |x| yield(x) }
-      true
-    end
-
-    def self.collectors
-      @@collectors.values
-    end
-
-    def self.[](x)
-      @@collectors[x]
-    end
-
-    def self.say(text="")
-      puts(text) if @@verbose
-    end
-
-    def self.yell(text="")
-      puts(text) if @@debug
-    end
-
-    # Returns if collectors should be verbose, or not.
-    def self.verbose
-      @@verbose
-    end
-
-    def self.debug
-      @@debug
-    end
-
-    # Set if collectors should be verbose.
-    def self.verbose=(verb)
-      @@verbose=verb
-    end
-
-    def self.debug=(deb)
-      @@debug=deb
-    end
-
-    # Loads all collectors under: <gems path>/table-tracking-toolkit-<version>/lib/ttt/collector/*
-    # This must be called before collectors will function.
-    def self.load_all
-      unless @@loaded_collectors
-        Dir.glob( File.dirname(__FILE__) + "/collector/*" ).each do |col|
-          Kernel.load col
-        end
-        @@loaded_collectors=true
-      end
-    end
   end
 
-  class CollectorRun < ActiveRecord::Base
-    has_many :snapshots, :class_name => 'TTT::Snapshot'
-    def run_ids=(ids)
-      @run_ids=ids
-    end
-    def run_ids
-      @run_ids
-    end
-  end
+
+#    def self.get_last_run(stat=self.stat)
+#      CollectorRun.find_by_collector(stat.to_s).reload.last_run
+#    end
+
 end

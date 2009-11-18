@@ -16,5 +16,15 @@ module TTT
       last=previous_version()
       (last.nil? and TTT::Snapshot.stat_is_new? self) or !last.nil? and (last.deleted? or last.create_syntax() != create_syntax())
     end
+    def self.create_unreachable_entry(host,runtime)
+      self.new(
+        :server => host,
+        :database_name => nil,
+        :table_name => nil,
+        :create_syntax => nil,
+        :run_time => runtime
+      )
+  end
+
   end
 end

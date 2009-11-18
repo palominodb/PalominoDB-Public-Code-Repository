@@ -139,8 +139,9 @@ DOC_EOF
     when '--list-stats'
       rf=Text::Reform.new
       rf.trim=true
-      TTT::Collector.load_all
-      cols=TTT::Collector.collectors
+      #TTT::Collector.load_all
+      TTT::CollectorRegistry.load
+      cols=TTT::CollectorRegistry.all
       names= cols.map { |c| c.stat }
       descs= cols.map { |c| c.desc }
       puts rf.format("Available statistics:", "[[[[[[[[[[[ - "+ ("["*80), names,descs)

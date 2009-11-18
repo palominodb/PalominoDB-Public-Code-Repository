@@ -15,7 +15,7 @@ opts = GetoptLong.new(
   [ '--dsn', '-d', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--debug', GetoptLong::NO_ARGUMENT ],
   [ '--verbose', GetoptLong::NO_ARGUMENT ],
-  [ '--stat', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--stat', '-s', GetoptLong::REQUIRED_ARGUMENT ],
   [ '--list-stats', '-l', GetoptLong::NO_ARGUMENT ]
 )
 
@@ -23,7 +23,7 @@ dsn=nil
 cfg=nil
 debug=false
 verbose=false
-stat=:all
+stats=[]
 
 opts.each do |opt, val|
   case opt
@@ -62,15 +62,15 @@ DOC_EOF
     when '--verbose'
       verbose=true
     when '--stat'
-      stat=val.to_sym
+      stats<<TTT::TrackingTable.tables[val.to_sym]
     when '--list-stats'
       rf=Text::Reform.new
       rf.trim=true
-      TTT::Collector.load_all
-      cols=TTT::Collector.collectors
-      names= cols.map { |c| c.stat }
+      TTT::CollectorRegistry.load
+      cols=TTT::CollectorRegistry.all
+      names= cols.map { |c| c.stat.collector }
       descs= cols.map { |c| c.desc }
-      puts rf.format("Available statistics:", "[[[[[[[[[[[ - "+ ("["*80), names,descs)
+      puts rf.format("Available statistics:", "[[[[[[[[[[[[[[[ - "+ ("["*80), names,descs)
       exit(0)
   end
 end
@@ -98,43 +98,34 @@ TTT::Db.open(cfg)
 TTT::Db.migrate
 
 TTT::Collector.verbose = verbose
-TTT::Collector.load_all
 
 Runtime=Time.now
 
 begin
-  TTT::Snapshot.transaction do
-    runs=[]
+  TTT::Snapshot.transaction do |txn_id|
     hosts=dsn.get_all_hosts.reject { |h| !dsn.host_active? h }
-    if stat==:all
-      TTT::Collector.each { |c| runs<<c.collect_hosts(hosts, cfg, Runtime);  }
-    else
-      runs<< TTT::Collector[stat].collect_hosts(hosts, cfg, Runtime)
+    director = TTT::CollectionDirector.new(cfg, Runtime)
+    rds={}
+    hosts.each do |host|
+      TTT::CollectorRegistry.all.each do |coller|
+        next unless stats.empty? or stats.include? coller.stat
+        rd=director.collect(host, coller)
+        rds[rd.stat] = [] if rds[rd.stat].nil?
+        puts "NEW TXN: #{txn_id}"
+        puts "rd changed: #{rd.changed?}"
+        rds[rd.stat]<<rd
+      end
     end
-    runs.flatten!
-    txn=TTT::Snapshot.head || -1
-    txn+=1
-    runs.each do |r|
-      r.run_ids.each do |i|
-        TTT::Snapshot.create do |snap|
-          snap.collector_run_id = r.id
-          snap.txn = txn
-          snap.run_time = r.last_run
-          if i.class == Array
-            snap.statistic_id = i[0]
-            p_txn=TTT::Snapshot.find_last_by_collector_run_id_and_statistic_id(r.id,i[1])
-            unless p_txn.nil?
-              snap.parent_txn = p_txn.id
-            end
-          else
-            snap.statistic_id = i
-          end
-        end
+    rds.each do |k,v|
+      if v.any? { |r| r.changed? }
+        v.each { |r| r.save txn_id }
       end
     end
   end
-rescue SQLite3::BusyException => e
-  puts "Two collectors cannot be running concurrently."
-rescue TTT::CollectorRunningError => e
-  puts e.message
+rescue Exception => e
+  $stderr.puts e
+  $stderr.puts e.backtrace
+  exit 1
 end
+
+exit 0

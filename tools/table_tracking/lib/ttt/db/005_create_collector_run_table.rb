@@ -9,8 +9,8 @@ class CreateCollectorRunTable < ActiveRecord::Migration
       t.timestamp :last_run
     end
     add_index :collector_runs, :collector, :unique => true
-    TTT::Collector.load_all
-    TTT::Collector.each do |k,v|
+    TTT::CollectorRegistry.all
+    TTT::CollectorRegistry.all.each do |c|
       TTT::CollectorRun.new(:collector => k.stat.to_s).save!
     end
   end
