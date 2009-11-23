@@ -2,6 +2,7 @@ require 'rubygems'
 require 'activerecord'
 require 'ttt/collector'
 require 'ttt/history'
+require 'set'
 
 module TTT
 
@@ -49,8 +50,14 @@ module TTT
 
       def base.find_time_history(since=Time.now)
         c_id=TTT::CollectorRun.find_by_collector(self.collector.to_s).id
-        txns=TTT::Snapshot.all(:select => :txn, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id], :group => :txn).map { |s| s.txn }
-        self.find(:all, :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{c_id} AND snapshots.txn IN (#{txns.join(',')}) AND #{self.table_name}.id=snapshots.statistic_id})
+        #txns=TTT::Snapshot.all(:select => :txn, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id], :group => :txn).map { |s| s.txn }
+        #self.find(:all, :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{c_id} AND snapshots.txn IN (#{txns.join(',')}) AND #{self.table_name}.id=snapshots.statistic_id})
+        stats=TTT::Snapshot.all(:select => :statistic_id, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id]).map { |s| s.statistic_id }
+        if stats
+          self.find(stats.sort)
+        else
+          []
+        end
       end
 
       def base.collector_id

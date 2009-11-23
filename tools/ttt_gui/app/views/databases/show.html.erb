@@ -15,7 +15,7 @@
         <%= link_to tbl.name, server_database_table_path(@database.server,@database.name,tbl.name) %>
       </td>
       <td>
-        <%= number_to_human_size tbl.get_size %>
+        <%= number_to_human_size tbl.size %>
       </td>
   </tr>
   <% end %>

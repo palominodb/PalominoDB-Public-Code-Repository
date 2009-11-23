@@ -9,9 +9,7 @@ class Rrdtool
     raise ArgumentError, "Argument 'path' must not be nil" if @path.nil?
   end
   def exec(params)
-    pp params
     res=%x{#{path} #{params} }
-    pp res
     if res =~ /^ERROR:(.*)/
       raise RrdError, $1
     end

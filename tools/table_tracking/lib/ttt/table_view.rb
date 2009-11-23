@@ -6,6 +6,9 @@ module TTT
   class TableView < ActiveRecord::Base
     include TrackingTable
     self.collector= :view
+    def created_at
+      run_time
+    end
     def unreachable?
       read_attribute(:database_name).nil? and read_attribute(:table_name).nil? and read_attribute(:create_syntax).nil?
     end
@@ -24,7 +27,7 @@ module TTT
         :create_syntax => nil,
         :run_time => runtime
       )
-  end
+    end
 
   end
 end

@@ -53,10 +53,14 @@ class Database
     #size
   end
 
-  def tables
+  def tables_full
     TTT::Server.find_by_name(server).schemas.find_by_name(name).tables.map do |t|
       Table.find(server,name, t.name)
     end
+  end
+
+  def tables
+    TTT::Server.find_by_name(server).schemas.find_by_name(name).tables
   end
 
   #def tables

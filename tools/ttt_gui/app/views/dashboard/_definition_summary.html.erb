@@ -1,6 +1,6 @@
 <table>
-  <tr><td colspan="2" style="font-weight: bold"><%= link_to "Definition", dashboard_path(:dashboard) %></td></tr>
-  <tr><td colspan="2" style="font-weight: bold"><%= TTT::Collector.get_last_run(:definition) %></td></tr>
+  <tr><td colspan="2" style="font-weight: bold">Definition</td></tr>
+  <tr><td colspan="2" style="font-weight: bold"><%#= TTT::Collector.get_last_run(:definition) %></td></tr>
   <% Server.each do |d| %></td>
     <tr>
       <td><%= d.name %></td>

@@ -17,5 +17,9 @@ module TTT
   class Table < ActiveRecord::Base
     set_table_name :database_tables
     belongs_to :schema, :class_name => "TTT::Schema"
+
+    def size
+      cached_size
+    end
   end
 end

@@ -4,6 +4,8 @@ require 'ttt/table'
 
 class TablesController < ApplicationController
   def show
+    @show_diff=false
+    @show_diff=true if params[:show_diff]
     if params[:at]
       @table=Table.find_at(params[:server_id], params[:database_id], params[:id], params[:at])
     else

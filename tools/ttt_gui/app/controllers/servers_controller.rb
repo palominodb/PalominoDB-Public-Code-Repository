@@ -1,7 +1,7 @@
 class ServersController < ApplicationController
   def index
     @servers=Server.all
-    pp @servers
+    #pp @servers
     @server_sizes={}
     @servers.each do |s|
       @server_sizes[s] = Server.get_size(s)

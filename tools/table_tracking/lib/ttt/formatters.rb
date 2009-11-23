@@ -73,7 +73,7 @@ module TTT
     end
 
     def want_option(key, value=nil)
-      unless @cfg["formatter_options"][media.to_s].key? key
+      if @cfg["formatter_options"][media.to_s].key? key
         @cfg["formatter_options"][media.to_s][key]
       else
         value

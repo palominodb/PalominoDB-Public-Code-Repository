@@ -29,8 +29,8 @@ class Table
     @stats[:volume]
   end
 
-  def get_size
-    table_type == :base and !@stats[:volume].nil? ? @stats[:volume].size : nil
+  def size
+    (table_type == :base and !@stats[:volume].nil?) ? @stats[:volume].size : nil
   end
 
   def get_history(since=Time.at(0))
@@ -41,10 +41,26 @@ class Table
     r
   end
 
+  def table_name
+    name
+  end
+
+  def created_at
+    table_type == :base ? @stats[:definition].created_at : @stats[:view].run_time
+  end
+
+  def previous_version
+    table_type == :base ? @stats[:definition].previous_version : @stats[:view].previous_version
+  end
+
+  def create_syntax
+    get_create
+  end
 
   def get_create
     table_type == :base ? @stats[:definition].create_syntax : @stats[:view].create_syntax
   end
+
   def table_type
     type=:base
     if @stats[:definition].nil? and @stats[:view].nil?
@@ -54,6 +70,7 @@ class Table
     end
     type
   end
+
   private
   def initialize(server,database,name,stats)
     @server=server

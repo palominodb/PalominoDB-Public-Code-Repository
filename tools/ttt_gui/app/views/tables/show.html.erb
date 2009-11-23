@@ -1,6 +1,17 @@
 <h1>Table <span class='italic'><%= [@table.server, @table.database, @table.name].join('.') %></span></h1>
-<h3>Current size: <%=  number_to_human_size @table.get_size %></h3> <%= link_to "Change History..", server_database_history_path(@table.server, @table.database, @table.name) %>
+<h3>Current size: <%=  number_to_human_size @table.size %></h3>
+<%= link_to "Change History..", server_database_history_path(@table.server, @table.database, @table.name) %><br/>
+<% unless current_page? :show_diff => 'true' %>
+  <%= link_to "Show last change.", server_database_table_path(@table.server, @table.database, @table.name, :show_diff => true) %>
+<% else %>
+  <%= link_to "Show without last change.", server_database_table_path(@table.server, @table.database, @table.name) %>
+<% end %>
 <div style="clear:left; margin: 1em"><%= render( :partial => 'graphs/table_full', :locals => { :table =>  @table })  %></div>
-<div class="code" style="width: 50em; height: 25em;">
-  <%= @table.get_create %>
+<div class="code" style="width: 50em;">
+<%= @table.get_create %>
 </div>
+<% if @show_diff %>
+  <br/>
+  <span class='bold'>Most recent change:</span>
+  <div class="code" style="width: 50em;"><%= gen_diff(@table) %></div>
+<% end %>
