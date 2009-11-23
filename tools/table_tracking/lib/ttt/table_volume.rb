@@ -121,12 +121,15 @@ module TTT
     private
     def update_cached_table_size
       s=TTT::Server.find_by_name(server)
-      sch=s.schemas.find_by_name(database_name)
-      unless sch.nil?
-        t=sch.tables.find_by_name(table_name)
-        t.cached_size=size
-        t.save
+      if s
+        sch=s.schemas.find_by_name(database_name)
+        unless sch.nil?
+          t=sch.tables.find_by_name(table_name)
+          t.cached_size=size
+          t.save
+        end
       end
+      true
     end
 
   end

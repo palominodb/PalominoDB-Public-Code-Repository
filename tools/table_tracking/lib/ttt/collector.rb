@@ -110,22 +110,38 @@ module TTT
       end
       private
       def save_run_ids(txn)
-        @cur_snapshot.each do |i|
-          puts i
-          @runref.snapshots.create do |snap|
-            snap.txn = txn
-            snap.run_time = @runref.last_run
-            if i.class == Array
-              snap.statistic_id = i[0]
-              p_txn=@runref.snapshots.find_last_by_statistic_id(i[1])
-              unless p_txn.nil?
-                snap.parent_txn = p_txn.id
+        ins_stmt=@runref.snapshots.connection.raw_connection.prepare(
+          'INSERT INTO snapshots (collector_run_id, statistic_id, txn, parent_txn, run_time)
+          VALUES(?, ?, ?, ?, ?)'
+        )
+        #changed=@cur_snapshot.select { |i| i.class == Array }
+        #unchanged=@cur_snapshot.select { |i| i.class != Array }
+        TTT::Snapshot.benchmark('Snapshot Save') do 
+          @cur_snapshot.each do |i|
+            @runref.snapshots.create do |snap|
+              snap.txn = txn
+              snap.run_time = @runref.last_run
+              if i.class == Array
+                snap.statistic_id = i[0]
+                p_txn=@runref.snapshots.find_last_by_statistic_id(i[1])
+                unless p_txn.nil?
+                  snap.parent_txn = p_txn.id
+                end
+              else
+                snap.statistic_id = i
               end
-            else
-              snap.statistic_id = i
             end
+            #if i.class == Array
+            #  p_txn=TTT::Snapshot.find_last_by_statistic_id(i[1])
+            #  ins_stmt.execute(@runref.id, i[0], txn, p_txn.nil? ? nil : p_txn.id, @runref.last_run.strftime('%Y-%m-%d %H:%M:%S')) {|i|}
+            #else
+            #  ins_stmt.execute(@runref.id, i, txn, nil, @runref.last_run.strftime('%Y-%m-%d %H:%M:%S')) {|i|}
+            #end
           end
         end
+
+          #ins_stmt.execute(i, txn, 
+          #puts i
       end
     end
     class TableCache < Array

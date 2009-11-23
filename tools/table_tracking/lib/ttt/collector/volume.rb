@@ -15,7 +15,6 @@ TTT::Collector.new(TTT::TableVolume, "table, index, and free size tracking") do 
       dbs[t.TABLE_SCHEMA]=srv.schemas.find_by_name(t.TABLE_SCHEMA)
       dbs[t.TABLE_SCHEMA].cached_size=0
     end
-    #dbs[t.TABLE_SCHEMA].tables.find_by_name(t.TABLE_NAME)
     datafree=nil
     if t.TABLE_COMMENT =~ /InnoDB free: (\d+)/
       datafree=($1.to_i)*1024
@@ -40,6 +39,7 @@ TTT::Collector.new(TTT::TableVolume, "table, index, and free size tracking") do 
   srv.save
   dbs.each_value { |d| d.save }
 
+  ActiveRecord::Base.benchmark("Delete Checks") {
   rd.get_prev_version.each do |t|
     rd.logger.info "[delete-check] #{t.database_name}.#{t.table_name}"
     g=rd.tables.find_by_schema_and_table(t.database_name, t.table_name)
@@ -58,6 +58,7 @@ TTT::Collector.new(TTT::TableVolume, "table, index, and free size tracking") do 
       rd.logger.info "[deleted] #{t.inspect}"
     end
   end
+  }
   rd
 end
 
