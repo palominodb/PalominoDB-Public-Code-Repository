@@ -24,6 +24,7 @@ use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
 use POSIX;
+use DBI;
 
 # Set remote-mysql-binpath in mysql-zrm.conf if mysql client binaries are 
 # in a different location
@@ -56,6 +57,9 @@ my $nagios_service = "MySQL Backups";
 my $nagios_host = "nagios.example.com";
 my $nsca_client = "/usr/sbin/send_nsca";
 my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
+my $wait_timeout = 8*3600; # 8 Hours
+
+my ($mysql_user, $mysql_pass);
 
 if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
   open CFG, "< /usr/share/mysql-zrm/plugins/socket-server.conf";
@@ -76,6 +80,18 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     }
     elsif($var eq "innobackupex_path") {
       $INNOBACKUPEX=$val;
+    }
+    elsif($var eq "mysql_wait_timeout") {
+      # If mysql_wait_timeout is less than 3600, we assume
+      # that the user specified hours, otherwise, we assume
+      # that it is specified in seconds.
+      # You'll note that there is no way to specify minutes.
+      if($val < 3600) { # 1 hour, in seconds
+        $wait_timeout = $val*3600;
+      }
+      else {
+        $wait_timeout = $val;
+      }
     }
   }
 }
@@ -144,6 +160,17 @@ sub getInputs()
 	$MYSQL_BINPATH = &checkIfTainted($inp[3]);
 }
 
+sub restore_wait_timeout {
+  my ($dbh, $prev_wait) = @_;
+
+  if($dbh and $prev_wait){
+    $dbh->do("SET GLOBAL wait_timeout=$prev_wait");
+  }
+  else {
+    undef;
+  }
+  undef;
+}
 
 sub doRealHotCopy()
 {
@@ -161,6 +188,20 @@ sub doRealHotCopy()
 	POSIX::mkfifo("/tmp/innobackupex-log", 0700);
 	&printLog("Created FIFOS..\n");
 
+  my $dbh = undef;
+  my $prev_wait = undef;
+  eval {
+    $dbh = DBI->connect("DBI:mysql:host=localhost", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
+  };
+  if( $@ ) {
+    &printLog("Unable to open DBI handle. Error: $@\n");
+  }
+
+  if($dbh) {
+    $prev_wait = $dbh->selectcol_arrayref("SHOW GLOBAL VARIABLES LIKE 'wait_timeout'")->[0];
+    $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
+  }
+
 	open(INNO_TAR, "$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
 	&printLog("Opened InnoBackupEX.\n");
 	open(INNO_LOG, "</tmp/innobackupex-log");
@@ -175,6 +216,7 @@ sub doRealHotCopy()
 				if( sysread( INNO_LOG, $buf, 10240 ) ) {
 					&printLog($buf);
 					if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+            restore_wait_timeout($dbh, $prev_wait);
 						sendNagiosAlert("CRITICAL: $1", 2);
 						&printAndDie($_);
 					}
@@ -205,6 +247,8 @@ sub doRealHotCopy()
 		}
 	}
 	unlink("/tmp/innobackupex-log");
+  restore_wait_timeout($dbh, $prev_wait);
+  $dbh->disconnect;
 	sendNagiosAlert("OK: Copied data successfully.", 0);
 }
 
@@ -473,9 +517,11 @@ if( $action eq "copy from" ){
 			$_ = <FAKESNAPCONF>; # user
 			chomp($_);
 			$params .= " --user=$_ ";
+      $mysql_user=$_;
 			$_ = <FAKESNAPCONF>; # password
 			chomp($_);
 			$params .= " --password=$_ ";
+      $mysql_password=$_;
 
 			$tmp_directory=&getTmpName();
 			my $r = mkdir( $tmp_directory );
