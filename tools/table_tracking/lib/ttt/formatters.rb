@@ -37,9 +37,11 @@ module TTT
             end
           end
           if !do_rej
-            @cfg["report_ignore"]["global"].each do |reg|
-              do_rej = !Regexp.new(reg).match(server_schema_table).nil?
-              break if do_rej
+            unless @cfg['report_ignore']['global'].nil?
+              @cfg["report_ignore"]["global"].each do |reg|
+                do_rej = !Regexp.new(reg).match(server_schema_table).nil?
+                break if do_rej
+              end
             end
           end
           do_rej
