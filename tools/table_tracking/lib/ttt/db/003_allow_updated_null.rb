@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 
 class AllowUpdatedNull < ActiveRecord::Migration
   def self.up

@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 require 'text/reform'
 
 module TTT

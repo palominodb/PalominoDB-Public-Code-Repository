@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 require 'ttt/db'
 require 'ttt/table'
 require 'ttt/collector'

@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 require 'sqlite3' # For catching exceptions
 require 'ttt/table'
 require 'ttt/information_schema'

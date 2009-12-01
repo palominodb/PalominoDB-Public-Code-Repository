@@ -1,6 +1,6 @@
 require 'rubygems'
 require 'actionmailer'
-require 'activerecord'
+require 'active_record'
 require 'ttt/format/text'
 
 

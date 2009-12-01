@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 
 class CreateTttIndexes < ActiveRecord::Migration
   def self.up

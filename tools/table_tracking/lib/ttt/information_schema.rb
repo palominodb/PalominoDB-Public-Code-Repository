@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 
 module TTT
   # Base class for connections to collection hosts.

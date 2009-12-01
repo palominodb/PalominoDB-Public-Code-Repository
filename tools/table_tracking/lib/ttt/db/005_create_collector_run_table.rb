@@ -1,5 +1,5 @@
 require 'rubygems'
-require 'activerecord'
+require 'active_record'
 require 'ttt/collector'
 
 class CreateCollectorRunTable < ActiveRecord::Migration
