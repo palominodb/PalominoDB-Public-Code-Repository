@@ -1,5 +1,5 @@
 SrvID=/[0-9a-zA-Z\._\-]+/
-DbID=/[a-zA-Z\$][0-9A-Za-z\$_]+/
+DbID=/[a-zA-Z\$][0-9A-Za-z\$_]*/
 TblID=DbID
 ActionController::Routing::Routes.draw do |map|
   map.resources :dashboard
