@@ -28,7 +28,7 @@ module TTT
       #  raise ArgumentError, "option update_interval must be less than 2 days."
       end
       updint=updint.to_i
-      last_run=TTT::Collector.get_last_run(:volume)
+      last_run=TTT::CollectorRun.find_by_collector(:volume).last_run
       TTT::TableVolume.servers.each do |srv|
         rrd_path="#{path}/#{srv}/server_#{srv}.rrd"
         #sz=TTT::TableVolume.server_sizes(srv)
