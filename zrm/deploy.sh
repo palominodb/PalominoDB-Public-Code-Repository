@@ -20,20 +20,15 @@ then
   fi
   prev_head=$(git branch | grep '^*' | awk '{print $2}')
   git stash
-  git checkout $tag
-  git log . > CHANGELOG.git
-  tar czvf $do_tarball-$tag.tar.gz \
-    plugins/socket-copy.palomino.pl \
-    plugins/socket-server.palomino.pl \
-    plugins/inno-snapshot.pl \
-    examples/zrm_nsca.cfg \
-    examples/example_nagios.cfg \
-    examples/mysql-zrm.conf \
-    examples/socket_server.conf \
-    examples/zrm-palomino.xinetd \
-    README CHANGELOG CHANGELOG.git
-  rm CHANGELOG.git
-  git checkout "$prev_head"
+  #git checkout $tag
+  mkdir $do_tarball-$tag
+  cp -r plugins examples $do_tarball-$tag/
+  git log . > $do_tarball-$tag/CHANGELOG.git
+  cp README CHANGELOG $do_tarball-$tag/
+  cp $do_tarball.spec $do_tarball-$tag/
+  tar czvf $do_tarball-$tag.tgz  $do_tarball-$tag/
+  rm -rf $do_tarball-$tag/
+  #git checkout "$prev_head"
   git stash pop
   exit 0
 fi
