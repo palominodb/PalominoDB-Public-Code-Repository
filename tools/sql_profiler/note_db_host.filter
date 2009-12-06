@@ -1,0 +1,71 @@
+
+use Sys::Hostname;
+use constant MKFILTERDEBUG => $ENV{MKFILTERDEBUG};
+my $act = sub {
+  die("I require --review") if !$qv or !$qv_dbh;
+  Transformers->import(qw(parse_timestamp));
+  my $tried_create_table=0;
+  my $evt = shift;
+  my @tbl=@{$review_dsn}{qw(D)};
+  $tbl[1] = "sql_profiler_hosts";
+  my $tbl=$q->quote(@tbl);
+  my $hostname = $ENV{ttt_server_name} ? $ENV{ttt_server_name} : hostname;
+  my $sql =<<"  EOSQL";
+    INSERT INTO $tbl
+    (checksum, host, ip, type, first_seen, last_seen)
+    VALUES(CONV(?, 16, 10), ?, INET_ATON(?), ?, COALESCE(?, NOW()), COALESCE(?, NOW()))
+    ON DUPLICATE KEY UPDATE
+      first_seen = IF(
+        first_seen IS NULL,
+        COALESCE(?, NOW()),
+        LEAST(first_seen, COALESCE(?, NOW()))),
+      last_seen = IF(
+        last_seen IS NULL,
+        COALESCE(?, NOW()),
+        GREATEST(last_seen, COALESCE(?, NOW())))
+  EOSQL
+  MKFILTERDEBUG && _d("SQL to insert host csum mapping:", $sql);
+  MKFILTERDEBUG && _d("Event structure:", Dumper($evt));
+  # No easy way to prevent this being called many times.
+  my $insert_sth = $qv_dbh->prepare_cached($sql);
+REINSERT:
+  eval {
+    # Insert the machine we are parsing on as the destination.
+    # No way to specify that this is not the case right now.
+    # The destination is the database server that handled the query.
+    # At some point, the IP should be filled in here too.
+    $insert_sth->execute(
+      make_checksum($evt->{fingerprint}),
+      $hostname, 0, 'DESTINATION', map { parse_timestamp($evt->{ts}) } qw(first_seen last_seen first_seen first_seen last_seen last_seen));
+    # Insert $evt->{ip} as the source.
+    # The source is the address that issued the query.
+    $insert_sth->execute(
+      make_checksum($evt->{fingerprint}),
+      $evt->{host}, $evt->{ip} ? $evt->{ip} : 0, 'SOURCE', map { parse_timestamp($evt->{ts}) } qw(first_seen last_seen first_seen first_seen last_seen last_seen));
+    1;
+  };
+  if($@ and !$tried_create_table) {
+    _d("Insert had error($@), trying create table.");
+    # db_host limited to 60 chars since mysql won't store more
+    # than that anyway.
+    my $sql =<<"    EOCSQL";
+      CREATE TABLE IF NOT EXISTS $tbl (
+        checksum BIGINT UNSIGNED NOT NULL,
+        host  VARCHAR(60) NOT NULL,
+        ip    INTEGER UNSIGNED NOT NULL DEFAULT 0,
+        type  ENUM('SOURCE', 'DESTINATION', 'UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+        first_seen DATETIME,
+        last_seen  DATETIME,
+        PRIMARY KEY(checksum, host),
+        KEY(type)
+      )
+    EOCSQL
+    MKFILTERDEBUG && _d("SQL for create table:", $sql);
+    $tried_create_table = 1;
+    eval { $qv_dbh->do($sql) };
+    MKFILTERDEBUG && _d("CREATE TABLE Return:", $@);
+    goto REINSERT
+  }
+  1;
+};
+$act->($event)
