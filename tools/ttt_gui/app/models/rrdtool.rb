@@ -47,8 +47,8 @@ class Rrdtool
     msgs=[]
     ok=true
     [databases].flatten.each do |db|
-      rrd_path=TTT_CONFIG['formatter_options']['rrd']['path']+"/#{db.server}/database_#{db.name}.rrd"
-      opts = common_opts("database_#{db.server}_#{db.name}", since, type, "Database Aggregate - #{db.server}.#{db.name}")
+      rrd_path=TTT_CONFIG['formatter_options']['rrd']['path']+"/#{db.server.name}/database_#{db.name}.rrd"
+      opts = common_opts("database_#{db.server.name}_#{db.name}", since, type, "Database Aggregate - #{db.server.name}.#{db.name}")
 
       opts << [
         ["data_length", ["AREA%s:STACK", "#00ff40"]],
