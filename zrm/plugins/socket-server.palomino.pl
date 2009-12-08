@@ -52,6 +52,11 @@ my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
+# Set to 1 inside the SIGPIPE handler so that we can cleanup innobackupex gracefully.
+my $stop_copy = 0;
+$SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
+$SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
+
 
 my $nagios_service = "MySQL Backups";
 my $nagios_host = "nagios.example.com";
@@ -64,7 +69,8 @@ my ($mysql_user, $mysql_pass);
 if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
   open CFG, "< /usr/share/mysql-zrm/plugins/socket-server.conf";
   while(<CFG>) {
-    my ($var, $val) = split /\s+/, $_, 1;
+    my ($var, $val) = split /\s+/, $_, 2;
+    chomp($val);
     $var = lc($var);
     if($var eq "nagios_service") {
       $nagios_service = $val;
@@ -86,11 +92,11 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
       # that the user specified hours, otherwise, we assume
       # that it is specified in seconds.
       # You'll note that there is no way to specify minutes.
-      if($val < 3600) { # 1 hour, in seconds
-        $wait_timeout = $val*3600;
+      if(int($val) < 3600) { # 1 hour, in seconds
+        $wait_timeout = int($val)*3600;
       }
       else {
-        $wait_timeout = $val;
+        $wait_timeout = int($val);
       }
     }
   }
@@ -98,7 +104,6 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
 
 open LOG, ">>$logFile" or die "Unable to create log file";
 LOG->autoflush(1);
-#$SIG{'PIPE'} = sub { &printAndDie( "pipe broke\n" ); };
 
 if($^O eq "linux") {
 	$TAR_WRITE_OPTIONS = "--same-owner -cphsC";
@@ -174,6 +179,11 @@ sub restore_wait_timeout {
 
 sub doRealHotCopy()
 {
+  if($stop_copy == 1) {
+    # It's possible we could be interrupted before ever getting here.
+    # Catch this.
+    return;
+  }
 	# massage params for innobackup
 	$params =~ s/--quiet//;
 	my $new_params = "";
@@ -198,8 +208,9 @@ sub doRealHotCopy()
   }
 
   if($dbh) {
-    $prev_wait = $dbh->selectcol_arrayref("SHOW GLOBAL VARIABLES LIKE 'wait_timeout'")->[0];
+    $prev_wait = $dbh->selectrow_arrayref("SHOW GLOBAL VARIABLES LIKE 'wait_timeout'")->[1];
     $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
+    &printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
 	open(INNO_TAR, "$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
@@ -209,7 +220,21 @@ sub doRealHotCopy()
 	$fhs = IO::Select->new();
 	$fhs->add(\*INNO_TAR);
 	$fhs->add(\*INNO_LOG);
+	$SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
+	$SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
 	while( $fhs->count() > 0 ) {
+		if($stop_copy == 1) {
+			restore_wait_timeout($dbh, $prev_wait);
+			&printLog("Copy aborted. Closing innobackupex.\n");
+			$fhs->remove(\*INNO_TAR);
+			$fhs->remove(\*INNO_LOG);
+			close(INNO_TAR);
+			close(INNO_LOG);
+			&printLog("Copy aborted. Closed innobackupex.\n");
+			sendNagiosAlert("WARNING: Copy was interrupted!", 1);
+			unlink("/tmp/innobackupex-log");
+			&printAndDie("Finished cleaning up. Bailing out!\n");
+		}
 		my @r = $fhs->can_read(5);
 		foreach my $fh (@r) {
 			if($fh == \*INNO_LOG) {
@@ -510,7 +535,7 @@ if( $action eq "copy from" ){
 		$_ = <FAKESNAPCONF>; # timestamp
 		chomp($_);
 		if((time - int($_)) >= 300) {
-			&printLog("  Caught stale inno-snapshot - deleting.");
+			&printLog("  Caught stale inno-snapshot - deleting.\n");
 			unlink("/tmp/zrm-innosnap/running");
 		}
 		else {
@@ -521,7 +546,7 @@ if( $action eq "copy from" ){
 			$_ = <FAKESNAPCONF>; # password
 			chomp($_);
 			$params .= " --password=$_ ";
-      $mysql_password=$_;
+      $mysql_pass=$_;
 
 			$tmp_directory=&getTmpName();
 			my $r = mkdir( $tmp_directory );
@@ -555,7 +580,7 @@ if( $action eq "copy from" ){
 	if( $r == 0 ){
 		&printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
 	}
-	&doRealHotCopy( $tmp_directory );
+	#&doRealHotCopy( $tmp_directory );
 }elsif( $action eq "remove-backup-data" ){
 	&removeBackupData();
 }elsif( $action eq "snapshot" ){

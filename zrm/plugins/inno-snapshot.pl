@@ -22,7 +22,16 @@ use ZRM::SnapshotCommon;
 use Data::Dumper;
 
 
+$SIG{'PIPE'} = sub { &printLog("Caught PIPE."); };
 $SIG{'TERM'} = sub { &printAndDie("TERM signal"); };
+
+open LOG, ">>/var/log/mysql-zrm/socket-server.log" or die "Unable to open snapshot logfile.";
+
+sub printLog()
+{
+        print LOG "$0:" . $_[0];
+}
+
 
 # Uses df to get the device name and filesystem type
 # Uses lvdisplay to see if this device is an lvm volume
@@ -54,31 +63,35 @@ sub doGetSnapshotdeviceDetails()
 
 sub doCreateSnapshot()
 {
-	mkdir("/tmp/zrm-innosnap");
+	&printLog("Making snapshot.");
 	sleep(5);
+	mkdir("/tmp/zrm-innosnap");
 	return;
 }
 
 sub doMount()
 {
+	&printLog("Mounting snapshot.");
+	sleep(5);
 	open RUNFIL, ">/tmp/zrm-innosnap/running";
 	print RUNFIL time, "\n";
 	print RUNFIL "$ZRM::SnapshotCommon::config{'user'}\n";
 	print RUNFIL "$ZRM::SnapshotCommon::config{'password'}\n";
 	close RUNFIL;
-	sleep(5);
 	return;
 }
 
 sub doUmount()
 {
-	unlink("/tmp/zrm-innosnap/running");
+	&printLog("Unmounting snapshot.");
 	sleep(5);
+	unlink("/tmp/zrm-innosnap/running");
 	return;
 }
 
 sub doRemoveSnapshot()
 {
+	&printLog("Deleting snapshot.");
 	sleep(5);
 	rmdir("/tmp/zrm-innosnap");
 	return;
