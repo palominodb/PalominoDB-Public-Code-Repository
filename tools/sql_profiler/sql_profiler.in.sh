@@ -5,6 +5,7 @@ shift
 slow_logs="$@"
 
 mysql_host=""
+mysql_socket=""
 mysql_schema="ops_prof"
 mysql_username="sqlprofiler"
 mysql_password="sqlprofiler"
@@ -19,6 +20,7 @@ usage() {
   echo "The config file is just a set of shell variables."
   echo "Config variables:"
   echo "mysql_host       - mysql host to store review info on."
+  echo "mysql_socket     - mysql socket to use. Only used if mysql_host is localhost or empty."
   echo "mysql_schema     - mysql database to store review info in. Default: $mysql_schema"
   echo "mysql_username   - mysql user. Default: $mysql_username"
   echo "mysql_password   - mysql password. Default: $mysql_password"
@@ -55,9 +57,14 @@ main() {
     export ttt_server_name
   fi
 
+  socket=""
+  if [[ -z "$mysql_host" || "$mysql_host" = "localhost" ]]; then
+    socket="S=$mysql_socket,"
+  fi
+
   # Do Not change the table names in the below command.
   # TTT-GUI presently requires these names. k?
-  $mk_query_digest --create-review-table --create-review-history-table --no-report --review h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_reviews --review-history D=$mysql_schema,t=sql_profiler_histories --filter "$filter" $slow_logs
+  $mk_query_digest --create-review-table --create-review-history-table --no-report --review ${socket}h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_queries --review-history D=$mysql_schema,t=sql_profiler_histories --filter "$filter" $slow_logs
   cleanup
 }
 

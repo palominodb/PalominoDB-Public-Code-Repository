@@ -68,4 +68,5 @@ REINSERT:
   }
   1;
 };
-$act->($event)
+$act->($event);
+1
