@@ -1,0 +1,21 @@
+INSTALL_BINS += plugins/inno-snapshot.pl
+INSTALL_BINS += plugins/socket-copy.palomino.pl
+INSTALL_BINS += plugins/socket-server.palomino.pl
+
+INSTALL_CONF += examples/socket-server.conf
+
+INSTALL_DOCS += README
+INSTALL_DOCS += CHANGELOG
+
+INSTALL_EXAMPLES += examples/*
+
+all:
+	@echo "Nothing to do for all."
+
+install:
+	install -d -o mysql -g mysql ${PREFIX}/share/mysql-zrm/plugins/
+	install -d -o root -g wheel ${PREFIX}/share/doc/zrm-innobackupex/examples
+	install -o mysql -g mysql -m 0755 ${INSTALL_BINS} ${PREFIX}/share/mysql-zrm/plugins/
+	install -o mysql -g mysql -m 0644 ${INSTALL_CONF} ${PREFIX}/share/mysql-zrm/plugins/
+	install -m 0644 ${INSTALL_DOCS} ${PREFIX}/share/doc/zrm-innobackupex/
+	install -m 0644 ${INSTALL_EXAMPLES} ${PREFIX}/share/doc/zrm-innobackupex/examples/

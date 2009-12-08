@@ -1,0 +1,19 @@
+#!/bin/sh
+
+if [ -z "$INNOBACKUPEX_PATH" ]; then
+  which innobackupex-1.5.1 >/dev/null
+  if [ ! $? ]; then
+    echo "Unable to find innobackupex-1.5.1 in path."
+    exit 1
+  fi
+fi
+
+# Only support installs rooted at /usr, for now.
+perl -I/usr/lib/mysql-zrm -MZRM::SnapshotCommon -e '1;'
+if [ ! $? ]; then
+  echo "Unable to find ZRM::SnapshotCommon at /usr/lib/mysql-zrm."
+  exit 1
+fi
+
+echo Everything looks fine dependency-wise, proceeding with installation.
+exit 0

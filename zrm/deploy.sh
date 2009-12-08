@@ -21,24 +21,15 @@ then
   prev_head=$(git branch | grep '^*' | awk '{print $2}')
   git stash
   #git checkout $tag
-  mkdir $do_tarball-$tag
-  cp -r plugins examples $do_tarball-$tag/
-  git log . > $do_tarball-$tag/CHANGELOG.git
-  cp README CHANGELOG $do_tarball-$tag/
-  cp $do_tarball.spec $do_tarball-$tag/
-  tar czvf $do_tarball-$tag.tgz  $do_tarball-$tag/
-  rm -rf $do_tarball-$tag/
-  #git checkout "$prev_head"
+  tar_dir=$do_tarball-$tag
+  mkdir $tar_dir
+  cp -r plugins examples $tar_dir/
+  git log . > $tar_dir/CHANGELOG.git
+  cp README CHANGELOG $tar_dir/
+  cp $do_tarball.spec $tar_dir/
+  cp -r freebsd $tar_dir
+  tar czvf $tar_dir.tgz  $tar_dir/
+  rm -rf $tar_dir/
   git stash pop
   exit 0
 fi
-
-HOSTS="testdb1 testdb2"
-for host in $HOSTS
-do
-	rsync -avP $code_base/ root@$host:/usr/share/mysql-zrm/plugins/
-	ssh root@$host 'chown -R mysql:mysql /usr/share/mysql-zrm/plugins'
-	ssh root@$host 'chown -R mysql:mysql /etc/mysql-zrm'
-	ssh root@$host 'mkdir -p /mysqlbackups && chown -R mysql:mysql /mysqlbackups'
-	ssh root@$host 'chown -R mysql:mysql /var/log/mysql-zrm'
-done

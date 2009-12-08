@@ -1,0 +1,23 @@
+Building a package for FreeBSD
+==============================
+
+Instructions
+------------
+
+    # cd /root
+    # tar xzvf zrm-innobackupex-0.72.tgz zrm-innobackupex-0.72/freebsd
+    # cd zrm-innobackupex-0.72
+    # DISTDIR=/root make -f freebsd/Makefile package
+    #
+    # That will both install and build the package for you,
+    # since freebsd has no concept of non-root package builds, afaik.
+    # 
+    # DISTDIR=/root make -f freebsd/Makefile deinstall
+    #
+    # Removes the version installed by 'package', since it doesn't do
+    # all the good things.
+    #
+    # pkg_add zrm-innobackupex-0.72.tbz
+    #
+    # Add the package to the system, if needed.
+    # You can now copy the tarball around and install anywhere else you'd like.

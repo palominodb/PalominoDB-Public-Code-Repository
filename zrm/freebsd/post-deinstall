@@ -1,0 +1,6 @@
+#!/bin/sh
+
+if grep -q mysql-zrm /etc/inetd.conf ; then
+  echo Removing the zrm-innobackupex socket-server..
+  sed -i .pkgsave -e '/^mysql-zrm/d' /etc/inetd.conf
+fi

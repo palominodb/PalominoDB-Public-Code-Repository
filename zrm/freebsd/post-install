@@ -1,0 +1,15 @@
+#!/bin/sh
+
+# Install the service number, if it doesn't exist.
+
+if ! grep -q mysql-zrm /etc/services ; then
+  echo Adding 25300/tcp to /etc/services
+  cp /etc/services /etc/services.pkgsave
+  echo 'mysql-zrm       25300/tcp  # mysql-zrm socket server' >> /etc/services
+fi
+
+# Install the inetd service
+echo Adding mysql-zrm to /etc/inetd.conf
+echo You\'ll need to reload/restart inetd for this to be visible.
+sed -i .pkgsave -e '/^mysql-zrm/d' /etc/inetd.conf
+echo 'mysql-zrm stream tcp nowait mysql /usr/share/mysql-zrm/plugins/socket-server.palomino.pl' >> /etc/inetd.conf

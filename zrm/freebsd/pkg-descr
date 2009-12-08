@@ -1,0 +1,2 @@
+This package provides an innobackupex/xtrabackup plugin for ZRM.
+It supports advanced nagios integration for reliable monitoring of the backup.
