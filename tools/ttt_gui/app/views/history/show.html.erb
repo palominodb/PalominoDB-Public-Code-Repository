@@ -2,45 +2,9 @@
 <%= link_to 'Table Overview', server_database_table_path(@table.server, @table.database, @table.name) %>
 <%= render :partial => 'shared/show_diffs' %>
 <div style="float:left">
-  <h3><%= @history[:view].nil? ? "Definition" : "View" %></h3>
-  <table>
-    <tr>
-      <td><span class="bold">Run date</span></td>
-      <% if @history[:view].nil? %>
-        <td><span class="bold">Create Date</span></td>
-      <% end %>
-    </tr>
-    <% (@history[:view].nil? ? @history[:definition].reverse : @history[:view].reverse).each do |defn| %>
-      <tr>
-        <td style="background-color: #acacac"><%= defn.run_time %></td>
-        <% if @history[:view].nil? %>
-          <td style="background-color: #acacac"><%= defn.created_at %></td>
-        <% end %>
-      </tr>
-      <tr>
-        <td colspan="2"><div class='code'><%= @show_diffs ? gen_diff(defn) : defn.create_syntax %></div></td>
-      </tr>
-    <% end %>
-  </table>
+    <%= render :partial => 'definition_history', :locals => { :history => @history, :show_diffs => @show_diffs } %>
+    <%= render :partial => 'view_history', :locals => { :history => @history, :show_diffs => @show_diffs } %>
 </div>
-<% unless @history[:view] %>
-  <div style="float:right">
-    <h3>Volume</h3>
-    <table>
-      <tr>
-        <td><span class="bold">Run time</span></td>
-        <td><span class="bold">Data length</span></td>
-        <td><span class="bold">Index length</span></td>
-        <td><span class="bold">Data free</span></td>
-      </tr>
-      <% (@history[:volume] || []).each do |defn| %>
-        <tr>
-          <td><%= defn.run_time %></td>
-          <td><%= number_to_human_size defn.data_length %></td>
-          <td><%= number_to_human_size defn.index_length %></td>
-          <td><%= number_to_human_size defn.data_free %></td>
-        </tr>
-      <% end %>
-    </table>
-  </div>
-<% end %>
+<div style="float:right">
+  <%= render :partial => 'volume_history', :locals => { :history => @history } %>
+</div>

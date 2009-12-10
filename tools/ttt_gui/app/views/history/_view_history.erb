@@ -1,0 +1,18 @@
+<% if history[:view] %>
+  <h3>View</h3>
+  <table>
+    <tr>
+      <td><span class="bold">Run date</span></td>
+    </tr>
+    <% history[:view].reverse.each do |defn| %>
+      <tr>
+        <td style="background-color: #acacac"><%= defn.run_time %></td>
+      </tr>
+      <tr>
+        <td><div class="code"><%= show_diffs ? gen_diff(defn) : defn.create_syntax %></div></td>
+      </tr>
+    <% end %>
+  </table>
+<% else %>
+  <span class="italic">No view history recorded</span>
+<% end %>

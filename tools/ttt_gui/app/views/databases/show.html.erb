@@ -1,6 +1,6 @@
-<h1>Database <span class='italic'><%= @database.server %>.<%= @database.name %></span></h1>
+<h1>Database <span class='italic'><%= @database.server.name %>.<%= @database.name %></span></h1>
   <h3> Current size: <%= number_to_human_size @database.get_size %></h3>
-  <%= link_to "Top Tables", server_database_top_tables_path(@database.server,@database.name) %>
+  <%= link_to "Top Tables", server_database_top_tables_path(@database.server.name,@database.name) %>
 
 <div style="float:right; margin: 1em">
   <%= render :partial => "graphs/database_full", :locals => { :database => @database } %>
@@ -12,7 +12,7 @@
   <% @database.tables.each do |tbl| %>
     <tr>
       <td>
-        <%= link_to tbl.name, server_database_table_path(@database.server,@database.name,tbl.name) %>
+        <%= link_to tbl.name, server_database_table_path(@database.server.name,@database.name,tbl.name) %>
       </td>
       <td>
         <%= number_to_human_size tbl.size %>
