@@ -14,12 +14,12 @@ class TopTablesController < ApplicationController
       flash[:missing_variables] = nil
       @type = :top_N
       if s_id.nil?
-        @tables=TTT::Table.all(:limit => lim, :order => 'cached_size DESC')
+        @tables=TTT::Table.all(:limit => lim, :order => 'database_tables.cached_size DESC')
       else
         if d_id.nil?
-          @tables=TTT::Server.find_by_name(s_id).tables.all(:limit => lim, :order => 'cached_size DESC')
+          @tables=TTT::Server.find_by_name(s_id).tables.all(:limit => lim, :order => 'database_tables.cached_size DESC')
         else
-          @tables=TTT::Server.find_by_name(s_id).schemas.find_by_name(d_id).tables.all(:limit => lim, :order => 'cached_size DESC')
+          @tables=TTT::Server.find_by_name(s_id).schemas.find_by_name(d_id).tables.all(:limit => lim, :order => 'database_tables.cached_size DESC')
         end
       end
     elsif days != 0 and !percent.nan?
