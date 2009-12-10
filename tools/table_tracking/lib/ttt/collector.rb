@@ -48,6 +48,8 @@ module TTT
     def self.find_by_collector(collector)
       if collector.class == String
         find_or_create_by_collector(collector)
+      elsif collector.class == Symbol
+        find_or_create_by_collector(collector.to_s)
       else
         find_or_create_by_collector(collector.stat.collector.to_s)
       end

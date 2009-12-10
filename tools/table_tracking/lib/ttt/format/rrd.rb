@@ -40,6 +40,7 @@ module TTT
           update_rrd(rrd_path, run, [s.data_length, s.index_length, 'U'])
         end
         TTT::TableVolume.schemas(srv).each do |sch|
+          next if sch.name == "information_schema"
           #next if sch.unreachable?
           rrd_path="#{path}/#{srv}/database_#{sch.name}.rrd"
           last=lastupd_rrd(rrd_path)
