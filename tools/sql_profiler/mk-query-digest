@@ -22,23 +22,26 @@ use warnings FATAL => 'all';
 
 our $VERSION = '@VERSION@';
 our $DISTRIB = '@DISTRIB@';
-our $SVN_REV = sprintf("%d", (q$Revision: 5021 $ =~ m/(\d+)/g, 0));
+our $SVN_REV = sprintf("%d", (q$Revision$ =~ m/(\d+)/g, 0));
 
 # ###########################################################################
-# DSNParser package 4823
+# DSNParser package 5266
 # ###########################################################################
-use strict;
-use warnings FATAL => 'all';
-
 package DSNParser;
 
-use DBI;
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
 use Data::Dumper;
 $Data::Dumper::Indent    = 0;
 $Data::Dumper::Quotekeys = 0;
-use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+eval {
+   require DBI;
+};
+my $have_dbi = $EVAL_ERROR ? 0 : 1;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, @opts ) = @_;
@@ -238,6 +241,16 @@ sub get_dbh {
    };
    @{$defaults}{ keys %$opts } = values %$opts;
 
+   if ( !$have_dbi ) {
+      die "Cannot connect to MySQL because the Perl DBI module is not "
+         . "installed or not found.  Run 'perl -MDBI' to see the directories "
+         . "that Perl searches for DBI.  If DBI is not installed, try:\n"
+         . "  Debian/Ubuntu  apt-get install libdbi-perl\n"
+         . "  RHEL/CentOS    yum install perl-DBI\n"
+         . "  OpenSolaris    pgk install pkg:/SUNWpmdbi\n";
+
+   }
+
    my $dbh;
    my $tries = 2;
    while ( !$dbh && $tries-- ) {
@@ -281,6 +294,15 @@ sub get_dbh {
          if ( $EVAL_ERROR =~ m/not a compiled character set|character set utf8/ ) {
             MKDEBUG && _d('Going to try again without utf8 support');
             delete $defaults->{mysql_enable_utf8};
+         }
+         elsif ( $EVAL_ERROR =~ m/locate DBD\/mysql/i ) {
+            die "Cannot connect to MySQL because the Perl DBD::mysql module is "
+               . "not installed or not found.  Run 'perl -MDBD::mysql' to see "
+               . "the directories that Perl searches for DBD::mysql.  If "
+               . "DBD::mysql is not installed, try:\n"
+               . "  Debian/Ubuntu  apt-get install libdbd-mysql-perl\n"
+               . "  RHEL/CentOS    yum install perl-DBD-MySQL\n"
+               . "  OpenSolaris    pgk install pkg:/SUNWapu13dbd-mysql\n";
          }
          if ( !$tries ) {
             die $EVAL_ERROR;
@@ -362,7 +384,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Quoter package 4943
+# Quoter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -371,7 +393,7 @@ package Quoter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -427,7 +449,7 @@ sub literal_like {
 # ###########################################################################
 
 # ###########################################################################
-# OptionParser package 4805
+# OptionParser package 5266
 # ###########################################################################
 package OptionParser;
 
@@ -438,7 +460,7 @@ use Getopt::Long;
 use List::Util qw(max);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my $POD_link_re = '[LC]<"?([^">]+)"?>';
 
@@ -1263,7 +1285,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Transformers package 4299
+# Transformers package 5266
 # ###########################################################################
 
 package Transformers;
@@ -1271,10 +1293,10 @@ package Transformers;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Time::Local qw(timelocal);
+use Time::Local qw(timegm timelocal);
 use Digest::MD5 qw(md5_hex);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 require Exporter;
 our @ISA         = qw(Exporter);
@@ -1293,7 +1315,7 @@ our @EXPORT_OK   = qw(
 );
 
 our $mysql_ts  = qr/(\d\d)(\d\d)(\d\d) +(\d+):(\d+):(\d+)(\.\d+)?/;
-our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(?:\.\d+)?/;
+our $proper_ts = qr/(\d\d\d\d)-(\d\d)-(\d\d)[T ](\d\d):(\d\d):(\d\d)(\.\d+)?/;
 our $n_ts      = qr/(\d{1,5})([shmd]?)/; # Limit \d{1,5} because \d{6} looks
 
 sub micro_t {
@@ -1378,13 +1400,19 @@ sub shorten {
 }
 
 sub ts {
-   my ( $time ) = @_;
+   my ( $time, $gmt ) = @_;
    my ( $sec, $min, $hour, $mday, $mon, $year )
-      = localtime($time);
+      = $gmt ? gmtime($time) : localtime($time);
    $mon  += 1;
    $year += 1900;
-   return sprintf("%d-%02d-%02dT%02d:%02d:%02d",
+   my $val = sprintf("%d-%02d-%02dT%02d:%02d:%02d",
       $year, $mon, $mday, $hour, $min, $sec);
+   if ( my ($us) = $time =~ m/(\.\d+)$/ ) {
+      $us = sprintf("%.6f", $us);
+      $us =~ s/^0\././;
+      $val .= $us;
+   }
+   return $val;
 }
 
 sub parse_timestamp {
@@ -1400,11 +1428,16 @@ sub parse_timestamp {
 }
 
 sub unix_timestamp {
-   my ( $val ) = @_;
-   if ( my($y, $m, $d, $h, $i, $s)
-     = $val =~ m/^$proper_ts$/ )
-   {
-      return timelocal($s, $i, $h, $d, $m - 1, $y);
+   my ( $val, $gmt ) = @_;
+   if ( my($y, $m, $d, $h, $i, $s, $us) = $val =~ m/^$proper_ts$/ ) {
+      $val = $gmt
+         ? timegm($s, $i, $h, $d, $m - 1, $y)
+         : timelocal($s, $i, $h, $d, $m - 1, $y);
+      if ( defined $us ) {
+         $us = sprintf('%.6f', $us);
+         $us =~ s/^0\././;
+         $val .= $us;
+      }
    }
    return $val;
 }
@@ -1462,7 +1495,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryRewriter package 4969
+# QueryRewriter package 5266
 # ###########################################################################
 use strict;
 use warnings FATAL => 'all';
@@ -1471,7 +1504,7 @@ package QueryRewriter;
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 our $verbs   = qr{^SHOW|^FLUSH|^COMMIT|^ROLLBACK|^BEGIN|SELECT|INSERT
                   |UPDATE|DELETE|REPLACE|^SET|UNION|^START|^LOCK}xi;
@@ -1516,34 +1549,37 @@ sub shorten {
 
    return $query unless $query =~ m/IN\s*\(\s*(?!select)/i;
 
-   if ( $length && length($query) > $length ) {
-      my ($left, $mid, $right) = $query =~ m{
-         (\A.*?\bIN\s*\()     # Everything up to the opening of IN list
-         ([^\)]+)             # Contents of the list
-         (\).*\Z)             # The rest of the query
-      }xsi;
-      if ( $left ) {
-         my $targ = $length - length($left) - length($right);
-         my @vals = split(/,/, $mid);
-         my @left = shift @vals;
-         my @right;
-         my $len  = length($left[0]);
-         while ( @vals && $len < $targ / 2 ) {
-            $len += length($vals[0]) + 1;
-            push @left, shift @vals;
-         }
-         while ( @vals && $len < $targ ) {
-            $len += length($vals[-1]) + 1;
-            unshift @right, pop @vals;
-         }
-         $query = $left . join(',', @left)
-                . (@right ? ',' : '')
-                . " /*... omitted " . scalar(@vals) . " items ...*/ "
-                . join(',', @right) . $right;
+   my $last_length  = 0;
+   my $query_length = length($query);
+   while (
+      $length          > 0
+      && $query_length > $length
+      && $query_length < ( $last_length || $query_length + 1 )
+   ) {
+      $last_length = $query_length;
+      $query =~ s{
+         (\bIN\s*\()    # The opening of an IN list
+         ([^\)]+)       # Contents of the list, assuming no item contains paren
+         (?=\))           # Close of the list
       }
+      {
+         $1 . __shorten($2)
+      }gexsi;
    }
 
    return $query;
+}
+
+sub __shorten {
+   my ( $snippet ) = @_;
+   my @vals = split(/,/, $snippet);
+   return $snippet unless @vals > 20;
+   my @keep = splice(@vals, 0, 20);  # Remove and save the first 20 items
+   return
+      join(',', @keep)
+      . "/*... omitted "
+      . scalar(@vals)
+      . " items ...*/";
 }
 
 sub fingerprint {
@@ -1557,7 +1593,7 @@ sub fingerprint {
       && return $query;
    $query =~ m/\A\s*(call\s+\S+)\(/i
       && return lc($1); # Warning! $1 used, be careful.
-   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)? INTO .+? VALUES \(.*?\)),\(/i ) {
+   if ( my ($beginning) = $query =~ m/\A((?:INSERT|REPLACE)(?: IGNORE)?\s+INTO.+?VALUES\s*\(.*?\))\s*,\s*\(/is ) {
       $query = $beginning; # Shorten multi-value INSERT statements ASAP
    }
 
@@ -1599,6 +1635,23 @@ sub _distill_verbs {
       && return "USE";
    $query =~ m/\A\s*UNLOCK TABLES/i
       && return "UNLOCK";
+   $query =~ m/\A\s*xa\s+(\S+)/i
+      && return "XA_$1";
+
+   $query = $self->strip_comments($query);
+
+   if ( $query =~ m/\A\s*SHOW\s+/i ) {
+      my @what = $query =~ m/SHOW\s+(\S+)(?:\s+(\S+))?/i;
+      MKDEBUG && _d('SHOW', @what);
+      return unless scalar @what;
+      @what = map { uc $_ } grep { defined $_ } @what; 
+      if ( $what[0] =~ m/CREATE/ || ($what[1] && $what[1] =~ m/STATUS/) ) {
+         return "SHOW $what[0] $what[1]";
+      }
+      else {
+         return "SHOW $what[0]";
+      }
+   }
 
    eval $QueryParser::data_def_stmts;
    eval $QueryParser::tbl_ident;
@@ -1633,7 +1686,7 @@ sub _distill_tables {
       $_ =~ s/`//g;
       $_ =~ s/(_?)[0-9]+/$1?/g;
       $_;
-   } $qp->get_tables($query);
+   } grep { defined $_ } $qp->get_tables($query);
 
    push @tables, $table if $table;
 
@@ -1648,9 +1701,21 @@ sub _distill_tables {
 sub distill {
    my ( $self, $query, %args ) = @_;
 
-   my ($verbs, $table)  = $self->_distill_verbs($query, %args);
-   my @tables           = $self->_distill_tables($query, $table, %args);
-   $query               = join(q{ }, $verbs, @tables);
+   if ( $args{generic} ) {
+      my ($cmd, $arg) = $query =~ m/^(\S+)\s+(\S+)/;
+      return '' unless $cmd;
+      $query = (uc $cmd) . ($arg ? " $arg" : '');
+   }
+   else {
+      my ($verbs, $table)  = $self->_distill_verbs($query, %args);
+      my @tables           = $self->_distill_tables($query, $table, %args);
+      $query               = join(q{ }, $verbs, @tables);
+   }
+   
+   if ( $args{trf} ) {
+      $query = $args{trf}->($query, %args);
+   }
+
    return $query;
 }
 
@@ -1751,7 +1816,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Processlist package 4584
+# Processlist package 5266
 # ###########################################################################
 package Processlist;
 
@@ -1764,7 +1829,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
    ID      => 0,
    USER    => 1,
@@ -1780,93 +1845,126 @@ use constant {
 };
 
 sub new {
-   my ( $class ) = @_;
-   bless {}, $class;
+   my ( $class, %args ) = @_;
+   my $self = {
+      prev_rows => [],
+      new_rows  => [],
+      curr_row  => undef,
+      prev_row  => undef,
+   };
+   return bless $self, $class;
 }
 
 sub parse_event {
-   my ( $self, $code, $misc, @callbacks ) = @_;
-   my $num_events = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(misc);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my ($misc) = @args{@required_args};
 
-   my @curr = sort { $a->[ID] <=> $b->[ID] } @{$code->()};
-   my @prev = @{$misc->{prev} ||= []};
-   my @new; # Will become next invocation's @prev
-   my ($curr, $prev); # Rows from each source
+   my $code = $misc->{code};
+   die "I need a code arg to misc" unless $code;
 
-   do {
-      if ( !$curr && @curr ) {
-         MKDEBUG && _d('Fetching row from curr');
-         $curr = shift @curr;
+   my @curr;
+   if ( $self->{curr_rows} ) {
+      MKDEBUG && _d('Current rows from last call');
+      @curr = @{$self->{curr_rows}};
+   }
+   else {
+      my $rows = $code->();
+      if ( $rows && scalar @$rows ) {
+         MKDEBUG && _d('Got new current rows');
+         @curr = sort { $a->[ID] <=> $b->[ID] } @$rows;
       }
-      if ( !$prev && @prev ) {
-         MKDEBUG && _d('Fetching row from prev');
-         $prev = shift @prev;
+      else {
+         MKDEBUG && _d('No current rows');
       }
-      if ( $curr || $prev ) {
-         if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
-            MKDEBUG && _d('$curr and $prev are the same cxn');
-            my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
-            my $is_new = 0;
-            if ( $prev->[INFO] ) {
-               if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
-                  MKDEBUG && _d('$curr has a new query');
-                  $is_new = 1;
-               }
-               elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
-                  MKDEBUG && _d('$curr time is less than $prev time');
-                  $is_new = 1;
-               }
-               elsif ( $curr->[INFO] && defined $curr->[TIME]
-                  && $misc->{time} - $curr->[TIME] - $prev->[START]
-                     - $prev->[ETIME] - $misc->{etime} > $fudge
-               ) {
-                  MKDEBUG && _d('$curr has same query that restarted');
-                  $is_new = 1;
-               }
-               if ( $is_new ) {
-                  fire_event( $prev, $misc->{time}, @callbacks );
-               }
+   }
+
+   my @prev = @{$self->{prev_rows} ||= []};
+   my @new  = @{$self->{new_rows}  ||= []};; # Becomes next invocation's @prev
+   my $curr = $self->{curr_row}; # Rows from each source
+   my $prev = $self->{prev_row};
+   my $event;
+
+   MKDEBUG && _d('Rows:', scalar @prev, 'prev,', scalar @curr, 'current');
+
+   if ( !$curr && @curr ) {
+      MKDEBUG && _d('Fetching row from curr');
+      $curr = shift @curr;
+   }
+   if ( !$prev && @prev ) {
+      MKDEBUG && _d('Fetching row from prev');
+      $prev = shift @prev;
+   }
+   if ( $curr || $prev ) {
+      if ( $curr && $prev && $curr->[ID] == $prev->[ID] ) {
+         MKDEBUG && _d('$curr and $prev are the same cxn');
+         my $fudge = $curr->[TIME] =~ m/\D/ ? 0.001 : 1; # Micro-precision?
+         my $is_new = 0;
+         if ( $prev->[INFO] ) {
+            if (!$curr->[INFO] || $prev->[INFO] ne $curr->[INFO]) {
+               MKDEBUG && _d('$curr has a new query');
+               $is_new = 1;
             }
-            if ( $curr->[INFO] ) {
-               if ( $prev->[INFO] && !$is_new ) {
-                  MKDEBUG && _d('Pushing old history item back onto $prev');
-                  push @new, [ @$prev ];
-               }
-               else {
-                  MKDEBUG && _d('Pushing new history item onto $prev');
-                  push @new,
-                     [ @$curr, int($misc->{time} - $curr->[TIME]),
-                        $misc->{etime}, $misc->{time} ];
-               }
+            elsif (defined $curr->[TIME] && $curr->[TIME] < $prev->[TIME]) {
+               MKDEBUG && _d('$curr time is less than $prev time');
+               $is_new = 1;
             }
-            $curr = $prev = undef; # Fetch another from each.
+            elsif ( $curr->[INFO] && defined $curr->[TIME]
+                    && $misc->{time} - $curr->[TIME] - $prev->[START]
+                       - $prev->[ETIME] - $misc->{etime} > $fudge
+            ) {
+               MKDEBUG && _d('$curr has same query that restarted');
+               $is_new = 1;
+            }
+            if ( $is_new ) {
+               $event = $self->make_event($prev, $misc->{time});
+            }
          }
-         elsif ( !$curr
-               || ( $curr && $prev && $curr->[ID] > $prev->[ID] )) {
-            MKDEBUG && _d('$curr is not in $prev');
-            fire_event( $prev, $misc->{time}, @callbacks );
-            $prev = undef;
-         }
-         else { # This else must be entered, to prevent infinite loops.
-            MKDEBUG && _d('$prev is not in $curr');
-            if ( $curr->[INFO] && defined $curr->[TIME] ) {
+         if ( $curr->[INFO] ) {
+            if ( $prev->[INFO] && !$is_new ) {
+               MKDEBUG && _d('Pushing old history item back onto $prev');
+               push @new, [ @$prev ];
+            }
+            else {
                MKDEBUG && _d('Pushing new history item onto $prev');
                push @new,
                   [ @$curr, int($misc->{time} - $curr->[TIME]),
                      $misc->{etime}, $misc->{time} ];
             }
-            $curr = undef; # No infinite loops.
          }
+         $curr = $prev = undef; # Fetch another from each.
       }
-   } while ( @curr || @prev || $curr || $prev );
+      elsif ( !$curr
+              || ($curr && $prev && $curr->[ID] > $prev->[ID]) ) {
+         MKDEBUG && _d('$curr is not in $prev');
+         $event = $self->make_event($prev, $misc->{time});
+         $prev = undef;
+      }
+      else { # This else must be entered, to prevent infinite loops.
+         MKDEBUG && _d('$prev is not in $curr');
+         if ( $curr->[INFO] && defined $curr->[TIME] ) {
+            MKDEBUG && _d('Pushing new history item onto $prev');
+            push @new,
+               [ @$curr, int($misc->{time} - $curr->[TIME]),
+                  $misc->{etime}, $misc->{time} ];
+         }
+         $curr = undef; # No infinite loops.
+      }
+   }
 
-   @{$misc->{prev}} = @new;
+   $self->{prev_rows} = \@new;
+   $self->{prev_row}  = $prev;
+   $self->{curr_rows} = scalar @curr ? \@curr : undef;
+   $self->{curr_row}  = $curr;
 
-   return $num_events;
+   return $event;
 }
 
-sub fire_event {
-   my ( $row, $time, @callbacks ) = @_;
+sub make_event {
+   my ( $self, $row, $time ) = @_;
    my $Query_time = $row->[TIME];
    if ( $row->[TIME] < $time - $row->[FSEEN] ) {
       $Query_time = $time - $row->[FSEEN];
@@ -1882,9 +1980,15 @@ sub fire_event {
       Query_time => $Query_time,
       Lock_time  => 0,               # TODO
    };
-   foreach my $callback ( @callbacks ) {
-      last unless $event = $callback->($event);
-   }
+   MKDEBUG && _d('Properties of event:', Dumper($event));
+   return $event;
+}
+
+sub _get_rows {
+   my ( $self ) = @_;
+   my %rows = map { $_ => $self->{$_} }
+      qw(prev_rows new_rows curr_row prev_row);
+   return \%rows;
 }
 
 sub find {
@@ -2004,7 +2108,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TcpdumpParser package 4502
+# TcpdumpParser package 5266
 # ###########################################################################
 package TcpdumpParser;
 
@@ -2016,7 +2120,7 @@ use Data::Dumper;
 $Data::Dumper::Indent   = 1;
 $Data::Dumper::Sortkeys = 1;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -2025,39 +2129,37 @@ sub new {
 }
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_packets = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    if ( !$fh ) {
       MKDEBUG && _d('No filehandle');
-      return 0;
+      return;
    }
 
    local $INPUT_RECORD_SEPARATOR = "\n20";
 
    my $pos_in_log = tell($fh);
-   while ( $$oktorun && defined(my $raw_packet = <$fh>) ) {
+   while ( defined(my $raw_packet = <$fh>) ) {
       next if $raw_packet =~ m/^$/;  # issue 564
+      $pos_in_log -= 1 if $pos_in_log;
 
       $raw_packet =~ s/\n20\Z//;
       $raw_packet = "20$raw_packet" unless $raw_packet =~ m/\A20/;
 
-      MKDEBUG && _d('packet:', ++$num_packets, 'pos:', $pos_in_log);
       my $packet = $self->_parse_packet($raw_packet);
       $packet->{pos_in_log} = $pos_in_log;
       $packet->{raw_packet} = $raw_packet;
 
-      foreach my $callback ( @callbacks ) {
-         last unless $packet = $callback->($packet);
-      }
-
-      $pos_in_log = tell($fh) - 1;
+      return $packet;
    }
 
-   MKDEBUG && _d('Done parsing packets;', $num_packets, 'parsed');
-   return $num_packets;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _parse_packet {
@@ -2068,6 +2170,9 @@ sub _parse_packet {
    my ( $src_host, $src_port ) = $source =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
    my ( $dst_host, $dst_port ) = $dest   =~ m/((?:\d+\.){3}\d+)\.(\w+)/;
 
+   $src_port = $self->port_number($src_port);
+   $dst_port = $self->port_number($dst_port);
+   
    my $hex = qr/[0-9a-f]/;
    (my $data = join('', $packet =~ m/\s+0x$hex+:\s((?:\s$hex{2,4})+)/go)) =~ s/\s+//g; 
 
@@ -2080,12 +2185,17 @@ sub _parse_packet {
    my $seq = hex(substr($data, ($ip_hlen + 1) * 8, 8));
    my $ack = hex(substr($data, ($ip_hlen + 2) * 8, 8));
 
+   my $flags = hex(substr($data, (($ip_hlen + 3) * 8) + 2, 2));
+
    $data = substr($data, ($ip_hlen + $tcp_hlen) * 8);
 
    my $pkt = {
       ts        => $ts,
       seq       => $seq,
       ack       => $ack,
+      fin       => $flags & 0x01,
+      syn       => $flags & 0x02,
+      rst       => $flags & 0x04,
       src_host  => $src_host,
       src_port  => $src_port,
       dst_host  => $dst_host,
@@ -2103,6 +2213,15 @@ sub _parse_packet {
    return $pkt;
 }
 
+sub port_number {
+   my ( $self, $port ) = @_;
+   return unless $port;
+   return $port eq 'memcached' ? 11211
+        : $port eq 'http'      ? 80
+        : $port eq 'mysql'     ? 3306
+        :                        $port; 
+}
+
 sub _d {
    my ($package, undef, $line) = caller 0;
    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
@@ -2118,7 +2237,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLProtocolParser package 4616
+# MySQLProtocolParser package 5292
 # ###########################################################################
 package MySQLProtocolParser;
 
@@ -2144,13 +2263,14 @@ our @EXPORT      = ();
 our @EXPORT_OK   = qw(
    parse_error_packet
    parse_ok_packet
+   parse_ok_prepared_statement_packet
    parse_server_handshake_packet
    parse_client_handshake_packet
    parse_com_packet
    parse_flags
 );
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant {
    COM_SLEEP               => '00',
    COM_QUIT                => '01',
@@ -2238,6 +2358,78 @@ my %flag_for = (
    'CLIENT_MULTI_RESULTS'     => 131072,  # Enable/disable multi-results 
 );
 
+use constant {
+   MYSQL_TYPE_DECIMAL      => 0,
+   MYSQL_TYPE_TINY         => 1,
+   MYSQL_TYPE_SHORT        => 2,
+   MYSQL_TYPE_LONG         => 3,
+   MYSQL_TYPE_FLOAT        => 4,
+   MYSQL_TYPE_DOUBLE       => 5,
+   MYSQL_TYPE_NULL         => 6,
+   MYSQL_TYPE_TIMESTAMP    => 7,
+   MYSQL_TYPE_LONGLONG     => 8,
+   MYSQL_TYPE_INT24        => 9,
+   MYSQL_TYPE_DATE         => 10,
+   MYSQL_TYPE_TIME         => 11,
+   MYSQL_TYPE_DATETIME     => 12,
+   MYSQL_TYPE_YEAR         => 13,
+   MYSQL_TYPE_NEWDATE      => 14,
+   MYSQL_TYPE_VARCHAR      => 15,
+   MYSQL_TYPE_BIT          => 16,
+   MYSQL_TYPE_NEWDECIMAL   => 246,
+   MYSQL_TYPE_ENUM         => 247,
+   MYSQL_TYPE_SET          => 248,
+   MYSQL_TYPE_TINY_BLOB    => 249,
+   MYSQL_TYPE_MEDIUM_BLOB  => 250,
+   MYSQL_TYPE_LONG_BLOB    => 251,
+   MYSQL_TYPE_BLOB         => 252,
+   MYSQL_TYPE_VAR_STRING   => 253,
+   MYSQL_TYPE_STRING       => 254,
+   MYSQL_TYPE_GEOMETRY     => 255,
+};
+
+my %type_for = (
+   0   => 'MYSQL_TYPE_DECIMAL',
+   1   => 'MYSQL_TYPE_TINY',
+   2   => 'MYSQL_TYPE_SHORT',
+   3   => 'MYSQL_TYPE_LONG',
+   4   => 'MYSQL_TYPE_FLOAT',
+   5   => 'MYSQL_TYPE_DOUBLE',
+   6   => 'MYSQL_TYPE_NULL',
+   7   => 'MYSQL_TYPE_TIMESTAMP',
+   8   => 'MYSQL_TYPE_LONGLONG',
+   9   => 'MYSQL_TYPE_INT24',
+   10  => 'MYSQL_TYPE_DATE',
+   11  => 'MYSQL_TYPE_TIME',
+   12  => 'MYSQL_TYPE_DATETIME',
+   13  => 'MYSQL_TYPE_YEAR',
+   14  => 'MYSQL_TYPE_NEWDATE',
+   15  => 'MYSQL_TYPE_VARCHAR',
+   16  => 'MYSQL_TYPE_BIT',
+   246 => 'MYSQL_TYPE_NEWDECIMAL',
+   247 => 'MYSQL_TYPE_ENUM',
+   248 => 'MYSQL_TYPE_SET',
+   249 => 'MYSQL_TYPE_TINY_BLOB',
+   250 => 'MYSQL_TYPE_MEDIUM_BLOB',
+   251 => 'MYSQL_TYPE_LONG_BLOB',
+   252 => 'MYSQL_TYPE_BLOB',
+   253 => 'MYSQL_TYPE_VAR_STRING',
+   254 => 'MYSQL_TYPE_STRING',
+   255 => 'MYSQL_TYPE_GEOMETRY',
+);
+
+my %unpack_type = (
+   MYSQL_TYPE_NULL       => sub { return 'NULL', 0; },
+   MYSQL_TYPE_TINY       => sub { return to_num(@_, 1), 1; },
+   MySQL_TYPE_SHORT      => sub { return to_num(@_, 2), 2; },
+   MYSQL_TYPE_LONG       => sub { return to_num(@_, 4), 4; },
+   MYSQL_TYPE_LONGLONG   => sub { return to_num(@_, 8), 8; },
+   MYSQL_TYPE_DOUBLE     => sub { return to_double(@_), 8; },
+   MYSQL_TYPE_VARCHAR    => \&unpack_string,
+   MYSQL_TYPE_VAR_STRING => \&unpack_string,
+   MYSQL_TYPE_STRING     => \&unpack_string,
+);
+
 sub new {
    my ( $class, %args ) = @_;
 
@@ -2257,8 +2449,13 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -2295,6 +2492,8 @@ sub parse_packet {
          compress    => undef,
          raw_packets => [],
          buff        => '',
+         sths        => {},
+         attribs     => {},
       };
    };
    my $session = $self->{sessions}->{$client};
@@ -2337,7 +2536,7 @@ sub parse_packet {
 
    my $event;
    if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
       if ( $session->{buff} && $session->{buff_left} <= 0 ) {
@@ -2354,7 +2553,7 @@ sub parse_packet {
             $session->{buff_left}, 'more bytes');
          return;
       }
-      $event = $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $args{misc});
 
       $session->{buff}           = '';
       $session->{buff_left}      = 0;
@@ -2425,17 +2624,40 @@ sub _packet_from_server {
             );
          }
          elsif ( $session->{cmd} ) {
-            my $ok  = parse_ok_packet($data);
-            if ( !$ok ) {
-               $self->fail_session($session, 'failed to parse OK packet');
-               return;
-            }
             my $com = $session->{cmd}->{cmd};
-            my $arg;
+            my $ok;
+            if ( $com eq COM_STMT_PREPARE ) {
+               MKDEBUG && _d('OK for prepared statement');
+               $ok = parse_ok_prepared_statement_packet($data);
+               if ( !$ok ) {
+                  $self->fail_session($session,
+                     'failed to parse OK prepared statement packet');
+                  return;
+               }
+               my $sth_id = $ok->{sth_id};
+               $session->{attribs}->{Statement_id} = $sth_id;
 
-            if ( $com eq COM_QUERY ) {
+               $session->{sths}->{$sth_id} = $ok;
+               $session->{sths}->{$sth_id}->{statement}
+                  = $session->{cmd}->{arg};
+            }
+            else {
+               $ok  = parse_ok_packet($data);
+               if ( !$ok ) {
+                  $self->fail_session($session, 'failed to parse OK packet');
+                  return;
+               }
+            }
+
+            my $arg;
+            if ( $com eq COM_QUERY
+                 || $com eq COM_STMT_EXECUTE || $com eq COM_STMT_RESET ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
+            }
+            elsif ( $com eq COM_STMT_PREPARE ) {
+               $com = 'Query';
+               $arg = "PREPARE $session->{cmd}->{arg}";
             }
             else {
                $arg = 'administrator command: '
@@ -2481,7 +2703,7 @@ sub _packet_from_server {
             my $com = $session->{cmd}->{cmd};
             my $arg;
 
-            if ( $com eq COM_QUERY ) {
+            if ( $com eq COM_QUERY || $com eq COM_STMT_EXECUTE ) {
                $com = 'Query';
                $arg = $session->{cmd}->{arg};
             }
@@ -2515,7 +2737,7 @@ sub _packet_from_server {
          }
          else {
             MKDEBUG && _d('Got an EOF packet');
-            die "Got an unexpected EOF packet";
+            $self->fail_session($session, 'got an unexpected EOF packet');
          }
       }
       else {
@@ -2524,7 +2746,7 @@ sub _packet_from_server {
             my $com = $session->{cmd}->{cmd};
             MKDEBUG && _d('Responding to client', $com_for{$com});
             my $event = { ts  => $packet->{ts} };
-            if ( $com eq COM_QUERY ) {
+            if ( $com eq COM_QUERY || $com eq COM_STMT_EXECUTE ) {
                $event->{cmd} = 'Query';
                $event->{arg} = $session->{cmd}->{arg};
             }
@@ -2611,6 +2833,29 @@ sub _packet_from_client {
          $self->fail_session($session, 'failed to parse COM packet');
          return;
       }
+
+      if ( $com->{code} eq COM_STMT_EXECUTE ) {
+         MKDEBUG && _d('Execute prepared statement');
+         my $exec = parse_execute_packet($com->{data}, $session->{sths});
+         if ( !$exec ) {
+            MKDEBUG && _d('Failed to parse execute packet');
+            $session->{state} = undef;
+            return;
+         }
+         $com->{data} = $exec->{arg};
+         $session->{attribs}->{Statement_id} = $exec->{sth_id};
+      }
+      elsif ( $com->{code} eq COM_STMT_RESET ) {
+         my $sth_id = get_sth_id($com->{data});
+         if ( !$sth_id ) {
+            $self->fail_session($session,
+               'failed to parse prepared statement reset packet');
+            return;
+         }
+         $com->{data} = "RESET $sth_id";
+         $session->{attribs}->{Statement_id} = $sth_id;
+      }
+
       $session->{state}      = 'awaiting_reply';
       $session->{pos_in_log} = $packet->{pos_in_log};
       $session->{ts}         = $ts;
@@ -2630,6 +2875,23 @@ sub _packet_from_client {
          );
          $session->{state} = 'closing';
       }
+      elsif ( $com->{code} eq COM_STMT_CLOSE ) {
+         my $sth_id = get_sth_id($com->{data});
+         if ( !$sth_id ) {
+            $self->fail_session($session,
+               'failed to parse prepared statement close packet');
+            return;
+         }
+         delete $session->{sths}->{$sth_id};
+         return $self->_make_event(
+            {  cmd       => 'Query',
+               arg       => "DEALLOCATE PREPARE $sth_id",
+               ts        => $ts,
+            },
+            $packet, $session
+         );
+         $session->{state} = 'closing';
+      }
    }
 
    return;
@@ -2639,7 +2901,10 @@ sub _make_event {
    my ( $self, $event, $packet, $session ) = @_;
    MKDEBUG && _d('Making event');
 
-   $session->{raw_packets} = [];
+   $session->{raw_packets}    = [];
+   $session->{buff}           = '';
+   $session->{buff_left}      = 0;
+   $session->{mysql_data_len} = 0;
 
    if ( !$session->{thread_id} ) {
       MKDEBUG && _d('Giving session fake thread id', $self->{fake_thread_id});
@@ -2666,11 +2931,14 @@ sub _make_event {
       No_good_index_used => ($event->{No_good_index_used} ? 'Yes' : 'No'),
       No_index_used      => ($event->{No_index_used}      ? 'Yes' : 'No'),
    };
+   @{$new_event}{keys %{$session->{attribs}}} = values %{$session->{attribs}};
    MKDEBUG && _d('Properties of event:', Dumper($new_event));
 
    delete $session->{cmd};
 
    $session->{state} = undef;
+
+   $session->{attribs} = {};
 
    return $new_event;
 }
@@ -2699,18 +2967,68 @@ sub timestamp_diff {
 
 sub to_string {
    my ( $data ) = @_;
-   $data = pack('H*', $data);
-   return $data;
+   return pack('H*', $data);
+}
+
+sub unpack_string {
+   my ( $data ) = @_;
+   my $len        = 0;
+   my $encode_len = 0;
+   ($data, $len, $encode_len) = decode_len($data);
+   my $t = 'H' . ($len ? $len * 2 : '*');
+   $data = pack($t, $data);
+   return "\"$data\"", $encode_len + $len;
+}
+
+sub decode_len {
+   my ( $data ) = @_;
+   return unless $data;
+
+   my $first_byte = to_num(substr($data, 0, 2, ''));
+
+   my $len;
+   my $encode_len;
+   if ( $first_byte <= 251 ) {
+      $len        = $first_byte;
+      $encode_len = 1;
+   }
+   elsif ( $first_byte == 252 ) {
+      $len        = to_num(substr($data, 4, ''));
+      $encode_len = 2;
+   }
+   elsif ( $first_byte == 253 ) {
+      $len        = to_num(substr($data, 6, ''));
+      $encode_len = 3;
+   }
+   elsif ( $first_byte == 254 ) {
+      $len        = to_num(substr($data, 16, ''));
+      $encode_len = 8;
+   }
+   else {
+      MKDEBUG && _d('data:', $data, 'first byte:', $first_byte);
+      die "Invalid length encoded byte: $first_byte";
+   }
+
+   MKDEBUG && _d('len:', $len, 'encode len', $encode_len);
+   return $data, $len, $encode_len;
 }
 
 sub to_num {
-   my ( $str ) = @_;
+   my ( $str, $len ) = @_;
+   if ( $len ) {
+      $str = substr($str, 0, $len * 2);
+   }
    my @bytes = $str =~ m/(..)/g;
    my $result = 0;
    foreach my $i ( 0 .. $#bytes ) {
       $result += hex($bytes[$i]) * (16 ** ($i * 2));
    }
    return $result;
+}
+
+sub to_double {
+   my ( $str ) = @_;
+   return unpack('d', pack('H*', $str));
 }
 
 sub get_lcb {
@@ -2732,7 +3050,7 @@ sub get_lcb {
 
 sub parse_error_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('ERROR data:', $data);
    if ( length $data < 16 ) {
       MKDEBUG && _d('Error packet is too short:', $data);
@@ -2754,7 +3072,7 @@ sub parse_error_packet {
 
 sub parse_ok_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('OK data:', $data);
    if ( length $data < 12 ) {
       MKDEBUG && _d('OK packet is too short:', $data);
@@ -2776,9 +3094,29 @@ sub parse_ok_packet {
    return $pkt;
 }
 
+sub parse_ok_prepared_statement_packet {
+   my ( $data ) = @_;
+   return unless $data;
+   MKDEBUG && _d('OK prepared statement data:', $data);
+   if ( length $data < 8 ) {
+      MKDEBUG && _d('OK prepared statement packet is too short:', $data);
+      return;
+   }
+   my $sth_id     = to_num(substr($data, 0, 8, ''));
+   my $num_cols   = to_num(substr($data, 0, 4, ''));
+   my $num_params = to_num(substr($data, 0, 4, ''));
+   my $pkt = {
+      sth_id     => $sth_id,
+      num_cols   => $num_cols,
+      num_params => $num_params,
+   };
+   MKDEBUG && _d('OK prepared packet:', Dumper($pkt));
+   return $pkt;
+}
+
 sub parse_server_handshake_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('Server handshake data:', $data);
    my $handshake_pattern = qr{
       ^                 # -----                ----
@@ -2803,7 +3141,7 @@ sub parse_server_handshake_packet {
 
 sub parse_client_handshake_packet {
    my ( $data ) = @_;
-   die "I need data" unless $data;
+   return unless $data;
    MKDEBUG && _d('Client handshake data:', $data);
    my ( $flags, $user, $buff_len ) = $data =~ m{
       ^
@@ -2836,8 +3174,7 @@ sub parse_client_handshake_packet {
 
 sub parse_com_packet {
    my ( $data, $len ) = @_;
-   die "I need data"  unless $data;
-   die "I need a len" unless $len;
+   return unless $data && $len;
    MKDEBUG && _d('COM data:',
       (substr($data, 0, 100).(length $data > 100 ? '...' : '')),
       'len:', $len);
@@ -2847,7 +3184,12 @@ sub parse_com_packet {
       MKDEBUG && _d('Did not match COM packet');
       return;
    }
-   $data    = to_string(substr($data, 2, ($len - 1) * 2));
+   if (    $code ne COM_STMT_EXECUTE
+        && $code ne COM_STMT_CLOSE
+        && $code ne COM_STMT_RESET )
+   {
+      $data = to_string(substr($data, 2, ($len - 1) * 2));
+   }
    my $pkt = {
       code => $code,
       com  => $com,
@@ -2855,6 +3197,82 @@ sub parse_com_packet {
    };
    MKDEBUG && _d('COM packet:', Dumper($pkt));
    return $pkt;
+}
+
+sub parse_execute_packet {
+   my ( $data, $sths ) = @_;
+   return unless $data && $sths;
+
+   my $sth_id = to_num(substr($data, 2, 8));
+   return unless defined $sth_id;
+
+   my $sth = $sths->{$sth_id};
+   if ( !$sth ) {
+      MKDEBUG && _d('Skipping unknown statement handle', $sth_id);
+      return;
+   }
+   my $null_count  = int(($sth->{num_params} + 7) / 8) || 1;
+   my $null_bitmap = to_num(substr($data, 20, $null_count * 2));
+   MKDEBUG && _d('NULL bitmap:', $null_bitmap, 'count:', $null_count);
+   
+   substr($data, 0, 20 + ($null_count * 2), '');
+
+   my $new_params = to_num(substr($data, 0, 2, ''));
+   my @types; 
+   if ( $new_params ) {
+      MKDEBUG && _d('New param types');
+      for my $i ( 0..($sth->{num_params}-1) ) {
+         my $type = to_num(substr($data, 0, 4, ''));
+         push @types, $type_for{$type};
+         MKDEBUG && _d('Param', $i, 'type:', $type, $type_for{$type});
+      }
+      $sth->{types} = \@types;
+   }
+   else {
+      @types = @{$sth->{types}} if $data;
+   }
+
+
+   my $arg  = $sth->{statement};
+   MKDEBUG && _d('Statement:', $arg);
+   for my $i ( 0..($sth->{num_params}-1) ) {
+      my $val;
+      my $len;  # in bytes
+      if ( $null_bitmap & ($i+1) ) {
+         MKDEBUG && _d('Param', $i, 'is NULL (bitmap)');
+         $val = 'NULL';
+         $len = 0;
+      }
+      else {
+         if ( $unpack_type{$types[$i]} ) {
+            ($val, $len) = $unpack_type{$types[$i]}->($data);
+         }
+         else {
+            MKDEBUG && _d('No handler for param', $i, 'type', $types[$i]);
+            $val = '?';
+            $len = 0;
+         }
+      }
+
+      MKDEBUG && _d('Param', $i, 'val:', $val);
+      $arg =~ s/\?/$val/;
+
+      substr($data, 0, $len * 2, '') if $len;
+   }
+
+   my $pkt = {
+      sth_id => $sth_id,
+      arg    => "EXECUTE $arg",
+   };
+   MKDEBUG && _d('Execute packet:', Dumper($pkt));
+   return $pkt;
+}
+
+sub get_sth_id {
+   my ( $data ) = @_;
+   return unless $data;
+   my $sth_id = to_num(substr($data, 2, 8));
+   return $sth_id;
 }
 
 sub parse_flags {
@@ -2997,6 +3415,8 @@ sub fail_session {
    my ( $self, $session, $reason ) = @_;
    my $errors_fh = $self->_get_errors_fh();
    if ( $errors_fh ) {
+      my $raw_packets = $session->{raw_packets};
+      delete $session->{raw_packets};  # Don't dump, it's printed below.
       $session->{reason_for_failure} = $reason;
       my $session_dump = '# ' . Dumper($session);
       chomp $session_dump;
@@ -3004,7 +3424,7 @@ sub fail_session {
       print $errors_fh "$session_dump\n";
       {
          local $LIST_SEPARATOR = "\n";
-         print $errors_fh "@{$session->{raw_packets}}";
+         print $errors_fh "@$raw_packets";
          print $errors_fh "\n";
       }
    }
@@ -3028,7 +3448,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogParser package 4462
+# SlowLogParser package 5266
 # ###########################################################################
 package SlowLogParser;
 
@@ -3037,11 +3457,14 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
-   bless {}, $class;
+   my $self = {
+      pending => [],
+   };
+   return bless $self, $class;
 }
 
 my $slow_log_ts_line = qr/^# Time: ([0-9: ]{15})/;
@@ -3057,20 +3480,21 @@ my $slow_log_hd_line = qr{
    }xm;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
-   my @pending;
+   my $pending = $self->{pending};
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $trimlen    = length($INPUT_RECORD_SEPARATOR);
    my $pos_in_log = tell($fh);
    my $stmt;
 
    EVENT:
-   while ( $$oktorun
-           && (defined($stmt = shift @pending) or defined($stmt = <$fh>)) ) {
+   while ( (defined($stmt = shift @$pending) or defined($stmt = <$fh>)) ) {
       my @properties = ('cmd', 'Query', 'pos_in_log', $pos_in_log);
       $pos_in_log = tell($fh);
 
@@ -3079,7 +3503,7 @@ sub parse_event {
          if ( @chunks > 1 ) {
             MKDEBUG && _d("Found multiple chunks");
             $stmt = shift @chunks;
-            unshift @pending, @chunks;
+            unshift @$pending, @chunks;
          }
       }
 
@@ -3166,10 +3590,10 @@ sub parse_event {
             MKDEBUG && _d("Got the query/arg line");
             my $arg = substr($stmt, $pos - length($line));
             push @properties, 'arg', $arg, 'bytes', length($arg);
-            if ( $misc && $misc->{embed}
-               && ( my ($e) = $arg =~ m/($misc->{embed})/)
+            if ( $args{misc} && $args{misc}->{embed}
+               && ( my ($e) = $arg =~ m/($args{misc}->{embed})/)
             ) {
-               push @properties, $e =~ m/$misc->{capture}/g;
+               push @properties, $e =~ m/$args{misc}->{capture}/g;
             }
             last LINE;
          }
@@ -3177,13 +3601,12 @@ sub parse_event {
 
       MKDEBUG && _d('Properties of event:', Dumper(\@properties));
       my $event = { @properties };
-      foreach my $callback ( @callbacks ) {
-         last unless $event = $callback->($event);
-      }
-      ++$num_events;
-      last EVENT unless @pending;
+      return $event;
    }
-   return $num_events;
+
+   @$pending = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -3201,7 +3624,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# SlowLogWriter package 4461
+# SlowLogWriter package 5266
 # ###########################################################################
 package SlowLogWriter;
 
@@ -3209,7 +3632,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class ) = @_;
@@ -3233,16 +3656,9 @@ sub write {
    }
 
    my $percona_patched = exists $event->{QC_Hit} ? 1 : 0;
-   my $df;  # Decimal/microsecond or integer format.
-   if ( $percona_patched ) {
-      $df = '.6f';
-   }
-   else {
-      $df = 'd';
-   }
 
    printf $fh
-      "# Query_time: %$df  Lock_time: %$df  Rows_sent: %d  Rows_examined: %d\n",
+      "# Query_time: %.6f  Lock_time: %.6f  Rows_sent: %d  Rows_examined: %d\n",
       map { $_ || 0 }
          @{$event}{qw(Query_time Lock_time Rows_sent Rows_examined)};
 
@@ -3254,7 +3670,7 @@ sub write {
 
       if ( exists $event->{InnoDB_IO_r_ops} ) {
          printf $fh
-            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %$df\n#   InnoDB_rec_lock_wait: %$df  InnoDB_queue_wait: %$df\n#   InnoDB_pages_distinct: %d\n",
+            "#   InnoDB_IO_r_ops: %d  InnoDB_IO_r_bytes: %d  InnoDB_IO_r_wait: %s\n#   InnoDB_rec_lock_wait: %s  InnoDB_queue_wait: %s\n#   InnoDB_pages_distinct: %d\n",
             map { $_ || 0 }
                @{$event}{qw(InnoDB_IO_r_ops InnoDB_IO_r_bytes InnoDB_IO_r_wait InnoDB_rec_lock_wait InnoDB_queue_wait InnoDB_pages_distinct)};
 
@@ -3866,7 +4282,159 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReportFormatter package 4980
+# ReportFormatter package 5266
+# ###########################################################################
+package ReportFormatter;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use List::Util qw(min max);
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw();
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $self = {
+      underline_header  => 1,
+      line_prefix        => '# ',
+      line_width         => 78,
+      truncate_underline => 1,
+      %args,
+   };
+   return bless $self, $class;
+}
+
+sub set_title {
+   my ( $self, $title ) = @_;
+   $self->{title} = $title;
+   return;
+}
+
+sub set_columns {
+   my ( $self, @cols ) = @_;
+   push @{$self->{cols}}, map {
+      my $col = $_;
+      die "Column does not have a name" unless defined $col->{name};
+      if ( $col->{fixed_wdith} && $col->{fixed_width} < length $col->{name} ) { 
+         die "Fixed width is less than the column name";
+      }
+      $col->{min_val_width} = length $col->{name};
+      $col->{max_val_width} = length $col->{name};
+      $col;
+   } @cols;
+   return;
+}
+
+sub add_line {
+   my ( $self, @vals ) = @_;
+
+   my $n_cols = scalar @{$self->{cols}};
+   my $n_vals = scalar @vals;
+   die "Number of columns ($n_cols) and values ($n_vals) do not match"
+      unless $n_cols == $n_vals;
+
+   my @line;
+   for my $i ( 0..$#vals ) {
+      my $col = $self->{cols}->[$i];
+      my $val = $vals[$i];
+      my $width = length $val;
+      if ( $col->{fixed_width} && $width > $col->{fixed_width} ) {
+         if ( $col->{truncate} ) {
+            $val  = substr($val, 0, $col->{fixed_width} - 3);
+            $val .= '...';
+            MKDEBUG && _d('Truncated', $vals[$i], 'to', $val);
+         }
+         else {
+            die "Value '$val' is too wide for column $col->{name}";
+         }
+      }
+      $col->{max_val_width} = max($width, $col->{max_val_width});
+      push @line, $val;
+   }
+   push @{$self->{lines}}, \@line;
+
+   return;
+}
+
+sub get_report {
+   my ( $self ) = @_;
+   my @lines;
+   my $p = $self->{line_prefix} || '';
+
+   my $n_cols = scalar @{$self->{cols}}
+              - ($self->{long_last_column} ? 2 : 1);
+
+   my $fmt = $p;
+   my @col_fmts;
+   for my $i ( 0..$n_cols ) {
+      my $col = $self->{cols}->[$i];
+      my $col_fmt = '%'
+                  . ($col->{right_justify} ? '' : '-')
+                  . "$col->{max_val_width}"
+                  . 's';
+      push @col_fmts, $col_fmt;
+   }
+   if ( $self->{long_last_column} ) {
+      push @col_fmts, '%s';
+   }
+   $fmt .= join(' ', @col_fmts);
+   MKDEBUG && _d('Format:', $fmt);
+
+   push @lines, sprintf "${p}$self->{title}" if $self->{title};
+
+   (my $hdr_fmt = $fmt) =~ s/%([^-])/%-$1/g;
+   push @lines, sprintf $hdr_fmt, map { $_->{name} } @{$self->{cols}};
+
+   if ( $self->{underline_header} ) {
+      my $underline_len = 0;
+      my @underlines = map {
+         my $underline = '=' x $_->{max_val_width};
+         $underline_len += length $underline;
+         $underline;
+      } @{$self->{cols}};
+      $underline_len += (scalar @underlines) - 1;
+      if ( $self->{truncate_underline}
+           && (2 + $underline_len) > $self->{line_width} ) {
+         my $over = $self->{line_width} - (2 + $underline_len);
+         $underlines[-1] = substr($underlines[-1], 0, $over);
+      }
+
+      push @lines, sprintf $fmt, @underlines;
+   }
+
+   foreach my $line ( @{$self->{lines}} ) {
+      push @lines, sprintf $fmt, @$line;
+   }
+
+   return join("\n", @lines) . "\n";
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ReportFormatter package
+# ###########################################################################
+
+# ###########################################################################
+# QueryReportFormatter package 5180
 # ###########################################################################
 
 
@@ -3925,7 +4493,7 @@ sub global_report {
    my $stats = $ea->results;
    my @result;
 
-   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt};
+   my $global_cnt = $stats->{globals}->{$opts{worst}}->{cnt} || 0;
 
    my ($qps, $conc) = (0, 0);
    if ( $global_cnt && $stats->{globals}->{ts}
@@ -3947,8 +4515,8 @@ sub global_report {
       '# Overall: %s total, %s unique, %s QPS, %sx concurrency ',
       shorten($global_cnt, d=>1_000),
       shorten(scalar keys %{$stats->{classes}}, d=>1_000),
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000));
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000));
    $line .= ('_' x (LINE_LENGTH - length($line)));
    push @result, $line;
 
@@ -4030,8 +4598,8 @@ sub event_report {
       '# %s %d: %s QPS, %sx concurrency, ID 0x%s at byte %d ',
       ($ea->{groupby} eq 'fingerprint' ? 'Query' : 'Item'),
       $opts{rank} || 0,
-      shorten($qps, d=>1_000),
-      shorten($conc, d=>1_000),
+      shorten($qps  || 0, d=>1_000),
+      shorten($conc || 0, d=>1_000),
       make_checksum($opts{where}),
       $sample->{pos_in_log} || 0);
    $line .= ('_' x (LINE_LENGTH - length($line)));
@@ -4164,7 +4732,7 @@ sub make_label {
 sub format_bool_attrib {
    my ( $stats ) = @_;
    my $p_true  = percentage_of($stats->{sum},  $stats->{cnt});
-   my $n_true = '(' . shorten($stats->{sum}, d=>1_000, p=>0) . ')';
+   my $n_true = '(' . shorten($stats->{sum} || 0, d=>1_000, p=>0) . ')';
    return $p_true, $n_true;
 }
 
@@ -4259,7 +4827,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# EventTimeline package 3539
+# EventTimeline package 5266
 # ###########################################################################
 
 
@@ -4271,7 +4839,7 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 Transformers->import(qw(parse_timestamp secs_to_time unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 use constant KEY     => 0;
 use constant CNT     => 1;
 use constant ATT     => 2;
@@ -4427,7 +4995,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryParser package 4977
+# QueryParser package 5266
 # ###########################################################################
 package QueryParser;
 
@@ -4435,7 +5003,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 our $tbl_ident = qr/(?:`[^`]+`|\w+)(?:\.(?:`[^`]+`|\w+))?/;
 our $tbl_regex = qr{
          \b(?:FROM|JOIN|(?<!KEY\s)UPDATE|INTO) # Words that precede table names
@@ -4709,7 +5277,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MySQLDump package 4160
+# MySQLDump package 5266
 # ###########################################################################
 package MySQLDump;
 
@@ -4718,7 +5286,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 ( our $before = <<'EOF') =~ s/^   //gm;
    /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -5016,7 +5584,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# TableParser package 4931
+# TableParser package 5266
 # ###########################################################################
 package TableParser;
 
@@ -5028,7 +5596,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 
 sub new {
@@ -5060,6 +5628,9 @@ sub parse {
       die "Cannot parse table definition; is ANSI quoting "
          . "enabled or SQL_QUOTE_SHOW_CREATE disabled?";
    }
+
+   my ($name)     = $ddl =~ m/CREATE (?:TEMPORARY )?TABLE\s+(`.+?`)/;
+   (undef, $name) = $self->{Quoter}->split_unquote($name) if $name;
 
    $ddl =~ s/(`[^`]+`)/\L$1/g;
 
@@ -5093,6 +5664,7 @@ sub parse {
    my ($keys, $clustered_key) = $self->get_keys($ddl, $opts, \%is_nullable);
 
    return {
+      name           => $name,
       cols           => \@cols,
       col_posn       => { map { $cols[$_] => $_ } 0..$#cols },
       is_col         => { map { $_ => 1 } @cols },
@@ -5335,6 +5907,7 @@ sub get_fks {
          parent_tbl     => $parent,
          parent_colnames=> $parent_cols,
          parent_cols    => [ map { s/[ `]+//g; $_; } split(',', $parent_cols) ],
+         ddl            => $fk,
       };
    }
 
@@ -5360,7 +5933,7 @@ sub remove_secondary_indexes {
          my $key_def = $_->{ddl};
          $key_def =~ s/([\(\)])/\\$1/g;
          $ddl =~ s/\s+$key_def//;
-         $_->{ddl};
+         "ADD $_->{ddl}";
       }
       grep { $_->{name} ne $clustered_key }
       values %{$tbl_struct->{keys}};
@@ -5396,7 +5969,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# QueryReview package 3277
+# QueryReview package 5266
 # ###########################################################################
 
 package QueryReview;
@@ -5409,7 +5982,7 @@ Transformers->import(qw(make_checksum parse_timestamp));
 
 use Data::Dumper;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my %basic_cols = map { $_ => 1 }
    qw(checksum fingerprint sample first_seen last_seen reviewed_by
@@ -5500,7 +6073,6 @@ sub set_history_options {
 
 sub set_review_history {
    my ( $self, $id, $sample, %data ) = @_;
-   MKDEBUG && _d($id,$sample,Dumper(\%data));
    foreach my $thing ( qw(min max) ) {
       next unless defined $data{ts} && defined $data{ts}->{$thing};
       $data{ts}->{$thing} = parse_timestamp($data{ts}->{$thing});
@@ -5523,7 +6095,6 @@ sub get_review_info {
 
 sub set_review_info {
    my ( $self, %args ) = @_;
-   MKDEBUG && _d(Dumper(\%args));
    $self->{insert_sth}->execute(
       make_checksum($args{fingerprint}),
       @args{qw(fingerprint sample)},
@@ -5550,7 +6121,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# Daemon package 4565
+# Daemon package 5266
 # ###########################################################################
 
 package Daemon;
@@ -5561,7 +6132,7 @@ use warnings FATAL => 'all';
 use POSIX qw(setsid);
 use English qw(-no_match_vars);
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -5729,7 +6300,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedProtocolParser package 4834
+# MemcachedProtocolParser package 5266
 # ###########################################################################
 package MemcachedProtocolParser;
 
@@ -5742,7 +6313,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
@@ -5760,8 +6331,13 @@ sub new {
    return bless $self, $class;
 }
 
-sub parse_packet {
-   my ( $self, $packet, $misc ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
 
    my $src_host = "$packet->{src_host}:$packet->{src_port}";
    my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
@@ -5809,10 +6385,10 @@ sub parse_packet {
    $packet->{data} = pack('H*', $packet->{data});
    my $event;
    if ( $packet_from eq 'server' ) {
-      $event = $self->_packet_from_server($packet, $session, $misc);
+      $event = $self->_packet_from_server($packet, $session, $args{misc});
    }
    elsif ( $packet_from eq 'client' ) {
-      $event = $self->_packet_from_client($packet, $session, $misc);
+      $event = $self->_packet_from_client($packet, $session, $args{misc});
    }
    else {
       die 'Packet origin unknown';
@@ -6088,7 +6664,7 @@ sub timestamp_diff {
 # ###########################################################################
 
 # ###########################################################################
-# MemcachedEvent package 4155
+# MemcachedEvent package 5266
 # ###########################################################################
 package MemcachedEvent;
 
@@ -6102,7 +6678,7 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 my %cmds = map { $_ => 1 } qw(
    set
@@ -6135,8 +6711,9 @@ sub new {
    return bless $self, $class;
 }
 
-sub make_event {
-   my ( $self, $event ) = @_;
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my $event = $args{event};
    return unless $event;
 
    if ( !$event->{cmd} || !$event->{key} ) {
@@ -6230,7 +6807,7 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
-# BinaryLogParser package 4936
+# BinaryLogParser package 5266
 # ###########################################################################
 package BinaryLogParser;
 
@@ -6243,11 +6820,15 @@ $Data::Dumper::Indent    = 1;
 $Data::Dumper::Sortkeys  = 1;
 $Data::Dumper::Quotekeys = 0;
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 sub new {
    my ( $class, %args ) = @_;
-   return bless {}, $class;
+   my $self = {
+      delim     => undef,
+      delim_len => 0,
+   };
+   return bless $self, $class;
 }
 
 my $binlog_line_1 = qr/at (\d+)$/m;
@@ -6255,18 +6836,20 @@ my $binlog_line_2 = qr/^#(\d{6}\s+\d{1,2}:\d\d:\d\d)\s+server\s+id\s+(\d+)\s+end
 my $binlog_line_2_rest = qr/thread_id=(\d+)\s+exec_time=(\d+)\s+error_code=(\d+)/m;
 
 sub parse_event {
-   my ( $self, $fh, $misc, @callbacks ) = @_;
-   my $oktorun_here = 1;
-   my $oktorun      = $misc->{oktorun} ? $misc->{oktorun} : \$oktorun_here;
-   my $num_events   = 0;
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
 
    local $INPUT_RECORD_SEPARATOR = ";\n#";
    my $pos_in_log = tell($fh);
    my $stmt;
-   my ($delim, $delim_len) = (undef, 0);
+   my ($delim, $delim_len) = ($self->{delim}, $self->{delim_len});
 
    EVENT:
-   while ( $$oktorun && defined($stmt = <$fh>) ) {
+   while ( defined($stmt = <$fh>) ) {
       my @properties = ('pos_in_log', $pos_in_log);
       my ($ts, $sid, $end, $type, $rest);
       $pos_in_log = tell($fh);
@@ -6291,14 +6874,14 @@ sub parse_event {
          if ( $line =~ m/^DELIMITER/m ) {
             my ( $del ) = $line =~ m/^DELIMITER (\S*)$/m;
             if ( $del ) {
-               $delim_len = length $del;
-               $delim     = quotemeta $del;
+               $self->{delim_len} = $delim_len = length $del;
+               $self->{delim}     = $delim     = quotemeta $del;
                MKDEBUG && _d('delimiter:', $delim);
             }
             else {
                MKDEBUG && _d('Delimiter reset to ;');
-               $delim     = undef;
-               $delim_len = 0;
+               $self->{delim}     = $delim     = undef;
+               $self->{delim_len} = $delim_len = 0;
             }
             next LINE;
          }
@@ -6366,15 +6949,15 @@ sub parse_event {
             if ( $arg =~ m/^DELIMITER/m ) {
                my ( $del ) = $arg =~ m/^DELIMITER (\S*)$/m;
                if ( $del ) {
-                  $delim_len = length $del;
-                  $delim     = quotemeta $del;
+                  $self->{delim_len} = $delim_len = length $del;
+                  $self->{delim}     = $delim     = quotemeta $del;
                   MKDEBUG && _d('delimiter:', $delim);
                }
                else {
                   MKDEBUG && _d('Delimiter reset to ;');
                   $del       = ';';
-                  $delim     = undef;
-                  $delim_len = 0;
+                  $self->{delim}     = $delim     = undef;
+                  $self->{delim_len} = $delim_len = 0;
                }
 
                $arg =~ s/^DELIMITER.*$//m;  # Remove DELIMITER from arg.
@@ -6391,18 +6974,15 @@ sub parse_event {
       if ( $found_arg ) {
          MKDEBUG && _d('Properties of event:', Dumper(\@properties));
          my $event = { @properties };
-         foreach my $callback ( @callbacks ) {
-            last unless $event = $callback->($event);
-         }
-         ++$num_events;
+         return $event;
       }
       else {
          MKDEBUG && _d('Event had no arg');
       }
-
    } # EVENT
 
-   return $num_events;
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
 }
 
 sub _d {
@@ -6420,6 +7000,787 @@ sub _d {
 # ###########################################################################
 
 # ###########################################################################
+# GeneralLogParser package 5266
+# ###########################################################################
+package GeneralLogParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class ) = @_;
+   my $self = {
+      pending => [],
+      db_for  => {},
+   };
+   return bless $self, $class;
+}
+
+my $genlog_line_1= qr{
+   \A
+   (?:(\d{6}\s\d{1,2}:\d\d:\d\d))? # Timestamp
+   \s+
+   (?:\s*(\d+))                        # Thread ID
+   \s
+   (\w+)                               # Command
+   \s+
+   (.*)                                # Argument
+   \Z
+}xs;
+
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(fh);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $fh = @args{@required_args};
+
+   my $pending = $self->{pending};
+   my $db_for  = $self->{db_for};
+   my $line;
+   my $pos_in_log = tell($fh);
+   LINE:
+   while ( (defined($line = shift @$pending) or defined($line = <$fh>)) ) {
+      MKDEBUG && _d($line);
+      my ($ts, $thread_id, $cmd, $arg) = $line =~ m/$genlog_line_1/;
+      if ( !($thread_id && $cmd) ) {
+         MKDEBUG && _d('Not start of general log event');
+         next;
+      }
+      my @properties = ('pos_in_log', $pos_in_log, 'ts', $ts,
+         'Thread_id', $thread_id);
+
+      $pos_in_log = tell($fh);
+
+      @$pending = ();
+      if ( $cmd eq 'Query' ) {
+         my $done = 0;
+         do {
+            $line = <$fh>;
+            if ( $line ) {
+               ($ts, $thread_id, $cmd, undef) = $line =~ m/$genlog_line_1/;
+               if ( $thread_id && $cmd ) {
+                  MKDEBUG && _d('Event done');
+                  $done = 1;
+                  push @$pending, $line;
+               }
+               else {
+                  MKDEBUG && _d('More arg:', $line);
+                  $arg .= $line;
+               }
+            }
+            else {
+               MKDEBUG && _d('No more lines');
+               $done = 1;
+            }
+         } until ( $done );
+
+         chomp $arg;
+         push @properties, 'cmd', 'Query', 'arg', $arg;
+         push @properties, 'bytes', length($properties[-1]);
+         push @properties, 'db', $db_for->{$thread_id} if $db_for->{$thread_id};
+      }
+      else {
+         push @properties, 'cmd', 'Admin';
+
+         if ( $cmd eq 'Connect' ) {
+            if ( $arg =~ m/^Access denied/ ) {
+               $cmd = $arg;
+            }
+            else {
+               my ($user, undef, $db) = $arg =~ /(\S+)/g;
+               my $host;
+               ($user, $host) = split(/@/, $user);
+               MKDEBUG && _d('Connect', $user, '@', $host, 'on', $db);
+
+               push @properties, 'user', $user if $user;
+               push @properties, 'host', $host if $host;
+               push @properties, 'db',   $db   if $db;
+               $db_for->{$thread_id} = $db;
+            }
+         }
+         elsif ( $cmd eq 'Init' ) {
+            $cmd = 'Init DB';
+            $arg =~ s/^DB\s+//;
+            my ($db) = $arg =~ /(\S+)/;
+            MKDEBUG && _d('Init DB:', $db);
+            push @properties, 'db',   $db   if $db;
+            $db_for->{$thread_id} = $db;
+         }
+
+         push @properties, 'arg', "administrator command: $cmd";
+         push @properties, 'bytes', length($properties[-1]);
+      }
+
+      push @properties, 'Query_time', 0;
+
+      MKDEBUG && _d('Properties of event:', Dumper(\@properties));
+      my $event = { @properties };
+      return $event;
+   } # LINE
+
+   @{$self->{pending}} = ();
+   $args{oktorun}->(0) if $args{oktorun};
+   return;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End GeneralLogParser package
+# ###########################################################################
+
+# ###########################################################################
+# ProtocolParser package 5266
+# ###########################################################################
+package ProtocolParser;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+eval {
+   require IO::Uncompress::Inflate;
+   IO::Uncompress::Inflate->import(qw(inflate $InflateError));
+};
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+
+   my ($server_port) = $args{server} =~ m/:(\w+)/ if $args{server};
+   $server_port      = $args{server_port} if !$server_port && $args{server_port};
+
+   my $self = {
+      server      => $args{server},
+      server_port => $server_port,
+      sessions    => {},
+      o           => $args{o},
+   };
+
+   return bless $self, $class;
+}
+
+sub parse_event {
+   my ( $self, %args ) = @_;
+   my @required_args = qw(event);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless $args{$arg};
+   }
+   my $packet = @args{@required_args};
+
+   if ( $self->{buffer} ) {
+      my ($packet_from, $session) = $self->_get_session($packet);
+      if ( $packet->{data_len} ) {
+         if ( $packet_from eq 'client' ) {
+            push @{$session->{client_packets}}, $packet;
+            MKDEBUG && _d('Saved client packet');
+         }
+         else {
+            push @{$session->{server_packets}}, $packet;
+            MKDEBUG && _d('Saved server packet');
+         }
+      }
+
+      return unless ($packet_from eq 'client')
+                    && ($packet->{fin} || $packet->{rst});
+
+      my $event;
+      map {
+         $event = $self->_parse_packet($_, $args{misc});
+      } sort { $a->{seq} <=> $b->{seq} }
+      @{$session->{client_packets}};
+      
+      map {
+         $event = $self->_parse_packet($_, $args{misc});
+      } sort { $a->{seq} <=> $b->{seq} }
+      @{$session->{server_packets}};
+
+      return $event;
+   }
+
+   if ( $packet->{data_len} == 0 ) {
+      MKDEBUG && _d('No TCP data');
+      return;
+   }
+
+   return $self->_parse_packet($packet, $args{misc});
+}
+
+sub _parse_packet {
+   my ( $self, $packet, $misc ) = @_;
+
+   my ($packet_from, $session) = $self->_get_session($packet);
+   MKDEBUG && _d('State:', $session->{state});
+
+   push @{$session->{raw_packets}}, $packet->{raw_packet}
+      unless $misc->{recurse};
+
+   if ( $session->{buff} ) {
+      $session->{buff_left} -= $packet->{data_len};
+      if ( $session->{buff_left} > 0 ) {
+         MKDEBUG && _d('Added data to buff; expecting', $session->{buff_left},
+            'more bytes');
+         return;
+      }
+
+      MKDEBUG && _d('Got all data; buff left:', $session->{buff_left});
+      $packet->{data}       = $session->{buff} . $packet->{data};
+      $packet->{data_len}  += length $session->{buff};
+      $session->{buff}      = '';
+      $session->{buff_left} = 0;
+   }
+
+   $packet->{data} = pack('H*', $packet->{data}) unless $misc->{recurse};
+   my $event;
+   if ( $packet_from eq 'server' ) {
+      $event = $self->_packet_from_server($packet, $session, $misc);
+   }
+   elsif ( $packet_from eq 'client' ) {
+      $event = $self->_packet_from_client($packet, $session, $misc);
+   }
+   else {
+      die 'Packet origin unknown';
+   }
+   MKDEBUG && _d('State:', $session->{state});
+
+   if ( $session->{out_of_order} ) {
+      MKDEBUG && _d('Session packets are out of order');
+      push @{$session->{packets}}, $packet;
+      $session->{ts_min}
+         = $packet->{ts} if $packet->{ts} lt ($session->{ts_min} || '');
+      $session->{ts_max}
+         = $packet->{ts} if $packet->{ts} gt ($session->{ts_max} || '');
+      if ( $session->{have_all_packets} ) {
+         MKDEBUG && _d('Have all packets; ordering and processing');
+         delete $session->{out_of_order};
+         delete $session->{have_all_packets};
+         map {
+            $event = $self->_parse_packet($_, { recurse => 1 });
+         } sort { $a->{seq} <=> $b->{seq} } @{$session->{packets}};
+      }
+   }
+
+   MKDEBUG && _d('Done with packet; event:', Dumper($event));
+   return $event;
+}
+
+sub _get_session {
+   my ( $self, $packet ) = @_;
+
+   my $src_host = "$packet->{src_host}:$packet->{src_port}";
+   my $dst_host = "$packet->{dst_host}:$packet->{dst_port}";
+
+   if ( my $server = $self->{server} ) {  # Watch only the given server.
+      if ( $src_host ne $server && $dst_host ne $server ) {
+         MKDEBUG && _d('Packet is not to or from', $server);
+         return;
+      }
+   }
+
+   my $packet_from;
+   my $client;
+   if ( $src_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'server';
+      $client      = $dst_host;
+   }
+   elsif ( $dst_host =~ m/:$self->{server_port}$/ ) {
+      $packet_from = 'client';
+      $client      = $src_host;
+   }
+   else {
+      warn 'Packet is not to or from server: ', Dumper($packet);
+      return;
+   }
+   MKDEBUG && _d('Client:', $client);
+
+   if ( !exists $self->{sessions}->{$client} ) {
+      MKDEBUG && _d('New session');
+      $self->{sessions}->{$client} = {
+         client      => $client,
+         state       => undef,
+         raw_packets => [],
+      };
+   };
+   my $session = $self->{sessions}->{$client};
+
+   return $packet_from, $session;
+}
+
+sub _packet_from_server {
+   die "Don't call parent class _packet_from_server()";
+}
+
+sub _packet_from_client {
+   die "Don't call parent class _packet_from_client()";
+}
+
+sub make_event {
+   my ( $self, $session, $packet ) = @_;
+   die "Event has no attributes" unless scalar keys %{$session->{attribs}};
+   die "Query has no arg attribute" unless $session->{attribs}->{arg};
+   my $start_request = $session->{start_request} || 0;
+   my $start_reply   = $session->{start_reply}   || 0;
+   my $end_reply     = $session->{end_reply}     || 0;
+   MKDEBUG && _d('Request start:', $start_request,
+      'reply start:', $start_reply, 'reply end:', $end_reply);
+   my $event = {
+      Query_time    => $self->timestamp_diff($start_request, $start_reply),
+      Transmit_time => $self->timestamp_diff($start_reply, $end_reply),
+   };
+   @{$event}{keys %{$session->{attribs}}} = values %{$session->{attribs}};
+   return $event;
+}
+
+sub _get_errors_fh {
+   my ( $self ) = @_;
+   my $errors_fh = $self->{errors_fh};
+   return $errors_fh if $errors_fh;
+
+   my $o = $self->{o};
+   if ( $o && $o->has('tcpdump-errors') && $o->got('tcpdump-errors') ) {
+      my $errors_file = $o->get('tcpdump-errors');
+      MKDEBUG && _d('tcpdump-errors file:', $errors_file);
+      open $errors_fh, '>>', $errors_file
+         or die "Cannot open tcpdump-errors file $errors_file: $OS_ERROR";
+   }
+
+   $self->{errors_fh} = $errors_fh;
+   return $errors_fh;
+}
+
+sub fail_session {
+   my ( $self, $session, $reason ) = @_;
+   my $errors_fh = $self->_get_errors_fh();
+   if ( $errors_fh ) {
+      $session->{reason_for_failure} = $reason;
+      my $session_dump = '# ' . Dumper($session);
+      chomp $session_dump;
+      $session_dump =~ s/\n/\n# /g;
+      print $errors_fh "$session_dump\n";
+      {
+         local $LIST_SEPARATOR = "\n";
+         print $errors_fh "@{$session->{raw_packets}}";
+         print $errors_fh "\n";
+      }
+   }
+   MKDEBUG && _d('Failed session', $session->{client}, 'because', $reason);
+   delete $self->{sessions}->{$session->{client}};
+   return;
+}
+
+sub timestamp_diff {
+   my ( $self, $start, $end ) = @_;
+   return 0 unless $start && $end;
+   my $sd = substr($start, 0, 11, '');
+   my $ed = substr($end,   0, 11, '');
+   my ( $sh, $sm, $ss ) = split(/:/, $start);
+   my ( $eh, $em, $es ) = split(/:/, $end);
+   my $esecs = ($eh * 3600 + $em * 60 + $es);
+   my $ssecs = ($sh * 3600 + $sm * 60 + $ss);
+   if ( $sd eq $ed ) {
+      return sprintf '%.6f', $esecs - $ssecs;
+   }
+   else { # Assume only one day boundary has been crossed, no DST, etc
+      return sprintf '%.6f', ( 86_400 - $ssecs ) + $esecs;
+   }
+}
+
+sub uncompress_data {
+   my ( $self, $data, $len ) = @_;
+   die "I need data" unless $data;
+   die "I need a len argument" unless $len;
+   die "I need a scalar reference to data" unless ref $data eq 'SCALAR';
+   MKDEBUG && _d('Uncompressing data');
+   our $InflateError;
+
+   my $comp_bin_data = pack('H*', $$data);
+
+   my $uncomp_bin_data = '';
+   my $z = new IO::Uncompress::Inflate(
+      \$comp_bin_data
+   ) or die "IO::Uncompress::Inflate failed: $InflateError";
+   my $status = $z->read(\$uncomp_bin_data, $len)
+      or die "IO::Uncompress::Inflate failed: $InflateError";
+
+   my $uncomp_data = unpack('H*', $uncomp_bin_data);
+
+   return \$uncomp_data;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ProtocolParser package
+# ###########################################################################
+
+# ###########################################################################
+# HTTPProtocolParser package 5266
+# ###########################################################################
+package HTTPProtocolParser;
+use base 'ProtocolParser';
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my $self = $class->SUPER::new(
+      %args,
+      server_port => 80,
+   );
+   return $self;
+}
+
+sub _packet_from_server {
+   my ( $self, $packet, $session, $misc ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from server; client state:', $session->{state}); 
+
+   if ( !$session->{state} ) {
+      MKDEBUG && _d('Ignoring mid-stream server response');
+      return;
+   }
+
+   if ( $session->{out_of_order} ) {
+      my ($line1, $content);
+      if ( !$session->{have_header} ) {
+         ($line1, $content) = $self->_parse_header(
+            $session, $packet->{data}, $packet->{data_len});
+      }
+      if ( $line1 ) {
+         $session->{have_header} = 1;
+         $packet->{content_len}  = length $content;
+         MKDEBUG && _d('Got out of order header with',
+            $packet->{content_len}, 'bytes of content');
+      }
+      my $have_len = $packet->{content_len} || $packet->{data_len};
+      map { $have_len += $_->{data_len} }
+         @{$session->{packets}};
+      $session->{have_all_packets}
+         = 1 if $session->{attribs}->{bytes}
+                && $have_len >= $session->{attribs}->{bytes};
+      MKDEBUG && _d('Have', $have_len, 'of', $session->{attribs}->{bytes});
+      return;
+   }
+
+   if ( $session->{state} eq 'awaiting reply' ) {
+
+      $session->{start_reply} = $packet->{ts} unless $session->{start_reply};
+
+      my ($line1, $content) = $self->_parse_header($session, $packet->{data},
+            $packet->{data_len});
+
+      if ( !$line1 ) {
+         $session->{out_of_order}     = 1;  # alert parent
+         $session->{have_all_packets} = 0;
+         return;
+      }
+
+      my ($version, $code, $phrase) = $line1 =~ m/(\S+)/g;
+      $session->{attribs}->{Status_code} = $code;
+      MKDEBUG && _d('Status code for last', $session->{attribs}->{arg},
+         'request:', $session->{attribs}->{Status_code});
+
+      my $content_len = $content ? length $content : 0;
+      MKDEBUG && _d('Got', $content_len, 'bytes of content');
+      if ( $session->{attribs}->{bytes}
+           && $content_len < $session->{attribs}->{bytes} ) {
+         $session->{data_len}  = $session->{attribs}->{bytes};
+         $session->{buff}      = $content;
+         $session->{buff_left} = $session->{attribs}->{bytes} - $content_len;
+         MKDEBUG && _d('Contents not complete,', $session->{buff_left},
+            'bytes left');
+         $session->{state} = 'recving content';
+         return;
+      }
+   }
+   elsif ( $session->{state} eq 'recving content' ) {
+      if ( $session->{buff} ) {
+         MKDEBUG && _d('Receiving content,', $session->{buff_left},
+            'bytes left');
+         return;
+      }
+      MKDEBUG && _d('Contents received');
+   }
+   else {
+      warn "Server response in unknown state"; 
+      return;
+   }
+
+   MKDEBUG && _d('Creating event, deleting session');
+   $session->{end_reply} = $session->{ts_max} || $packet->{ts};
+   my $event = $self->make_event($session, $packet);
+   delete $self->{sessions}->{$session->{client}}; # http is stateless!
+   return $event;
+}
+
+sub _packet_from_client {
+   my ( $self, $packet, $session, $misc ) = @_;
+   die "I need a packet"  unless $packet;
+   die "I need a session" unless $session;
+
+   MKDEBUG && _d('Packet is from client; state:', $session->{state});
+
+   my $event;
+   if ( ($session->{state} || '') =~ m/awaiting / ) {
+      MKDEBUG && _d('More client headers:', $packet->{data});
+      return;
+   }
+
+   if ( !$session->{state} ) {
+      $session->{state} = 'awaiting reply';
+      my ($line1, undef) = $self->_parse_header($session, $packet->{data}, $packet->{data_len});
+      my ($request, $page, $version) = $line1 =~ m/(\S+)/g;
+      if ( !$request || !$page ) {
+         MKDEBUG && _d("Didn't get a request or page:", $request, $page);
+         return;
+      }
+      $request = lc $request;
+      my $vh   = $session->{attribs}->{Virtual_host} || '';
+      my $arg = "$request $vh$page";
+      MKDEBUG && _d('arg:', $arg);
+
+      if ( $request eq 'get' || $request eq 'post' ) {
+         @{$session->{attribs}}{qw(arg)} = ($arg);
+      }
+      else {
+         MKDEBUG && _d("Don't know how to handle a", $request, "request");
+         return;
+      }
+
+      $session->{start_request}         = $packet->{ts};
+      $session->{attribs}->{host}       = $packet->{src_host};
+      $session->{attribs}->{pos_in_log} = $packet->{pos_in_log};
+      $session->{attribs}->{ts}         = $packet->{ts};
+   }
+   else {
+      die "Probably multiple GETs from client before a server response?"; 
+   }
+
+   return $event;
+}
+
+sub _parse_header {
+   my ( $self, $session, $data, $len, $no_recurse ) = @_;
+   die "I need data" unless $data;
+   my ($header, $content)    = split(/\r\n\r\n/, $data);
+   my ($line1, $header_vals) = $header  =~ m/\A(\S+ \S+ .+?)\r\n(.+)?/s;
+   MKDEBUG && _d('HTTP header:', $line1);
+   return unless $line1;
+
+   if ( !$header_vals ) {
+      MKDEBUG && _d('No header vals');
+      return $line1, undef;
+   }
+   my @headers;
+   foreach my $val ( split(/\r\n/, $header_vals) ) {
+      last unless $val;
+      MKDEBUG && _d('HTTP header:', $val);
+      if ( $val =~ m/^Content-Length/i ) {
+         ($session->{attribs}->{bytes}) = $val =~ /: (\d+)/;
+         MKDEBUG && _d('Saved Content-Length:', $session->{attribs}->{bytes});
+      }
+      if ( $val =~ m/Content-Encoding/i ) {
+         ($session->{compressed}) = $val =~ /: (\w+)/;
+         MKDEBUG && _d('Saved Content-Encoding:', $session->{compressed});
+      }
+      if ( $val =~ m/^Host/i ) {
+         ($session->{attribs}->{Virtual_host}) = $val =~ /: (\S+)/;
+         MKDEBUG && _d('Saved Host:', ($session->{attribs}->{Virtual_host}));
+      }
+   }
+   return $line1, $content;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End HTTPProtocolParser package
+# ###########################################################################
+
+# ###########################################################################
+# ExecutionThrottler package 5266
+# ###########################################################################
+package ExecutionThrottler;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+
+use List::Util qw(sum min max);
+use Time::HiRes qw(time);
+use Data::Dumper;
+$Data::Dumper::Indent    = 1;
+$Data::Dumper::Sortkeys  = 1;
+$Data::Dumper::Quotekeys = 0;
+
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
+
+sub new {
+   my ( $class, %args ) = @_;
+   my @required_args = qw(rate_max get_rate check_int step);
+   foreach my $arg ( @required_args ) {
+      die "I need a $arg argument" unless defined $args{$arg};
+   }
+   my $self = {
+      step       => 0.05,  # default
+      %args, 
+      rate_ok    => undef,
+      last_check => undef,
+      stats      => {
+         rate_avg     => 0,
+         rate_samples => [],
+      },
+      int_rates  => [],
+      skip_prob  => 0.0,
+   };
+
+   return bless $self, $class;
+}
+
+sub throttle {
+   my ( $self, %args ) = @_;
+   my $time = $args{misc}->{time} || time;
+   if ( $self->_time_to_check($time) ) {
+      my $rate_avg = (sum(@{$self->{int_rates}})   || 0)
+                   / (scalar @{$self->{int_rates}} || 1);
+      my $running_avg = $self->_save_rate_avg($rate_avg);
+      MKDEBUG && _d('Average rate for last interval:', $rate_avg);
+
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_checked_rate}++;
+         $args{stats}->{throttle_rate_avg} = sprintf '%.2f', $running_avg;
+      }
+
+      @{$self->{int_rates}} = ();
+
+      if ( $rate_avg > $self->{rate_max} ) {
+         $self->{skip_prob} += $self->{step};
+         $self->{skip_prob}  = 1.0 if $self->{skip_prob} > 1.0;
+         MKDEBUG && _d('Rate max exceeded');
+         $args{stats}->{throttle_rate_max_exceeded}++ if $args{stats};
+      }
+      else {
+         $self->{skip_prob} -= $self->{step};
+         $self->{skip_prob} = 0.0 if $self->{skip_prob} < 0.0;
+         $args{stats}->{throttle_rate_ok}++ if $args{stats};
+      }
+
+      MKDEBUG && _d('Skip probability:', $self->{skip_prob});
+      $self->{last_check} = $time;
+   }
+   else {
+      my $current_rate = $self->{get_rate}->();
+      push @{$self->{int_rates}}, $current_rate;
+      if ( $args{stats} ) {
+         $args{stats}->{throttle_rate_min} = min(
+            ($args{stats}->{throttle_rate_min} || ()), $current_rate);
+         $args{stats}->{throttle_rate_max} = max(
+            ($args{stats}->{throttle_rate_max} || ()), $current_rate);
+      }
+      MKDEBUG && _d('Current rate:', $current_rate);
+   } 
+
+   if ( $args{event} ) {
+      $args{event}->{Skip_exec} = $self->{skip_prob} <= rand() ? 'No' : 'Yes';
+   }
+
+   return $args{event};
+}
+
+sub _time_to_check {
+   my ( $self, $time ) = @_;
+   if ( !$self->{last_check} ) {
+      $self->{last_check} = $time;
+      return 0;
+   }
+   return $time - $self->{last_check} >= $self->{check_int} ? 1 : 0;
+}
+
+sub rate_avg {
+   my ( $self ) = @_;
+   return $self->{stats}->{rate_avg} || 0;
+}
+
+sub skip_probability {
+   my ( $self ) = @_;
+   return $self->{skip_prob};
+}
+
+sub _save_rate_avg {
+   my ( $self, $rate ) = @_;
+   my $samples  = $self->{stats}->{rate_samples};
+   push @$samples, $rate;
+   shift @$samples if @$samples > 1_000;
+   $self->{stats}->{rate_avg} = sum(@$samples) / (scalar @$samples);
+   return $self->{stats}->{rate_avg} || 0;
+}
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
+1;
+
+# ###########################################################################
+# End ExecutionThrottler package
+# ###########################################################################
+
+# ###########################################################################
 # This is a combination of modules and programs in one -- a runnable module.
 # http://www.perl.com/pub/a/2006/07/13/lightning-articles.html?page=last
 # Or, look it up in the Camel book on pages 642 and 643 in the 3rd edition.
@@ -6431,6 +7792,7 @@ package mk_query_digest;
 
 use English qw(-no_match_vars);
 use Time::Local qw(timelocal);
+use Time::HiRes qw(time usleep);
 use Data::Dumper;
 $Data::Dumper::Indent = 1;
 $OUTPUT_AUTOFLUSH     = 1;
@@ -6438,7 +7800,7 @@ $OUTPUT_AUTOFLUSH     = 1;
 Transformers->import(qw(shorten micro_t percentage_of ts make_checksum
    any_unix_timestamp));
 
-use constant MKDEBUG => $ENV{MKDEBUG};
+use constant MKDEBUG => $ENV{MKDEBUG} || 0;
 
 use sigtrap 'handler', \&sig_int, 'normal-signals';
 
@@ -6476,7 +7838,14 @@ sub main {
    # Frequently used options.
    my $review_dsn = $o->get('review'); 
    my @groupby    = @{$o->get('group-by')};
-   my @orderby    = @{$o->get('order-by')};
+   my @orderby;
+   if ( (grep { $_ eq 'genlog' || $_ eq 'GeneralLogParser' } @{$o->get('type')})
+        && !$o->got('order-by') ) {
+      @orderby = 'Query_time:cnt';
+   }
+   else { 
+      @orderby = @{$o->get('order-by')};
+   }
 
    if ( !$o->get('help') ) {
       if ( $review_dsn
@@ -6492,6 +7861,17 @@ sub main {
          && grep { $_ !~ m/^\w+:[0-9.]+(?::[0-9.]+)?$/ } @{$o->get('outliers')}
       ) {
          $o->save_error('--outliers requires two or three colon-separated fields');
+      }
+      if ( $o->get('execute-throttle') ) {
+         my ($rate_max, $int, $step) = @{$o->get('execute-throttle')};
+         $o->save_error("--execute-throttle max time must be between 1 and 100")
+            unless $rate_max && $rate_max > 0 && $rate_max <= 100;
+         $o->save_error("No check interval value for --execute-throttle")
+            unless $int;
+         $o->save_error("--execute-throttle check interval must be an integer")
+            if $int =~ m/[^\d]/;
+         $o->save_error("--execute-throttle step must be between 1 and 100")
+            if $step && ($step < 1 || $step > 100);
       }
    }
 
@@ -6635,36 +8015,91 @@ sub main {
    # the chain).
    # ########################################################################
    my @callbacks;
+   my %callback_names;
+   my %prof;  # pipeline profile
+   my %stats; # general stats
+   my $misc = {};
+   if ( $o->get('processlist') ) {
+      my $pl = new Processlist();
+      my ( $sth, $cxn );
+      my $cur_server = 'processlist';
+      my $cur_time   = 0;
 
-   my $mysql_proto;
-   if ( $o->get('type') eq 'tcpdump' ) {
-      # If we're parsing tcpdump output, we'll create a TcpdumpParser
-      # obj later, but first we need a callback for MySQLProtocolParser
-      # which will make events out of the tcpdump data.  This callback
-      # must be first because it creates the events for subsequent callbacks.
-      $mysql_proto = new MySQLProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
-      );
-      push @callbacks, sub {
-         # Returns an event only when one is ready (it takes a few
-         # packets to make an event).
-         return $mysql_proto->parse_packet(@_);
+      $misc = {
+         time  => 0,
+         etime => 0,
+         code  => sub {
+            my $time = $misc->{time} = time();
+            my $err;
+            do {
+               eval { $sth->execute; };
+               $err = $EVAL_ERROR;
+               if ( $err ) { # Try to reconnect when there's an error.
+                  @{$misc}{qw(time etime)} = (0, 0);
+                  eval {
+                     ($cur_server, $ps_dbh) = find_role(
+                        $o, $ps_dbh, $cur_server, 0, 'for --processlist');
+                     $cur_time = time();
+                     $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
+                     $cxn      = $ps_dbh->{mysql_thread_id};
+                     $sth->execute();
+                  };
+                  $err = $EVAL_ERROR;
+                  if ( $err ) {
+                     print STDERR $err;
+                     sleep 1;
+                  }
+               }
+            } until ( $sth && !$err );
+            if ( $o->get('mirror')
+                 && time() - $cur_time > $o->get('mirror')) {
+               ($cur_server, $ps_dbh) = find_role($o, $ps_dbh, $cur_server,
+                  0, 'for --processlist');
+               $cur_time = time();
+            }
+            $misc->{etime} = time() - $time;
+            [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
+         },
       };
+
+      push @callbacks, sub {
+         my ( $event, %args ) = @_;
+         return $pl->parse_event(%args);
+      };
+      $callback_names{$callbacks[-1]} = ref $pl;
+      MKDEBUG && _d('Added Processlist module to callbacks');
    }
-   # Translate TCP packets into memcached query events.  This sub must be
-   # first because it creates the events for subsequent callbacks.
-   my $memc_proto;
-   my $memc_event;
-   if ( $o->get('type') eq 'memcached' ) {
-      $memc_proto = new MemcachedProtocolParser(
-         server => $o->get('watch-server'),
-         o      => $o,
+   else {
+      my %alias_for = (
+         slowlog   => ['SlowLogParser'],
+         binlog    => ['BinaryLogParser'],
+         genlog    => ['GeneralLogParser'],
+         tcpdump   => ['TcpdumpParser','MySQLProtocolParser'],
+         memcached => ['TcpdumpParser','MemcachedProtocolParser',
+                       'MemcachedEvent'],
+         http      => ['TcpdumpParser','HTTPProtocolParser'],
       );
-      $memc_event = new MemcachedEvent();
-      push @callbacks, sub {
-         return $memc_event->make_event( $memc_proto->parse_packet(@_) );
-      };
+      my $type = $o->get('type');
+      $type    = $alias_for{$type->[0]} if $alias_for{$type->[0]};
+
+      foreach my $module ( @$type ) {
+         my $parser;
+         eval {
+            $parser = $module->new(
+               server => $o->get('watch-server'),
+               o      => $o,
+            );
+         };
+         if ( $EVAL_ERROR ) {
+            die "Failed to load $module module: $EVAL_ERROR";
+         }
+         push @callbacks, sub {
+            my ( $event, %args ) = @_;
+            return $parser->parse_event(%args);
+         };
+         $callback_names{$callbacks[-1]} = ref $parser;
+         MKDEBUG && _d('Added', $module, 'module to callbacks');
+      }
    }
 
    # Filter early for --since and --until.
@@ -6709,6 +8144,7 @@ sub main {
          }
          return;
       };
+      $callback_names{$callbacks[-1]} = 'since';
    }
    if ( $o->get('until') ) {
       my $until = any_unix_timestamp($o->get('until'), $time_callback);
@@ -6733,6 +8169,7 @@ sub main {
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'until';
    }
 
    if ( grep { $_ eq 'fingerprint' } @groupby ) {
@@ -6745,11 +8182,13 @@ sub main {
          $event->{fingerprint} = $qr->fingerprint($groupby_val);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'fingerprint';
    }
 
    # Make subs which map attrib aliases to their primary attrib.
    foreach my $alt_attrib ( @{$o->get('attribute-aliases')} ) {
       push @callbacks, make_alt_attrib($alt_attrib);
+      $callback_names{$callbacks[-1]} = 'attribute aliases';
    }
 
    # Carry attribs forward for --inherit-attributes.
@@ -6759,6 +8198,7 @@ sub main {
       $prev_vals
    );
    push @callbacks, $inherit_attrib_sub if $inherit_attrib_sub;
+   $callback_names{$callbacks[-1]} = 'inherit attributes';
 
    if ( grep { $_ eq 'tables' } @groupby ) {
       push @callbacks, sub {
@@ -6779,18 +8219,32 @@ sub main {
          ];
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'tables';
    }
 
+   my %distill_args;
+   if ( $o->get('type') eq 'memcached' || $o->get('type') eq 'http' ) {
+      $distill_args{generic} = 1;
+      if ( $o->get('type') eq 'http' ) {
+         # Remove stuff after url.
+         $distill_args{trf} = sub {
+            my ( $query ) = @_;
+            $query =~ s/(\S+ \S+?)(?:[?;].+)/$1/;
+            return $query;
+         };
+      }
+   }
    if ( grep { $_ eq 'distill' } @groupby ) {
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: distill');
          my $group_by_val = $event->{arg};
          return 0 unless defined $group_by_val;
-         $event->{distill} = $qr->distill($group_by_val);
+         $event->{distill} = $qr->distill($group_by_val, %distill_args);
          MKDEBUG && !$event->{distill} && _d('Cannot distill', $event->{arg});
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'distill';
    }
 
    # Filter after special attributes, like fingerprint, tables,
@@ -6811,6 +8265,7 @@ sub main {
       my $sub = eval $code
          or die "Error compiling --filter code: $code\n$EVAL_ERROR";
       push @callbacks, $sub;
+      $callback_names{$callbacks[-1]} = 'filter';
    }
 
    if ( $o->get('zero-admin') ) {
@@ -6824,6 +8279,7 @@ sub main {
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'zero admin';
    }
 
    if ( $o->got('sample') ) {
@@ -6842,6 +8298,7 @@ sub main {
             MKDEBUG && _d("--sample rejects event", $event->{$group_by_val});
             return;
          };
+         $callback_names{$callbacks[-1]} = 'sample';
       }
    }
 
@@ -6853,50 +8310,99 @@ sub main {
          $w->write(*STDOUT, $event);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'print';
+   }
+
+   my $et;
+   if ( my $et_args = $o->get('execute-throttle') ) {
+      # These were check earlier; no need to check them again.
+      my ($rate_max, $int, $step) = @{$o->get('execute-throttle')};
+      $step ||= 5;
+      $step  /= 100;  # step specified as percent but $et expect 0.1=10%, etc.
+      MKDEBUG && _d('Execute throttle:', $rate_max, $int, $step);
+
+      my $get_rate = sub {
+         return percentage_of(
+            $prof{callback}->{'execute'}->{time} || 0,
+            $prof{total}->{time}                 || 0,
+         );
+      };
+
+      $et = new ExecutionThrottler(
+         rate_max  => $rate_max,
+         get_rate  => $get_rate,
+         check_int => $int,
+         step      => $step,
+      );
+      push @callbacks, sub {
+         my ( $event, %args ) = @_;
+         MKDEBUG && _d('callback: throttle');
+         return $et->throttle(%args);
+      };
+      $callback_names{$callbacks[-1]} = 'execute throttle';
    }
 
    if ( $o->get('execute') ) {
-      require Time::HiRes;
       my $cur_server = 'execute';
       ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
             1, 'for --execute');
-      my $cur_time = Time::HiRes::time();
+      my $cur_time = time();
       my $curdb;
       push @callbacks, sub {
          my ( $event ) = @_;
          MKDEBUG && _d('callback: execute');
+         $event->{Exec_orig_time} = $event->{Query_time};
+         if ( ($event->{Skip_exec} || '') eq 'Yes' ) {
+            MKDEBUG && _d('Not executing event because of --execute-throttle');
+            # Zero Query_time to 'Exec time' will show the real time
+            # spent executing queries.
+            $event->{Query_time} = 0;
+            $stats{execute_skipped}++;
+            return $event;
+         }
+         $stats{execute_executed}++;
          my $db = $event->{db};
          eval {
             if ( $db && (!$curdb || $db ne $curdb) ) {
                $ex_dbh->do("USE $db");
                $curdb = $db;
-            }
-            my $start = Time::HiRes::time();
+            } 
+            my $start = time();
             $ex_dbh->do($event->{arg});
-            my $end = Time::HiRes::time();
+            my $end = time();
+            $event->{Query_time} = $end - $start;
+            $event->{Exec_diff_time}
+               = $event->{Query_time} - $event->{Exec_orig_time};
             if ( $o->get('mirror') && $end - $cur_time > $o->get('mirror') ) {
                ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
                      1, 'for --execute');
                $cur_time = $end;
             }
-            $event->{Query_time} = $end - $start;
          };
-         # Don't try to re-execute the statement.  Just skip it.
-         if ( $EVAL_ERROR && $EVAL_ERROR =~ m/server has gone away/ ) {
-            print STDERR $EVAL_ERROR;
-            eval {
-               ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
-                     1, 'for --execute');
-               $cur_time = Time::HiRes::time();
-            };
-            if ( $EVAL_ERROR ) {
+         if ( $EVAL_ERROR ) {
+            MKDEBUG && _d($EVAL_ERROR);
+            $stats{execute_error}++;
+            # Don't try to re-execute the statement.  Just skip it.
+            if ( $EVAL_ERROR =~ m/server has gone away/ ) {
                print STDERR $EVAL_ERROR;
-               sleep 1;
+               eval {
+                  ($cur_server, $ex_dbh) = find_role($o, $ex_dbh, $cur_server,
+                     1, 'for --execute');
+                  $cur_time = time();
+               };
+               if ( $EVAL_ERROR ) {
+                  print STDERR $EVAL_ERROR;
+                  sleep 1;
+               }
+               return 0;
             }
-            return 0;
+            if ( $EVAL_ERROR =~ m/No database/ ) {
+               $stats{execute_no_database}++;
+            }
          }
          return $event;
       };
+      $callback_names{$callbacks[-1]} = 'execute';
    }
 
    # Finally, add aggregator obj for each groupby attrib to the callbacks.
@@ -6928,8 +8434,10 @@ sub main {
          ignore_attributes => $o->get('ignore-attributes'),
          unroll_limit      => $o->get('check-attributes-limit'),
          type_for => {
-            val       => 'string',
-            key_print => 'string',
+            val          => 'string',
+            key_print    => 'string',
+            Status_code  => 'string',
+            Statement_id => 'string',
          },
       );
       push @ea, $ea;
@@ -6938,6 +8446,7 @@ sub main {
          $ea->aggregate($event);
          return $event;
       };
+      $callback_names{$callbacks[-1]} = "aggregate $groupby";
 
       # If user wants a timeline report, too, then create an EventTimeline
       # aggregator for this groupby attrib and add it to the callbacks, too.
@@ -6952,7 +8461,17 @@ sub main {
             $tl->aggregate($event);
             return $event;
          };
+         $callback_names{$callbacks[-1]} = "timeline $groupby";
       }
+   }
+
+   if ( $o->get('processlist') ) {
+      push @callbacks, sub {
+         MKDEBUG && _d('callback: interval sleep');
+         usleep($o->get('interval') * 1_000_000);
+         return @_;
+      };
+      $callback_names{$callbacks[-1]} = 'interval sleep';
    }
 
    # ########################################################################
@@ -6973,95 +8492,56 @@ sub main {
    # ##########################################################################
    # Parse the input.
    # ##########################################################################
-   my $run_func;
-   if ( $o->get('processlist') ) {    # Sniff SHOW FULL PROCESSLIST
-      require Time::HiRes;
-      my $pl = new Processlist();
-      my ( $sth, $cxn );
-      my $cur_server = 'processlist';
-      my $cur_time   = 0;
-      my $misc       = {
-            oktorun  => \$oktorun,
-            prev     => [],
-            time     => 0,
-            etime    => 0
-      };
-      my $get_processlist_sub = sub {
-         my $time = $misc->{time} = Time::HiRes::time();
-         my $err;
-         do {
-            eval { $sth->execute; };
-            $err = $EVAL_ERROR;
-            if ( $err ) { # Try to reconnect when there's an error.
-               $misc = { prev => [], time => 0, etime => 0 };
-               eval {
-                  ($cur_server, $ps_dbh) = find_role(
-                     $o, $ps_dbh, $cur_server, 0, 'for --processlist');
-                  $cur_time = Time::HiRes::time();
-                  $sth      = $ps_dbh->prepare('SHOW FULL PROCESSLIST');
-                  $cxn      = $ps_dbh->{mysql_thread_id};
-                  $sth->execute();
-               };
-               $err = $EVAL_ERROR;
-               if ( $err ) {
-                  print STDERR $err;
-                  sleep 1;
-               }
-            }
-         } until ( $sth && !$err );
-         if ( $o->get('mirror')
-              && Time::HiRes::time() - $cur_time > $o->get('mirror')) {
-            ($cur_server, $ps_dbh) = find_role($o, $ps_dbh, $cur_server,
-               0, 'for --processlist');
-            $cur_time = Time::HiRes::time();
-         }
-         $misc->{etime} = Time::HiRes::time() - $time;
-         [ grep { $_->[0] != $cxn } @{ $sth->fetchall_arrayref(); } ];
-      };
-      $run_func = sub {
-         my $events;
-         eval {
-            $events = $pl->parse_event(
-               $get_processlist_sub,
-               $misc,
-               @callbacks,
-            );
-            Time::HiRes::usleep($o->get('interval') * 1_000_000);
-         };
-         MKDEBUG && $EVAL_ERROR && _d($EVAL_ERROR);
-         return $events;
-      };
-   }
-   else { # Parse log files
-      if ( @ARGV == 0 ) {
-         push @ARGV, '-'; # Magical STDIN filename.
-      }
-
-      # Set up the parser and miscellaneous options to it.
-      my $misc   = { oktorun => \$oktorun };
-      my $parser = $o->get('type') eq 'slowlog'   ? new SlowLogParser()
-                 : $o->get('type') eq 'binlog'    ? new BinaryLogParser()
-                 : $o->get('type') eq 'tcpdump'   ? new TcpdumpParser()
-                 : $o->get('type') eq 'memcached' ? new TcpdumpParser()
-                 : die("Unknown type " . $o->get('type'));
-
-      if ( my $patterns = $o->get('embedded-attributes') ) {
-         $misc->{embed}   = qr/$patterns->[0]/o;
-         $misc->{capture} = qr/$patterns->[1]/o;
-         MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
+   if ( my $patterns = $o->get('embedded-attributes') ) {
+      $misc->{embed}   = qr/$patterns->[0]/o;
+      $misc->{capture} = qr/$patterns->[1]/o;
+      MKDEBUG && _d('Patterns for embedded attributes:', $misc->{embed},
             $misc->{capture});
+   }
+   
+   if ( @ARGV == 0 ) {
+      push @ARGV, '-'; # Magical STDIN filename.
+   }
+
+   my $fh;
+   my $start = time();
+   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
+   my $now   = $start;
+   my $iters = 0;
+   ITERATION:
+   while (  # Quit if instructed to, or if iterations are exceeded.
+      $oktorun
+      && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
+   ) {
+
+      if ( $o->get('print-iterations') ) {
+         my $iter_start = time;
+         MKDEBUG && _d('Iteration', $iters, 'started at', ts($iter_start));
+         print "\n# Iteration $iters started at ", ts($iter_start), "\n";
       }
 
-      my ($fh);
-      $run_func = sub {
+      EVENT:
+      while (                                 # Quit if:
+         $oktorun                             # instructed to quit
+         && ($start == $end || $now < $end) ) # or time is exceeded
+      {
          if ( !$fh ) {
-            my $file = shift @ARGV or return;
+            my $file = shift @ARGV;
+            if ( !$file ) {
+               MKDEBUG && _d('No more files to parse');
+               last EVENT;
+            }
+
             if ( $file eq '-' ) {
                $fh = *STDIN;
                MKDEBUG && _d('Reading STDIN');
             }
             else {
-               open $fh, "<", $file or die "Cannot open $file: $OS_ERROR\n";
+               if ( !open $fh, "<", $file ) {
+                  $fh = undef;
+                  warn "Cannot open $file: $OS_ERROR\n";
+                  next EVENT;
+               }
                MKDEBUG && _d('Reading', $file);
 
                # Reset these var in case we read two logs out of order by time.
@@ -7070,38 +8550,47 @@ sub main {
             }
          }
 
-         my $events;
-         $events = $parser->parse_event($fh, $misc, @callbacks);
-         if ( !$events ) {
-            close $fh;
-            $fh = undef;
-         }
-         return $events;
-      };
-   }
-
-   my $start = time();
-   my $end   = $start + ($o->get('run-time') || 0); # When we should exit
-   my $now   = $start;
-
-   my $iters = 0;
-   ITERATION:
-   while (  # Quit if instructed to, or if iterations are exceeded.
-      $oktorun
-      && (!$o->get('iterations') || $iters++ < $o->get('iterations') )
-   ) {
-
-      EVENT:
-      while (                                 # Quit if:
-         $oktorun                             # instructed to quit
-         && ($start == $end || $now < $end) ) # or time is exceeded
-      {
-         my $result;
          eval {
-            $result = $run_func->();
+            # Run events through the pipeline.  The first pipeline process
+            # is usually responsible for getting the next event.  The pipeline
+            # stops if a process does not return the event.  This main loop
+            # stops if a process sets oktorun to false; it usually does this
+            # when there are no more events, but it may do it for other reasons.
+            # Some inputs are infinite streams of events, like the proclist,
+            # so oktorun is never set to false and it's the user's job to tell
+            # us when to stop.
+            my $event       = {};
+            my $more_events = 1;
+            my $oktorun_sub = sub { $more_events = $_[0]; };
+            foreach my $callback ( @callbacks ) {
+               last unless $oktorun;  # the global oktorun var
+               my $start = time;
+               $event = $callback->(
+                  $event,  # for backwards compatibility
+                  event   => $event,  # new interface
+                  fh      => $fh,
+                  oktorun => $oktorun_sub,
+                  misc    => $misc,
+                  stats   => \%stats,
+               );
+               my $end  = time;
+               my $t    = $end - $start;
+               my $name = $callback_names{$callback} || $callback;
+               $prof{callback}->{$name}->{time} += $t;
+               $prof{callback}->{$name}->{count}++;
+               $prof{total}->{time} += $t;
+               $prof{total}->{count}++;
+               last unless $event;
+            }
+            if ( !$more_events ) {
+               MKDEBUG && _d('No more events');
+               close $fh if $fh;
+               $fh = undef;
+            }
          };
          if ( $EVAL_ERROR ) {
             _d($EVAL_ERROR);
+            $stats{pipeline_error}++;
 
             # Don't ignore failure to open a file, else we'll get
             # "tell() on closed filehandle" errors.
@@ -7109,11 +8598,8 @@ sub main {
 
             last EVENT unless $o->get('continue-on-error');
          }
-         else {
-            $now = time();
-            last EVENT unless defined $result;
-         }
-      }
+         $now = time();
+      }  # EVENT
 
       # ######################################################################
       # Done parsing events, now do something with the aggregated query
@@ -7222,7 +8708,8 @@ sub main {
                rank   => $rank,
                r      => $stats->{Query_time}->{sum},
                cnt    => $stats->{Query_time}->{cnt},
-               sample => $groupby eq 'fingerprint' ? $qr->distill($samp_query)
+               sample => $groupby eq 'fingerprint' ? $qr->distill($samp_query,
+                                                                  %distill_args)
                                                    : $item,
                id     => $groupby eq 'fingerprint' ? make_checksum($item)
                                                    : '',
@@ -7266,12 +8753,7 @@ sub main {
             my @tables;
             if ( $o->get('for-explain') || $o->get('table-access') ){
                @tables = extract_tables($samp_query, $default_db);
-               if ( $o->get('table-access') ) {
-                  push @table_access, {
-                     query  => $samp_query,
-                     tables => [ @tables ],
-                  };
-               }
+               push @table_access, $samp_query if $o->get('table-access');
             }
 
             # ###############################################################
@@ -7343,7 +8825,7 @@ sub main {
                else {
                   if ( $groupby eq 'tables' ) {
                      my ( $db, $tbl ) = $q->split_unquote($item);
-                     print_tables( {db => $db, tbl => $tbl} );
+                     print_tables([$db, $tbl]);
                   }
                   print $item, "\n"; 
                }
@@ -7378,39 +8860,62 @@ sub main {
 
          # Print table access.
          if ( $o->get('table-access') ) {
+            my @subqueries;
+            map {
+               eval {
+                  push @subqueries, $qp->split($_);
+               };
+               if ( $EVAL_ERROR ) {
+                  MKDEBUG && _d($EVAL_ERROR);
+                  warn "Cannot get table access for query $_";
+               }
+            } @table_access; 
+
             my %seen;
             print "\n" if $o->get('report');
-            foreach my $item ( @table_access ) {
-               next unless scalar @{$item->{tables}};
-               my @access;
-               foreach my $tbl ( @{$item->{tables}} ) {
-                  next unless $tbl->{rw};
-                  my $db     = $tbl->{db}  ? "`$tbl->{db}`."  : '';
-                  my $access = "$tbl->{rw} $db`$tbl->{tbl}`";
-                  next if $o->get('unique-table-access') && $seen{$access}++;
-                  push @access, $access;
-               }
-
-               if ( @access ) {
-                  print "$item->{query}\n"
-                     unless $o->get('unique-table-access');
-                  print join("\n", @access), "\n";
+            foreach my $subquery ( @subqueries ) {
+               my $rw = $qp->query_type($subquery, $qr)->{rw};
+               next unless $rw;
+               my @tables = $qp->get_tables($subquery);
+               next unless scalar @tables;
+               foreach my $db_tbl ( @tables ) {
+                  next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+                  my ($db, $tbl) = $q->split_unquote($db_tbl);
+                  $db            = $db ? "`$db`."  : '';
+                  print "$rw $db`$tbl`\n";
                }
             }
          }
 
          # Print profile (issue 381).
          if ( $o->get('report') && $o->get('report-format')->{profile} ) {
-            print "\n# Rank Query ID           Response time    Calls   R/Call",
-                  "     Item\n",
-                  "# ==== ================== ================ ======= ======",
-                  "==== ====\n";
+            my $report = new ReportFormatter(
+               line_width       => 74,
+               long_last_column => 1,
+            );
+            $report->set_columns(
+               { name => 'Rank',          right_justify => 1, },
+               { name => 'Query ID',                          },
+               { name => 'Response time', right_justify => 1, },
+               { name => 'Calls',         right_justify => 1, },
+               { name => 'R/Call',        right_justify => 1, },
+               { name => 'Item',                              },
+            );
+
             foreach my $item ( sort { $a->{rank} <=> $b->{rank} } @profiles ) {
-               printf "# %4d 0x%16s %10.4f %4.1f%% %7d %8.4f %s\n",
-                  $item->{rank}, $item->{id}, $item->{r},
-                  $item->{r} / ($total_r || 1) * 100,
-                  $item->{cnt}, $item->{r} / $item->{cnt}, $item->{sample};
+               my $rt  = sprintf('%10.4f', $item->{r});
+               my $rtp = sprintf('%4.1f%%', $item->{r} / ($total_r || 1) * 100);
+               my $rc  = sprintf('%8.4f', $item->{r} / $item->{cnt});
+               $report->add_line(
+                  $item->{rank},
+                  "0x$item->{id}",
+                  "$rt $rtp",
+                  $item->{cnt},
+                  $rc,
+                  $item->{sample},
+               );
             }
+            print "\n" . $report->get_report();
          }
       } # Each groupby
 
@@ -7423,6 +8928,55 @@ sub main {
 
       foreach my $ea ( @ea, @tl ) {
          $ea->reset_aggregated_data();
+      }
+
+      if ( $o->get('pipeline-profile') ) {
+         my $report = new ReportFormatter(
+            line_width => 74,
+         );
+         $report->set_columns(
+            { name => 'Process'                   },
+            { name => 'Time',  right_justify => 1 },
+            { name => 'Count', right_justify => 1 },
+         );
+         $report->set_title('Pipeline profile');
+         foreach my $callback ( @callbacks ) {
+            my $name = $callback_names{$callback} || $callback;
+            my $t    = $prof{callback}->{$name}->{time} || 0;
+            my $tp   = sprintf('%.2f %4.1f%%', $t,
+                           $t / ($prof{total}->{time} || 1) * 100);
+            $report->add_line($name, $tp,
+               $prof{callback}->{$name}->{count} || 0);
+            
+            # Reset profile for next iteration.
+            map { $prof{callback}->{$name}->{$_} = 0 }
+               keys %{$prof{callback}->{$name}};
+         }
+         map { $prof{total}->{$_} = 0 } keys %{$prof{total}};
+
+         print "\n" . $report->get_report();
+      }
+
+      if ( $o->get('statistics') ) {
+         if ( keys %stats ) {
+            my $report = new ReportFormatter(
+               line_width => 74,
+            );
+            $report->set_columns(
+               { name => 'Statistic',                    },
+               { name => 'Value',     right_justify => 1 },
+            );
+            foreach my $stat ( sort keys %stats ) {
+               $report->add_line($stat, $stats{$stat} || 0);
+
+               # Reset stats for next iteration.
+               $stats{$stat} = 0;
+            }
+            print "\n" . $report->get_report();
+         }
+         else {
+            print "\n# No statistics values.\n";
+         }
       }
    } # ITERATION
 
@@ -7438,22 +8992,15 @@ sub main {
 # ############################################################################
 sub extract_tables {
    my ( $query, $default_db ) = @_;
+   MKDEBUG && _d('Extracting tables');
    my @tables;
    my %seen;
-
-   foreach my $subquery ( $qp->split($query) ) {
-      foreach my $db_tbl ( $qp->get_tables($subquery) ) {
-         next if $seen{$db_tbl}++; # Unique-ify for issue 337.
-         my ( $db, $tbl ) = $q->split_unquote($db_tbl, $default_db);
-         my $rw           = $qp->query_type($subquery, $qr)->{rw};
-         push @tables, {
-            db  => $db,
-            tbl => $tbl,
-            rw  => $rw,
-         };
-      }
+   foreach my $db_tbl ( $qp->get_tables($query) ) {
+      next unless $db_tbl;
+      next if $seen{$db_tbl}++; # Unique-ify for issue 337.
+      my ( $db, $tbl ) = $q->split_unquote($db_tbl);
+      push @tables, [ $db || $default_db, $tbl ];
    }
-
    return @tables;
 }
 
@@ -7462,14 +9009,14 @@ sub print_tables {
    my ( @tables ) = @_;
    return unless @tables;
    print "# Tables\n";
-   foreach my $tbl ( @tables ) {
-      my ( $db, $tbl, $rw ) = @{$tbl}{qw(db tbl rw)};
-      $rw = $rw ? "/* $rw */" : '';
-      print "#    $rw SHOW TABLE STATUS",
+   foreach my $db_tbl ( @tables ) {
+      my ( $db, $tbl ) = @$db_tbl;
+      print '#    SHOW TABLE STATUS',
          ($db ? " FROM `$db`" : ''), " LIKE '$tbl'\\G\n";
-      print "#    $rw SHOW CREATE TABLE ",
-         $q->quote(grep { $_ } ($db, $tbl)), "\\G\n";
+      print "#    SHOW CREATE TABLE ",
+         $q->quote(grep { $_ } @$db_tbl), "\\G\n";
    }
+   return;
 }
 
 sub print_explain {
@@ -8124,7 +9671,36 @@ overwrites the event's Query_time attribute.  If unsuccessful, the callback
 returns false and terminates the chain.
 
 If the connection fails, mk-query-digest tries to reconnect once per second.
-See also L<"--mirror">.
+
+See also L<"--mirror"> and L<"--execute-throttle">.
+
+=item --execute-throttle
+
+type: array
+
+Throttle values for L<"--execute">.
+
+By default L<"--execute"> runs without any limitations or concerns for the
+amount of time that it takes to execute the events.  The L<"--execute-throttle">
+allows you to limit the amount of time spent doing L<"--execute"> relative
+to the other processes that handle events.  This works by marking some events
+with a C<Skip_exec> attribute when L<"--execute"> begins to take too much time.
+L<"--execute"> will not execute an event if this attribute is true.  This
+indirectly decreases the time spent doing L<"--execute">.
+
+The L<"--execute-throttle"> option takes at least two comma-separated values:
+max allowed L<"--execute"> time as a percentage and a check interval time.  An
+optional third value is a percentage step for increasing and decreasing the
+probability that an event will be marked C<Skip_exec> true.  5 (percent) is
+the default step.
+
+For example: L<"--execute-throttle"> C<70,60,10>.  This will limit
+L<"--execute"> to 70% of total event processing time, checked every minute
+(60 seconds) and probability stepped up and down by 10%.  When L<"--execute">
+exceeds 70%, the probability that events will be marked C<Skip_exec> true
+increases by 10%. L<"--execute"> time is checked again after another minute.
+If it's still above 70%, then the probability will increase another 10%.
+Or, if it's dropped below 70%, then the probability will decrease by 10%.
 
 =item --expected-range
 
@@ -8351,7 +9927,7 @@ How frequently to poll the processlist, in seconds.
 type: int; default: 1
 
 How many times to iterate through the collect-and-report cycle.  If 0, iterate
-to infinity.  See also L<--run-time>.
+to infinity.  See also L<"--run-time">.
 
 =item --limit
 
@@ -8398,14 +9974,35 @@ type: Array; default: Query_time:sum
 Sort events by this attribute and aggregate function.
 
 This is a comma-separated list of order-by expressions, one for each
-L<"--group-by"> attribute.  The default Query_time:sum is used for
+L<"--group-by"> attribute.  The default C<Query_time:sum> is used for
 L<"--group-by"> attributes without explicitly given L<"--order-by"> attributes
 (that is, if you specify more L<"--group-by"> attributes than corresponding
-L<"--order-by"> attributes).  The syntax is attribute:aggregate.  Valid
-aggregates are sum, min, max, cnt. See the default value for an example.
+L<"--order-by"> attributes).  The syntax is C<attribute:aggregate>.  See
+L<"ATTRIBUTES"> for valid attributes.  Valid aggregates are:
+
+   Aggregate Meaning
+   ========= ============================
+   sum       Sum/total attribute value
+   min       Minimum attribute value
+   max       Maximum attribute value
+   cnt       Frequency/count of the query
+
+For example, the default C<Query_time:sum> means that queries in the
+query analysis report will be ordered (sorted) by their total query execution
+time ("Exec time").  C<Query_time:max> orders the queries by their
+maximum query execution time, so the query with the single largest
+C<Query_time> will be list first.  C<cnt> refers more to the frequency
+of the query as a whole, how often it appears; "Count" is its corresponding
+line in the query analysis report.  So any attribute and C<cnt> should yield
+the same report wherein queries are sorted by the number of times they
+appear.
+
+When parsing general logs (L<"--type"> C<genlog>), the default L<"--order-by">
+becomes C<Query_time:cnt>.  General logs do not report query times so only
+the C<cnt> aggregate makes sense because all query times are zero.
 
 If you specify an attribute that doesn't exist in the events, then
-mk-query-digest falls back to the default Query_time:sum and prints a notice
+mk-query-digest falls back to the default C<Query_time:sum> and prints a notice
 at the beginning of the report for each query class.
 
 =item --outliers
@@ -8444,6 +10041,10 @@ daemonized instance exits.  The program checks for the existence of the
 PID file when starting; if it exists and the process with the matching PID
 exists, the program exits.
 
+=item --pipeline-profile
+
+Print a profile of the pipeline processes.
+
 =item --port
 
 short form: -P; type: int
@@ -8453,6 +10054,18 @@ Port number to use for connection.
 =item --print
 
 Print log events to STDOUT in standard slow-query-log format.
+
+=item --print-iterations
+
+Print the start time for each L<"--iterations">.
+
+This option causes a line like the following to be printed at the start
+of each L<"--iterations"> report:
+
+  # Iteration 2 started at 2009-11-24T14:39:48.345780 
+
+This line will print even if C<--no-report> is specified.  If C<--iterations 0>
+is specified, each iteration number will be C<0>.
 
 =item --processlist
 
@@ -8723,30 +10336,29 @@ short form: -S; type: string
 
 Socket file to use for connection.
 
+=item --statistics
+
+Print statistics.
+
 =item --table-access
 
-Print table access report.
+Print a table access report.
 
-The table access report shows which tables each unique query accesses
-and if the access is a read or write.  This information is printed by default
-with L<"--[no]for-explain"> in the standard query report, like:
+The table access report shows which tables are accessed by all the queries
+and if the access is a read or write.  The report looks like:
 
-  # Tables
-  #    /* write */ SHOW TABLE STATUS FROM `d` LIKE 'foo'\G
-  #    /* write */ SHOW CREATE TABLE `d`.`foo`\G
-  create table foo (i int)\G
-
-If you want to see only a table access report, specify this option and
-C<--no-report>.  Then only a table access report like this will be printed:
-
-  UPDATE tbl SET foo='bar' WHERE foo IS NULL
   write `baz`.`tbl`
-  SELECT * FROM new_tbl WHERE d < '2009-01-01 12:12:10'
   read `baz`.`new_tbl`
-  INSERT INTO tbl VALUES (1, 2, 3)
-  write `baz`.`tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
 
-See also L<"--unique-table-access">.
+If you pipe the output to L<sort>, the read and write tables will be grouped
+together and sorted alphabetically:
+
+  read `baz`.`new_tbl`
+  write `baz`.`tbl`
+  write `baz`.`tbl3`
+  write `db6`.`tbl6`
 
 =item --tcpdump-errors
 
@@ -8788,7 +10400,7 @@ will print something like:
 
 =item --type
 
-type: string
+type: Array
 
 The type of input to parse (default slowlog).  The permitted types are
 
@@ -8798,11 +10410,24 @@ The type of input to parse (default slowlog).  The permitted types are
 
 Parse a binary log file.
 
+=item genlog
+
+Parse a MySQL general log file.  General logs lack a lot of L<"ATTRIBUTES">,
+notably C<Query_time>.  The default L<"--order-by"> for general logs
+changes to C<Query_time:cnt>.
+
+=item http
+
+Parse HTTP traffic from tcpdump.
+
 =item slowlog
 
-Parse a log file in any varation of MySQL slow-log format.
+Parse a log file in any variation of MySQL slow-log format.
 
 =item tcpdump
+
+Inspect network packets and decode the MySQL client protocol, extracting queries
+and responses from it.
 
 mk-query-digest does not actually watch the network (i.e. it does NOT "sniff
 packets").  Instead, it's just parsing the output of tcpdump.  You are
@@ -8814,8 +10439,8 @@ The parser expects the input to be formatted with the following options: C<-x -n
 -q -tttt>.  For example, if you want to capture output from your local machine,
 you can do something like
 
-  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt \
-    | mk-query-digest --type tcpdump
+  tcpdump -i eth0 port 3306 -s 65535 -c 1000 -x -n -q -tttt > mysql.tcp.txt
+  mk-query-digest --type tcpdump mysql.tcp.txt
 
 The other tcpdump parameters, such as -s, -c, and -i, are up to you.  Just make
 sure the output looks like this:
@@ -8844,38 +10469,21 @@ connect events for a new client or when <USE db> is executed.  If the tcpdump
 output contains neither of these, then mk-query-digest cannot discover the
 database.
 
+The MySQL client protocol implementation is not complete; server-side prepared
+statements are not yet supported, and naturally, SSL-encrypted traffic cannot be
+inspected and decoded.
+
 =item memcached
 
-Similar to tcpdump but expected that the tcpdump output is memcached packets
+Similar to tcpdump, but the expected input is memcached packets
 instead of MySQL packets.  For example:
 
-  tcpdump -i eth0 port 11211 -s 65535 -x -n -q -tttt \
-    | mk-query-digest --type memcached
+  tcpdump -i eth0 port 11211 -s 65535 -x -n -q -tttt > memcached.tcp.txt
+  mk-query-digest --type memcached memcached.tcp.txt
 
 memcached uses port 11211 by default.
 
 =back
-
-=item --unique-table-access
-
-Show only unique tables and no queries in the L<"--table-access"> report.
-
-If you simply want a list of all the unique tables that are accessed by all
-the queries, specify C<--no-report --table-access --unique-table-access>.
-The unique table access report looks like:
-
-  write `baz`.`tbl`
-  read `baz`.`new_tbl`
-  write `baz`.`tbl3`
-  write `db6`.`tbl6`
-
-If you pipe the output to L<sort>, the read and write tables will be grouped
-together and sorted alphabetically:
-
-  read `baz`.`new_tbl`
-  write `baz`.`tbl`
-  write `baz`.`tbl3`
-  write `db6`.`tbl6`
 
 =item --until
 
@@ -8995,6 +10603,6 @@ Baron Schwartz, Daniel Nichter
 
 =head1 VERSION
 
-This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision: 5021 $.
+This manual page documents Ver @VERSION@ Distrib @DISTRIB@ $Revision$.
 
 =cut

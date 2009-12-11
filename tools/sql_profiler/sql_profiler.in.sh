@@ -64,7 +64,7 @@ main() {
 
   # Do Not change the table names in the below command.
   # TTT-GUI presently requires these names. k?
-  $mk_query_digest --create-review-table --create-review-history-table --no-report --review ${socket}h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_queries --review-history D=$mysql_schema,t=sql_profiler_histories --filter "$filter" $slow_logs
+  $mk_query_digest --create-review-table --create-review-history-table --no-report --review ${socket}h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_queries --review-history D=$mysql_schema,t=sql_profiler_histories --limit 100% --filter "$filter" $slow_logs
   cleanup
 }
 
