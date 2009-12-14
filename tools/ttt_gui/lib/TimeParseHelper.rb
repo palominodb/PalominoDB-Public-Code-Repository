@@ -9,17 +9,22 @@ module TimeParseHelper
   def str_to_time(str)
     time=nil
     if !str.nil? and str =~ /^\s*(\d+(?:\.?\d+)?)([hdwmHDWM])?/
-      time = case $2.downcase
+      sp=$2
+      val=$1
+      if $2 !~ /[hdwmHDWM]/
+        sp=""
+      end
+      time = case sp.downcase
              when 'h'
-               $1.to_f.hours.ago
+               val.to_f.hours.ago
              when 'd'
-               $1.to_f.days.ago
+               val.to_f.days.ago
              when 'w'
-               $1.to_f.weeks.ago
+               val.to_f.weeks.ago
              when 'm'
-               $1.to_f.minutes.ago
+               val.to_f.minutes.ago
              else
-               $1.to_f.seconds.ago
+               val.to_f.seconds.ago
              end
     elsif !str.nil?
       time=Time.parse(str) # Try Time.parse.
