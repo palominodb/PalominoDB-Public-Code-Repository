@@ -2,17 +2,26 @@ Name: zrm-innobackupex
 Summary: innobackupex copy plugin for ZRM
 Version: 0.72
 Vendor: PalominoDB
-Release: 1
+Release: 2
 License: Private
 Group: Application/System
 Source: http://palominodb.com/src/zrm-innobackupex-%{version}.tgz
 URL: http://blog.palominodb.com
-Requires: xtrabackup >= 0.9, xinetd
+Requires: xtrabackup >= 1.0, xinetd
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 %description
 Provides a ZRM plugin to use xtrabackup and innobackupex to provide
 true mysql hotcopy.
+
+%package client
+Summary: Just the backup-server side (client) code required. No socket-server.
+Group: Application/System
+Requires: xtrabackup >= 1.0
+
+%description client
+Provides just the plugin needed by the backup-server. This package should not
+be installed on database servers.
 
 %prep
 %setup -q
@@ -51,3 +60,8 @@ fi
 /usr/share/mysql-zrm/plugins/inno-snapshot.pl
 /usr/share/mysql-zrm/plugins/socket-copy.palomino.pl
 /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
+
+%files client
+%defattr(0755,mysql,mysql)
+/usr/share/mysql-zrm/plugins/inno-snapshot.pl
+/usr/share/mysql-zrm/plugins/socket-copy.palomino.pl
