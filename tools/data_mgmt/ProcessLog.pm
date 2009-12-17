@@ -99,7 +99,6 @@ sub d {
   my $self = shift;
   my ($package, undef, $line) = caller 0;
   my $fh = $self->{LOG};
-  chomp($m);
   if(_PdbDEBUG) {
     print $fh _p('dbg', $package, $line, time(), @_);
     print STDERR _p('dbg', $package, $line, time(), @_);
