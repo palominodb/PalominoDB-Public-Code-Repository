@@ -1,18 +1,33 @@
 #!/usr/bin/env perl
 use strict;
 use warnings;
+# ###########################################################################
+# ProcessLog package GIV_VERSION
+# ###########################################################################
+# ###########################################################################
+# End ProcessLog package
+# ###########################################################################
 
-## BEGIN ProcessLog.pm GIT_VERSION ############################################
-## END ProcessLog.pm ##########################################################
+# ###########################################################################
+# TableAge package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End TableAge package
+# ###########################################################################
 
-## BEGIN TableAge.pm GIT_VERSION ##############################################
-## END TableAge.pm ############################################################
+# ###########################################################################
+# TableDumper package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End TableDumper package
+# ###########################################################################
 
-## BEGIN TableDumper.pm GIT_VERSION ###########################################
-## END TableDumper.pm #########################################################
-
-## BEGIN RowDumper.pm GIT_VERSION #############################################
-## END RowDumper.pm ###########################################################
+# ###########################################################################
+# RowDumper package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End RowDumper package
+# ###########################################################################
 
 package pdb_archiver;
 use strict;
@@ -25,6 +40,7 @@ use RowDumper;
 use Getopt::Long;
 use Pod::Usage;
 use DateTime;
+use Data::Dumper;
 
 
 my $pl; # ProcessLog.
@@ -53,15 +69,21 @@ my $ssh_pass = undef;
 my @ssh_ids  = undef;
 
 my $date_format = "%Y%m%d"; # YYYYMMdd
+my $limit = undef;
 
 my $output_tmpl = "TABLENAME_%Y%m%d%H%M%S";
 my $mode = 'table';
+
+my $pretend = 0;
+
+my $mysqldump_path = '/usr/bin/mysqldump';
 
 sub main {
   my @ARGV = @_;
   GetOptions(
     'help' => sub { pod2usage(); },
     'git-version' => sub { print "$0 - SCRIPT_GIT_VERSION\n"; },
+    'pretend' => \$pretend,
     'email=s' => \$email,
     'mode=s'  => \$mode,
     'logfile=s' => \$logfile,
@@ -70,7 +92,7 @@ sub main {
     'db-pass=s'  => \$db_pass,
     'db-schema=s'  => \$db_schema,
     'table=s' => \$table,
-    'date-format' => \$date_format,
+    'date-format=s' => \$date_format,
     'ssh-host=s' => \$ssh_host,
     'ssh-user=s' => \$ssh_user,
     'ssh-pass=s' => \$ssh_pass,
@@ -80,8 +102,10 @@ sub main {
     'condition=s' => \$row_condition,
     'values=s' => \$row_cond_values,
     'limit=i' => \$row_limit,
+    'max-age=s' => \$limit,
     'sleep=i' => \$op_sleep,
-    'output=s' => \$output_tmpl
+    'output=s' => \$output_tmpl,
+    'mysqldump=s' => \$mysqldump_path
   );
   $mode = lc($mode);
 
@@ -89,8 +113,8 @@ sub main {
     pod2usage("--db-host is required.");
   }
 
-  if($mode eq "table" and (not $table_prefix or not $date_format)) {
-    pod2usage("--table-prefix and --date-format are required for table mode.");
+  if($mode eq "table" and (not $table_prefix or not $date_format or not $limit)) {
+    pod2usage("--table-prefix, --date-format, and --max-age are required for table mode.");
   }
 
   if($mode eq "row" and (not $table or not $table_column or not $row_condition or not $row_limit)) {
@@ -100,6 +124,7 @@ sub main {
   $pl = ProcessLog->new($0, $logfile, $email);
   $dbh = DBI->connect("DBI:mysql:host=$db_host;database=$db_schema", $db_user, $db_pass);
   $pl->start();
+  $limit = parse_limit_time($limit);
   if($mode eq "table") {
     table_archive();
   }
@@ -111,11 +136,38 @@ sub main {
 
 sub table_archive {
   my $d = TableDumper->new($dbh, $pl, $db_user, $db_host, $db_pass);
-  my $tables = $dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`");
-  $pl->d("Selected tables:", Dumper($tables));
-  $tables = grep /^$table_prefix/, @$tables;
-  $pl->d("After grep", Dumper($tables));
+  $d->mysqldump_path($mysqldump_path);
+  my @tables = map { $_->[0] } @{$dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`")};
+  $pl->d("Selected tables:", Dumper(\@tables));
+  @tables = grep /^$table_prefix/, @tables;
+  $pl->d("After grep:", Dumper(\@tables));
   $tblage = TableAge->new($dbh, $pl, "${table_prefix}${date_format}");
+  foreach my $t (@tables) {
+    $pl->d("testing: $t");
+    my $a = $tblage->age_by_name($t) || 0;
+    if($a and DateTime::Duration->compare(DateTime->now(time_zone => 'local') - $a,
+        DateTime::Duration->new(%$limit), $a) == 1) {
+      $pl->d("Dumping $t");
+      unless($pretend) {
+        eval {
+          if($ssh_host) {
+            $d->remote_dump_and_drop($ssh_user, $ssh_host, \@ssh_ids, $ssh_pass, out_fmt($t), $db_schema, $t);
+          }
+          else {
+            $d->dump_and_drop(out_fmt($t), $db_schema, $t);
+          }
+        };
+        if($@) {
+          chomp($@);
+          $pl->e($@);
+        }
+      }
+      sleep $op_sleep;
+    }
+    else {
+      $pl->d("Skipped: $t");
+    }
+  }
 }
 
 sub row_archive {
@@ -133,11 +185,30 @@ sub row_archive {
   $pl->m("Finished compressing row dump of $db_schema.$table.");
 }
 
+sub parse_limit_time {
+  my $f = shift;
+  my $nf = undef;
+  $pl->d("parse_limit_time: $f");
+  if($f =~ /(\d+)d/i) {
+    $nf = { days => int($1) };
+  }
+  elsif($f =~ /(\d+)w/i) {
+    $nf = { weeks => int($1) };
+  }
+  elsif($f =~ /(\d+)m/i) {
+    $nf = { months => int($1) };
+  }
+  elsif($f =~ /(\d+)y/i) {
+    $nf = { years => int($1) };
+  }
+  $nf;
+}
+
 sub out_fmt {
   my $tbl = shift;
   my $t = $output_tmpl;
   $t =~ s/TABLENAME/$tbl/g;
-  my $dt = DateTime->now;
+  my $dt = DateTime->now(time_zone => 'local');
   $dt->strftime($t);
 }
 

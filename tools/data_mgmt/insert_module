@@ -1,0 +1,27 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+
+# Read in the standard input, and replace the desired module by the contents of
+# the most recent version of the module.
+# Example: :%!../maatkit/insert_module TableParser
+
+$INPUT_RECORD_SEPARATOR = undef;
+my $input = <STDIN>;
+my $module = shift @ARGV;
+open my $file, "<", "$module.pm"
+  or die $OS_ERROR;
+my $text = <$file>;
+my ($ver) = split(/\n/,qx@../../util/gitver.sh $module.pm@);
+chomp($ver);
+$text =~ s/^ *#.*\n//gm; # strip comments out
+$input =~ s/ $module package ([a-f0-9]{40}|GIT_VERSION)/ $module package/; # strip revision
+close $file;
+my $line = "# ###########################################################################\n";
+my $marker = qr/($line# (?:End )?$module package\n$line)/;
+$input =~ s/$marker.*?$marker/$1$text$2/s;
+$input =~ s/ $module package/ $module package $ver/; # add revision
+print $input;

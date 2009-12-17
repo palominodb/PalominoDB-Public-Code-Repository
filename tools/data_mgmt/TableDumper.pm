@@ -127,11 +127,15 @@ sub remote_dump {
 
 sub drop {
   my ($self, $schema, $table_s) = @_;
+  $self->{plog}->d("dropping: $table_s");
   eval {
     local $SIG{INT} = sub { die("Query interrupted by SIGINT"); };
     local $SIG{TERM} = sub { die("Query interrupted by SIGTERM"); };
-    my $drops = map { "`$schema`.`$_`," } $table_s;
+    my $drops = map { "`$schema`.`$_`," } @$table_s;
     chop($drops);
+    if($drops eq "") {
+      $drops = "`$schema`.`$table_s`";
+    }
     $self->{plog}->d("SQL: DROP TABLE $drops");
     $self->{dbh}->do("DROP TABLE $drops")
       or $self->{plog}->e("Failed to drop some tables.") and die("Failed to drop some tables");
@@ -155,20 +159,20 @@ sub dump_and_drop {
 
 sub remote_dump_and_drop {
   my ($self, $user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
-  $self->remote_dump($user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
+  $self->remote_dump($user, $host, $id, $pass, $dest, $schema, $table_s);
   $self->drop($schema, $table_s);
   return 1;
 }
 
 sub _make_mysqldump_cmd {
   my ($self, $dest, $schema, $table_s) = @_;
-  my $cmd = "$self->{mysqldump} --host $self->{host} --user $self->{user}";
+  my $cmd = qq|if [[ ! -f "$dest.gz" ]]; then $self->{mysqldump} --host $self->{host} --user $self->{user}|;
   $cmd .=" --socket '$self->{mysqlsocket}'" if($self->{host} eq "localhost");
   $cmd .=" --pass='$self->{pass}'" if ($self->{pass});
   $cmd .=" --single-transaction -Q $schema ";
   $cmd .= join(" ", $table_s) if( defined $table_s );
-  $cmd .= " > $dest";
-  $cmd .= " && $self->{gzip} $dest";
+  $cmd .= qq| > "$dest"|;
+  $cmd .= qq| && $self->{gzip} "$dest" ; else echo 'Dump already present.' 1>&2; exit 1 ; fi|;
   $cmd;
 }
 
