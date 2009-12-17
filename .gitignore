@@ -2,3 +2,4 @@
 *.gem
 *.bak
 *.sqlite3
+*.log
