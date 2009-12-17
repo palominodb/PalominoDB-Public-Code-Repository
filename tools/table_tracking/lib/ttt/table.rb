@@ -50,8 +50,6 @@ module TTT
 
       def base.find_time_history(since=Time.now)
         c_id=TTT::CollectorRun.find_by_collector(self.collector.to_s).id
-        #txns=TTT::Snapshot.all(:select => :txn, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id], :group => :txn).map { |s| s.txn }
-        #self.find(:all, :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{c_id} AND snapshots.txn IN (#{txns.join(',')}) AND #{self.table_name}.id=snapshots.statistic_id})
         stats=TTT::Snapshot.all(:select => :statistic_id, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id]).map { |s| s.statistic_id }
         if stats
           self.find(stats.sort)
@@ -65,7 +63,7 @@ module TTT
       end
 
       def base.find_last_by_table(server, i_s_table)
-        self.find_last_by_server_and_database_name_and_table_name(server, i_s_table.TABLE_SCHEMA, i_s_table.TABLE_NAME)
+        self.find_last_by_server_and_database_name_and_table_name(server, i_s_table.schema, i_s_table.name)
       end
 
       def base.last_run

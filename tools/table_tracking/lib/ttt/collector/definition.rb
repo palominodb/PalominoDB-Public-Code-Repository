@@ -10,12 +10,12 @@ TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
     next if t.system_table?
     newt = rd.stat.new(
       :server => rd.host,
-      :database_name => t.TABLE_SCHEMA,
-      :table_name => t.TABLE_NAME,
+      :database_name => t.schema,
+      :table_name => t.name,
       :create_syntax => t.create_syntax,
-      :created_at => t.CREATE_TIME,
+      :created_at => t.create_time,
       :run_time => rd.runtime,
-      :updated_at => t.UPDATE_TIME
+      :updated_at => t.update_time
     )
     oldt = rd.stat.find_last_by_table(rd.host, t)
     if oldt.nil? or oldt.create_syntax.nil? then

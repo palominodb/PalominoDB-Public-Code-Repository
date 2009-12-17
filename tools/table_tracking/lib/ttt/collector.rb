@@ -133,17 +133,8 @@ module TTT
                 snap.statistic_id = i
               end
             end
-            #if i.class == Array
-            #  p_txn=TTT::Snapshot.find_last_by_statistic_id(i[1])
-            #  ins_stmt.execute(@runref.id, i[0], txn, p_txn.nil? ? nil : p_txn.id, @runref.last_run.strftime('%Y-%m-%d %H:%M:%S')) {|i|}
-            #else
-            #  ins_stmt.execute(@runref.id, i, txn, nil, @runref.last_run.strftime('%Y-%m-%d %H:%M:%S')) {|i|}
-            #end
           end
         end
-
-          #ins_stmt.execute(i, txn, 
-          #puts i
       end
     end
     class TableCache < Array
@@ -153,7 +144,7 @@ module TTT
         #self.reject! { |t| t.system_table? }
       end
       def find_by_schema_and_table(schema,table)
-        (self.select { |t| t.TABLE_SCHEMA==schema and t.TABLE_NAME==table })[0]
+        (self.select { |t| t.schema==schema and t.name==table })[0]
       end
     end
 
@@ -182,9 +173,9 @@ module TTT
             srv=TTT::Server.find_or_create_by_name(host)
             srv.save # Should reset updated_at.
             @cached_tables.each do |tbl|
-              sch=srv.schemas.find_or_create_by_name(tbl.TABLE_SCHEMA)
+              sch=srv.schemas.find_or_create_by_name(tbl.schema)
               sch.save # reset updated_at.
-              t=sch.tables.find_or_create_by_name(tbl.TABLE_NAME)
+              t=sch.tables.find_or_create_by_name(tbl.name)
               t.save
             end
           rescue Mysql::Error => mye
@@ -252,10 +243,5 @@ module TTT
     end
 
   end
-
-
-#    def self.get_last_run(stat=self.stat)
-#      CollectorRun.find_by_collector(stat.to_s).reload.last_run
-#    end
 
 end

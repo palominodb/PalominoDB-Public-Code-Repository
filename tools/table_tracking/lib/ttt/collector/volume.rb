@@ -11,28 +11,28 @@ TTT::Collector.new(TTT::TableVolume, "table, index, and free size tracking") do 
   rd.snapshot.clear
   rd.tables.each do |t|
     next if t.system_table?
-    unless dbs.key? t.TABLE_SCHEMA
-      dbs[t.TABLE_SCHEMA]=srv.schemas.find_by_name(t.TABLE_SCHEMA)
-      dbs[t.TABLE_SCHEMA].cached_size=0
+    unless dbs.key? t.schema
+      dbs[t.schema]=srv.schemas.find_by_name(t.schema)
+      dbs[t.schema].cached_size=0
     end
     datafree=nil
-    if t.TABLE_COMMENT =~ /InnoDB free: (\d+)/
+    if t.comment =~ /InnoDB free: (\d+)/
       datafree=($1.to_i)*1024
     else
-      datafree=t.DATA_FREE
+      datafree=t.data_free
     end
     tv=rd.stat.new(
       :server => rd.host,
-      :database_name => t.TABLE_SCHEMA,
-      :table_name => t.TABLE_NAME,
+      :database_name => t.schema,
+      :table_name => t.name,
       :run_time => rd.runtime,
-      :data_length => t.DATA_LENGTH,
+      :data_length => t.data_length,
       :data_free => datafree,
-      :index_length => t.INDEX_LENGTH
+      :index_length => t.index_length
     )
     tv.save
     rd<<tv.id
-    rd.logger.info "[volume] server:#{rd.host} schema:#{t.TABLE_SCHEMA} table:#{t.TABLE_NAME} data_length:#{t.DATA_LENGTH} index_length:#{t.INDEX_LENGTH}"
+    rd.logger.info "[volume] server:#{rd.host} schema:#{t.schema} table:#{t.name} data_length:#{t.data_length} index_length:#{t.index_length}"
     srv.cached_size += tv.size
     dbs[tv.database_name].cached_size += tv.size
   end # All tables

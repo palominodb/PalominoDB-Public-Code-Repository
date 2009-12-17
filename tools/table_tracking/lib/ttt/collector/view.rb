@@ -6,11 +6,11 @@ require 'set'
 
 TTT::Collector.new(TTT::TableView, "'create view' tracking") do |rd|
   rd.tables.each do |t|
-    next if t.TABLE_TYPE != "VIEW"
+    next if t.table_type != "VIEW"
     newt = rd.stat.new(
       :server => rd.host,
-      :database_name => t.TABLE_SCHEMA,
-      :table_name => t.TABLE_NAME,
+      :database_name => t.schema,
+      :table_name => t.name,
       :create_syntax => t.create_syntax,
       :run_time => rd.runtime
     )
