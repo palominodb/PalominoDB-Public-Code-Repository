@@ -1,0 +1,10 @@
+<% if Object.const_defined? "GraphViz" and TTT_CONFIG['gui_options']['graphviz_enabled'] %>
+  <% ret=host_query_diagram(host, reviewed) %>
+  <% if ret %>
+    <%= link_to image_tag(ret), image_path(ret) %>
+  <% else %>
+    Error producing the diagram. See the error log.
+  <% end %>
+<% else %>
+  <!-- GraphViz not installed or disabled. -->
+<% end %>

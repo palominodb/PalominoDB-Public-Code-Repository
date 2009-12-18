@@ -1,6 +1,7 @@
 
 <h1><%= @server.name %></h1>
 <%= link_to "Top Tables", server_top_tables_path(@server.name) %>
+<%= link_to "Slow Queries", server_slow_queries_path(@server.name) %>
 <h3>Current size: <%=  number_to_human_size @server.get_size %></h3>
 <div style="float:right; margin: 1em"><%= render :partial => 'graphs/server_full', :locals => { :server => @server } %></div>
 <h3>Databases:</h3>

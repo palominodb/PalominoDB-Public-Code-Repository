@@ -1,0 +1,11 @@
+<h1>Review Slow Query - <%= "0x%x" % params[:id] %></h1>
+<%= render :partial => 'slow_queries/query', :locals => { :query => @query } %>
+
+<% form_for @query do |f| %>
+  <span class="bold">Reviewed by:</span><br/>
+  <%= f.text_field :reviewed_by %><br/>
+
+  <span class="bold">Comments:</span><br/>
+  <%= f.text_area :comments %>
+  <%= submit_tag 'Save' %>
+<% end %>

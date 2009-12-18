@@ -1,13 +1,14 @@
 desc "Build tarball"
 task :tarball do
+  EXCLUDES=["ttt_gui/log/\\*","ttt_gui/public/images/graphs/\\*", "ttt_gui/public/images/slow_queries/\\*"]
   from_rev=ENV['FROM'] ? ENV['FROM'] : nil
   %x{git rev-list --max-count=1 HEAD > .git-version}
   if from_rev
     tree_diff=%x{git diff-tree -r #{from_rev} HEAD .}.split "\n"
     tree_diff.map! { |line| path=line.split(/\s+/)[-1].split("/") ; path.shift ; path.join("/") }
-    %x{pushd .. ; tar --exclude ttt_gui/log/* -cjvf ttt_gui-patch-from-#{from_rev}.tbz2 ttt_gui/.git-version #{tree_diff.join(" ")} ; popd }
+    sh %Q{pushd .. ; tar --exclude #{EXCLUDES.join(" --exclude ")} -cjvf ttt_gui-patch-from-#{from_rev}.tbz2 ttt_gui/.git-version #{tree_diff.join(" ")} ; popd }
   else
-    %x{pushd .. ; tar --exclude ttt_gui/log/* -cjvf ttt_gui.tbz2 ttt_gui ; popd }
+    sh %Q{pushd .. ; tar --exclude #{EXCLUDES.join(" --exclude ")} -cjvf ttt_gui.tbz2 ttt_gui ; popd }
   end
   %x{rm .git-version}
 end

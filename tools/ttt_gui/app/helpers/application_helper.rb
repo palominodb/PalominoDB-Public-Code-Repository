@@ -3,6 +3,15 @@ require 'TimeParseHelper'
 module ApplicationHelper
   include TimeParseHelper
 
+  Time::DATE_FORMATS[:slong] =
+    lambda do |time|
+      if time <= 1.year.ago
+        time.to_formatted_s(:long)
+      else
+        time.to_formatted_s(:short)
+      end
+    end
+
   def gen_diff(tbl)
     prev=tbl.previous_version
     prev_create=nil
@@ -59,20 +68,5 @@ module ApplicationHelper
     output
   end
 
-  #def since_string
-  #  if params[:since]
-  #    session[:since_string] = params[:since]
-  #    @since_string=params[:since]
-  #  elsif session[:since_string]
-  #    @since_string=session[:since_string]
-  #  elsif params[:since] == "last"
-  #    session[:since_string] = nil
-  #    @since_string=nil
-  #  end
-  #  @since_string
-  #end
 
-  #def since_time
-  #  str_to_time(@since_string)
-  #end
 end

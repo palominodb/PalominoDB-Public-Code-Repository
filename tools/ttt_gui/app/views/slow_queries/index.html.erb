@@ -1,0 +1,11 @@
+<h1>Slow Queries</h1>
+
+<%= render :partial => 'include_reviewed_form' %>
+
+Displaying: <span class="bold"><%= @queries.length %></span> queries.<br/>
+
+<%= render :partial => 'query_diagram', :locals => { :queries => @queries, :width => 800 } %>
+
+<% (@queries.sort { |q1,q2| q1.first_seen <=> q2.first_seen }).each do |q| %>
+  <%= render :partial => 'slow_queries/query', :locals => { :query => q, :query_history => @query_histories[q.checksum] } %>
+<% end %>

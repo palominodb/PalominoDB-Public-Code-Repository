@@ -1,0 +1,40 @@
+<% form_tag({}, {:method => 'get'}) do %>
+  <%= radio_button_tag(:include_reviewed, 1, @include_reviewed) %>
+  <%= label_tag(:include_reviewed, 'Include Reviewed Queries') %>
+  <%= radio_button_tag(:include_reviewed, 0, !@include_reviewed) %>
+  <%= label_tag(:include_reviewed, 'Exclude Reviewed Queries') %>
+  <% if current_page? :controller => 'slow_queries', :action => 'index' %>
+    <br/>
+    <%= label(:filter, :type, "Filter: ") %>
+    <%= select(:filter, :type, SqlProfilerHistory.column_names.sort.map { |k| [k, k]}) %>
+    <%= label(:filter, :value, " by ") %>
+    <%= text_field(:filter, :value) %>
+    <%= submit_tag('go') %>
+    <div style="height: 13em;">
+      <div class="help">
+        <span class="bold">Filter help:</span>
+        Using the filters assumes you're familar with logical operators.<br/>
+        The dropdown menu contains filter-able attributes.<br/>
+        The format of them is: <code>&lt;operator&gt;&lt;argument&gt;</code><br/>
+        Supported operators are:<br/>
+        <pre>
+    == - equality
+    &gt;= - greater than or equal
+    &lt;= - less than or equal
+    =~ - regular expression
+      </pre>
+        </div>
+        <div class="help">
+          At present, no attempt is made to protect you from doing weird things like:<br/>
+          <code>sample &gt;= 'bob'</code><br/>
+          <span class="bold">Examples:</span><br/>
+          <code style="white-space:pre-line;">Rows_examined_pct_95  &gt;=40
+             sample =~hosts
+             Lock_time_sum &lt;=0.0004
+          </code>
+        </div>
+      </div>
+  <% else %>
+    <%= submit_tag('go') %>
+  <% end %>
+<% end %>

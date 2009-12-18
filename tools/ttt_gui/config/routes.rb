@@ -3,9 +3,9 @@ DbID=/[a-zA-Z\$][0-9A-Za-z\$_]*/
 TblID=DbID
 ActionController::Routing::Routes.draw do |map|
   map.resources :dashboard
-  map.history 'history', :controller => 'history', :action => 'index'
   map.resources( :servers, :requirements => { :id => SrvID }) do |servers|
     servers.resource(:top_tables, :requirements => {:server_id => SrvID })
+    servers.resource(:slow_queries, :requirements => {:server_id => SrvID})
     servers.resources(:databases,:requirements => { :server_id =>SrvID, :id =>DbID }) do |tables|
       tables.resources :tables, :requirements => { :server_id =>SrvID, :id => TblID }
       tables.resources :history, :requirements => { :server_id =>SrvID, :database_id => DbID, :id => TblID }
@@ -15,9 +15,15 @@ ActionController::Routing::Routes.draw do |map|
   map.resource :top_tables
   map.resource :top_databases
 
+  #map.connect 'slow_queries/:id/edit', :controller => 'slow_queries', :action => 'edit', :method => 'post'
+  map.resources :slow_queries
+  map.resources :sql_profiler_queries
+
   map.resources :databases
   map.resources :graphs
-  map.resource :search
+
+  map.history 'history', :controller => 'history', :action => 'index'
+  map.search 'search', :controller => 'search', :action => 'show', :method => 'get'
 
   # The priority is based upon order of creation: first created -> highest priority.
 

@@ -18,7 +18,6 @@ class ApplicationController < ActionController::Base
     end
   end
 
-
   private
   def setup_since_string
     if params[:since]

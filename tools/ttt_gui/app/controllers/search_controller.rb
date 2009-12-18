@@ -14,7 +14,6 @@ class SearchController < ApplicationController
           end
         end
       end
-      pp @matched
       if @matched[-1].nil? or @matched[-1][0].name != srv
         if srv.name =~ /#{params[:q]}/
           @matched << [srv]

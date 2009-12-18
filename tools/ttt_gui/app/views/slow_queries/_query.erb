@@ -1,0 +1,21 @@
+<div class="query">
+  <span class="bold">Checksum:</span> <%= link_to_unless_current "0x%x" % query.checksum, slow_query_path(query) %>
+  <span class="bold">First seen:</span> <%= query.first_seen %>
+  <span class="bold">Last seen:</span> <%= query.last_seen %>
+  <span class="bold">Fingerprint:</span> <%= query.fingerprint %>
+  <span class="bold">Sample:</span> <%= query.sample.length >= 40 ? query.sample.gsub(/(\d),(\d)/, "\1, \2") : query.sample %>
+  <% if defined? query_history %><% [query_history].flatten.each do |qh| %>
+      <div class="query_history">
+        <div style="background-color: lightgreen"><span class="bold">From:</span><%= qh.ts_min.to_formatted_s(:slong) %>  <span class="bold">To:</span><%= qh.ts_max.to_formatted_s(:slong) %></div><br/>
+        <% qh.attributes.sort.each do |ak,av| %>
+          <% next if ['checksum','sample', 'ts_max', 'ts_min'].include? ak %>
+          <span class="bold"><%= ak%>:</span><%= av %><br/>
+        <% end %>
+      </div><% end %><% end %>
+  <span class="bold">Reviewed by:</span> <%= query.reviewed_by ? query.reviewed_by : link_to_unless_current('Not Reviewed', edit_slow_query_path(query)) %>
+  <% if query.reviewed_by %>
+    <span class="bold">Reviewed on:</span><%= query.reviewed_on %>
+    <span class="bold">Comments:</span><span class="comment"><%= query.comments %></span>
+    <%= link_to 'Edit Review', edit_slow_query_path(query) unless current_page?(:action => 'edit') %>
+  <% end %>
+</div>

@@ -13,6 +13,33 @@ div.code {
   white-space: pre-wrap;
 }
 
+div.query {
+  font-family: monospace;
+  background-color: #FFFFFF;
+  border: 3px solid purple;
+  padding: 3px;
+  margin: 0.5em;
+  width: 60ex;
+  white-space: pre-line;
+  /*float: left;
+  float: left;
+  clear: right; */
+}
+
+div.query_history {
+  white-space: normal;
+}
+
+img.diagram {
+  display: inline;
+  float: right;
+}
+
+div.help {
+  float: left;
+  margin-right: 2ex;
+}
+
 h1 {
   font-size: 28px;
   color: #000;
