@@ -46,8 +46,12 @@ my $TMPDIR;
 my $tmp_directory;
 my $action;
 my $params;
+
 my $INNOBACKUPEX="innobackupex-1.5.1";
+
 my $VERSION="1.8b7_palomino";
+my $MIN_XTRA_VERSION=1.0;
+
 my $logDir = "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
@@ -63,6 +67,7 @@ my $nagios_host = "nagios.example.com";
 my $nsca_client = "/usr/sbin/send_nsca";
 my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
 my $wait_timeout = 8*3600; # 8 Hours
+my $mycnf_path = "/etc/my.cnf";
 
 my ($mysql_user, $mysql_pass);
 
@@ -98,6 +103,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
       else {
         $wait_timeout = int($val);
       }
+    }
+    elsif($var eq "my.cnf_path") {
+      $mycnf_path = $val;
     }
   }
 }
@@ -213,7 +221,7 @@ sub doRealHotCopy()
     &printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
-	open(INNO_TAR, "$INNOBACKUPEX $new_params --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+	open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
 	&printLog("Opened InnoBackupEX.\n");
 	open(INNO_LOG, "</tmp/innobackupex-log");
 	&printLog("Opened Inno-Log.\n");
@@ -522,11 +530,19 @@ sub doCopyBetween()
 }
 
 &printLog( "Client started\n" );
+# xtrabackup  Ver 0.9 Rev 83 for 5.0.84 unknown-linux-gnu (x86_64)
+if(`xtrabackup --version` =~ /^xtrabackup\s+Ver (\d+\.\d+)/) {
+  if($MIN_XTRA_VERSION > $1) {
+    &printToServer("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+    &printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+  }
+}
 select( STDIN );
 $| = 1;
 select( STDOUT );
 $| = 1;
 &getInputs();
+
 
 if( $action eq "copy from" ){
 	if(-f "/tmp/zrm-innosnap/running" ) {
