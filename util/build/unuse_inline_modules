@@ -1,0 +1,25 @@
+#!/usr/bin/env perl
+use strict;
+use warnings;
+
+use English qw(-no_match_vars);
+
+my @input = <STDIN>;
+my @modules = ();
+
+foreach (@input) {
+  if(/^# (\w+) package ([a-f0-9]{40}|GIT_VERSION)/) {
+    push @modules, $1;
+  }
+}
+
+grep {
+  foreach my $m (@modules) {
+    if(/^use\s+$m/) {
+      $_ = undef;
+    }
+  }
+} @input;
+
+print @input;
+

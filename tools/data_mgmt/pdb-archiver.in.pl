@@ -113,8 +113,8 @@ sub main {
     pod2usage("--db-host is required.");
   }
 
-  if($mode eq "table" and (not $table_prefix or not $date_format or not $limit)) {
-    pod2usage("--table-prefix, --date-format, and --max-age are required for table mode.");
+  if($mode eq "table" and not $table or (not $table_prefix or not $date_format or not $limit)) {
+    pod2usage("--table-prefix|--table, --date-format, and --max-age are required for table mode.");
   }
 
   if($mode eq "row" and (not $table or not $table_column or not $row_condition or not $row_limit)) {
@@ -125,54 +125,65 @@ sub main {
   $dbh = DBI->connect("DBI:mysql:host=$db_host;database=$db_schema", $db_user, $db_pass);
   $pl->start();
   $limit = parse_limit_time($limit);
-  if($mode eq "table") {
-    table_archive();
+  if($mode eq "table" and $table_prefix) {
+    my @tables = map { $_->[0] } @{$dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`")};
+    $pl->d("Selected tables:", Dumper(\@tables));
+    @tables = grep /^$table_prefix/, @tables;
+    $pl->d("After grep:", Dumper(\@tables));
+    my $d = TableDumper->new($dbh, $pl, $db_user, $db_host, $db_pass);
+    $d->mysqldump_path($mysqldump_path);
+    $tblage = TableAge->new($dbh, $pl, "${table_prefix}${date_format}");
+    foreach my $t (@tables) {
+      $pl->d("testing: $t");
+      my $a = $tblage->age_by_name($t) || 0;
+      if($a and DateTime::Duration->compare(DateTime->now(time_zone => 'local') - $a,
+          DateTime::Duration->new(%$limit), $a) == 1) {
+        table_archive($t);
+        sleep $op_sleep;
+      }
+      else {
+        $pl->d("skipped: $t");
+      }
+    }
   }
-  else {
+  elsif($mode eq "table" and $table) {
+    table_archive($table);
+  }
+  elsif($mode eq "row") {
     row_archive();
   }
+  else {
+    $pl->e("Unknown options combination chosen. Aborting.");
+  }
   $pl->end();
+  1;
 }
 
 sub table_archive {
+  my $t = shift;
+  $pl->m("Starting archive of $db_schema.$t");
   my $d = TableDumper->new($dbh, $pl, $db_user, $db_host, $db_pass);
   $d->mysqldump_path($mysqldump_path);
-  my @tables = map { $_->[0] } @{$dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`")};
-  $pl->d("Selected tables:", Dumper(\@tables));
-  @tables = grep /^$table_prefix/, @tables;
-  $pl->d("After grep:", Dumper(\@tables));
-  $tblage = TableAge->new($dbh, $pl, "${table_prefix}${date_format}");
-  foreach my $t (@tables) {
-    $pl->d("testing: $t");
-    my $a = $tblage->age_by_name($t) || 0;
-    if($a and DateTime::Duration->compare(DateTime->now(time_zone => 'local') - $a,
-        DateTime::Duration->new(%$limit), $a) == 1) {
-      $pl->d("Dumping $t");
-      unless($pretend) {
-        eval {
-          if($ssh_host) {
-            $d->remote_dump_and_drop($ssh_user, $ssh_host, \@ssh_ids, $ssh_pass, out_fmt($t), $db_schema, $t);
-          }
-          else {
-            $d->dump_and_drop(out_fmt($t), $db_schema, $t);
-          }
-        };
-        if($@) {
-          chomp($@);
-          $pl->e($@);
-        }
-      }
-      sleep $op_sleep;
+  $d->noop($pretend);
+  eval {
+    if($ssh_host) {
+      $d->remote_dump_and_drop($ssh_user, $ssh_host, \@ssh_ids, $ssh_pass, out_fmt($t), $db_schema, $t);
     }
     else {
-      $pl->d("Skipped: $t");
+      $d->dump_and_drop(out_fmt($t), $db_schema, $t);
     }
+  };
+  if($@) {
+    chomp($@);
+    $pl->e($@);
   }
+  $pl->m("Finished archive of $db_schema.$t");
+  1;
 }
 
 sub row_archive {
   my $r = RowDumper->new($dbh, $pl, $db_schema, $table, $table_column);
-
+  $r->noop($pretend);
   $pl->m("Starting row dump of $db_schema.$table with $op_sleep second sleeps");
   while($r->dump(out_fmt($table), $row_condition, $row_limit, split(/,/, $row_cond_values))) {
     $r->drop($row_condition, $row_limit, split(/,/, $row_cond_values));
@@ -183,6 +194,7 @@ sub row_archive {
   $pl->m("Compressing row dump of $db_schema.$table.");
   $r->compress(out_fmt($table));
   $pl->m("Finished compressing row dump of $db_schema.$table.");
+  1;
 }
 
 sub parse_limit_time {
@@ -255,13 +267,13 @@ Where to send email in the event of failure.
 
 By default, this program sends no email.
 
-=item --mode=s
+=item --mode=s B<Mandatory.>
 
 One of 'table', or 'row'.
 
 'table' does table backups, and 'row' does row backups. Simple.
 
-=item --output=s
+=item --output=s B<Mandatory.>
 
 Path to output file.
 
@@ -274,27 +286,28 @@ Default: TABLENAME_%Y%m%d%H%M%S
 
 Path for logfile. Default: ./pdb-archiver.pl.log
 
-=item --db-host=s
+=item --db-host=s B<Mandatory.>
 
 Database hostname.
 
 =item --db-user=s
 
-Database user.
+Database user. Default: admin.
 
 The host you are connecting from must have access.
 
 =item --db-pass=s
 
-Database password.
+Database password. Default: <empty>.
 
-=item --db-schema=s
+=item --db-schema=s B<Mandatory.>
 
 Database schema to dump or work on.
 
 =item --table=s
 
-Table to operate on in row archive mode.
+Table to operate on. Required for row archive mode.
+In table archive mode, tool simple archives and drops this table instead of the date-processing behavior.
 
 =item --date-format=s
 
@@ -356,6 +369,17 @@ Default: 10
 
 For tables this is how many seconds between dump/drops.
 And for row chewing, it's how many seconds to pause between batches.
+
+=item --max-age=s
+
+Format: C<(\d+)[mdwyMDWY]>
+
+That is: A number followed by one of m,d,w,y(case-insensitive).
+'m' stands for month, 'd', stands for day, 'y' is year, 'w' is 'week'.
+
+Only for use in table mode.
+
+Tables older than max-age will be mysqldump'ed, compressed, and dropped.
 
 =item --limit=i
 

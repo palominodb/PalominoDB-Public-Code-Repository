@@ -1,0 +1,28 @@
+#!/usr/bin/env perl
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+require 'insert_module';
+
+my $input = "";
+my $infile = shift @ARGV;
+my $outfile = shift @ARGV;
+my @modules;
+
+{
+  open my $file, "<$infile";
+  $/ = undef;
+  $input = <$file>;
+  close $file;
+}
+
+
+(@modules) = $input =~ /^# (\w+) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
+
+foreach my $m (@modules) {
+  $input = SrcUtils::insert_module($m, $input);
+}
+
+open my $output, ">$outfile";
+print $output $input;
+close $output;

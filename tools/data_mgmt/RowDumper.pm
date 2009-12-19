@@ -17,6 +17,7 @@ sub new {
   $self->{archive_column} = $archive_column;
   $self->{gzip_path} = "/usr/bin/gzip";
   $self->{dest} = 0;
+  $self->{noop} = 0;
 
   bless $self, $class;
 
@@ -40,6 +41,13 @@ sub new {
   $plog->d("Columns: ", join(",",@{$self->{columns}}));
 
   return $self;
+}
+
+sub noop {
+  my ($self, $new) = @_;
+  my $old = $self->{noop};
+  $self->{noop} = $new if( defined($new) );
+  $old;
 }
 
 sub reset {
@@ -77,19 +85,21 @@ sub compress {
     return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
     $self->{plog}->d("Compressing '$file' with $self->{gzip_path}");
     my $ret = undef;
-    eval {
-      local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
-      local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
-      $ret = qx/$self->{gzip_path} $file 2>&1/;
-      if($? != 0) {
-        $self->{plog}->e("$self->{gzip_path} returned: ". ($? >> 8) ."\n", $ret);
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        $ret = qx/$self->{gzip_path} $file 2>&1/;
+        if($? != 0) {
+          $self->{plog}->e("$self->{gzip_path} returned: ". ($? >> 8) ."\n", $ret);
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
         die("Failed to compress '$file'");
       }
-    };
-    if($@) {
-      chomp($@);
-      $self->{plog}->es($@);
-      die("Failed to compress '$file'");
     }
     $self->{plog}->d("Finished compressing '$file'.");
     return 1;
@@ -109,9 +119,11 @@ sub dump {
   my $ret = (defined($limit) ? $sth->execute($bindvars,$limit) : $sth->execute($bindvars));
   $self->{plog}->d("Dump execute returns: $ret");
   my $i = 0;
-  while ( my $r = $sth->fetch ) {
-    $self->_writerow($dest, $r);
-    $i++;
+  unless($self->{noop}) {
+    while ( my $r = $sth->fetch ) {
+      $self->_writerow($dest, $r);
+      $i++;
+    }
   }
   $self->{plog}->d("No rows dumped.") if($i == 0);
   $i;
@@ -125,7 +137,10 @@ sub drop {
   $self->{plog}->d("Delete SQL: /* $comment */ DELETE FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr");
   my $sth = $self->{dbh}->prepare_cached(qq#/* $comment */ DELETE FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr#);
 
-  my $ret = (defined($limit) ? $sth->execute($bindvars,$limit) : $sth->execute($bindvars));
+  my $ret = 0;
+  unless($self->{noop}) {
+    $ret = (defined($limit) ? $sth->execute($bindvars,$limit) : $sth->execute($bindvars));
+  }
   $self->{plog}->d("No rows dropped.") if($ret == 0 or $ret == 0E0);
   $ret;
 }

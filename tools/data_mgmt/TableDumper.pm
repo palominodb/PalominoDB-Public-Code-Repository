@@ -63,26 +63,35 @@ sub pass {
   $old;
 }
 
+sub noop {
+  my ($self, $noop) = @_;
+  my $old = $self->{noop};
+  $self->{noop} = $noop if( defined $noop );
+  $old;
+}
+
 sub dump {
   my ($self, $dest, $schema, $table_s) = @_;
   my $cmd = $self->_make_mysqldump_cmd($dest, $schema, $table_s);
   $self->{plog}->d("Starting $cmd");
-  eval {
-    local $SIG{INT} = sub { die("Command interrupted by SIGINT"); };
-    local $SIG{TERM} = sub { die("Command interrupted by SIGTERM"); };
-    my $ret = qx/($cmd) 2>&1/;
-    if($? != 0) {
-      $self->{plog}->e("mysqldump failed with: ". $? >> 8);
-      $self->{plog}->e("messages: $ret");
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Command interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Command interrupted by SIGTERM"); };
+      my $ret = qx/($cmd) 2>&1/;
+      if($? != 0) {
+        $self->{plog}->e("mysqldump failed with: ". $? >> 8);
+        $self->{plog}->e("messages: $ret");
+        die("Error doing mysqldump");
+      }
+    };
+    if($@) {
+      chomp($@);
+      $self->{plog}->es("Issues with command execution:", $@);
       die("Error doing mysqldump");
     }
-  };
-  if($@) {
-    chomp($@);
-    $self->{plog}->es("Issues with command execution:", $@);
-    die("Error doing mysqldump");
+    $self->{plog}->d("Completed mysqldump.");
   }
-  $self->{plog}->d("Completed mysqldump.");
   return 1;
 }
 
@@ -106,46 +115,50 @@ sub remote_dump {
     return undef;
   }
   $self->{plog}->d("Running remote mysqldump: '$cmd'");
-  eval {
-    local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
-    local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
-    my( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$cmd");
-    if($exit != 0) {
-      $self->{plog}->e("Non-zero exit ($exit) from: $cmd");
-      $self->{plog}->e("Stderr: $stderr");
-      die("Remote mysqldump failed");
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
+      my( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$cmd");
+      if($exit != 0) {
+        $self->{plog}->e("Non-zero exit ($exit) from: $cmd");
+        $self->{plog}->e("Stderr: $stderr");
+        die("Remote mysqldump failed");
+      }
+    };
+    if ($@) {
+      chomp($@);
+      $self->{plog}->es("Issues with remote command execution:", $@);
+      die("Failed to ssh");
     }
-  };
-  if ($@) {
-    chomp($@);
-    $self->{plog}->es("Issues with remote command execution:", $@);
-    die("Failed to ssh");
+    $self->{plog}->d("Completed mysqldump.");
   }
-  $self->{plog}->d("Completed mysqldump.");
   return 1;
 }
 
 sub drop {
   my ($self, $schema, $table_s) = @_;
   $self->{plog}->d("dropping: $table_s");
-  eval {
-    local $SIG{INT} = sub { die("Query interrupted by SIGINT"); };
-    local $SIG{TERM} = sub { die("Query interrupted by SIGTERM"); };
-    my $drops = map { "`$schema`.`$_`," } @$table_s;
-    chop($drops);
-    if($drops eq "") {
-      $drops = "`$schema`.`$table_s`";
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Query interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Query interrupted by SIGTERM"); };
+      my $drops = map { "`$schema`.`$_`," } @$table_s;
+      chop($drops);
+      if($drops eq "") {
+        $drops = "`$schema`.`$table_s`";
+      }
+      $self->{plog}->d("SQL: DROP TABLE $drops");
+      $self->{dbh}->do("DROP TABLE $drops")
+        or $self->{plog}->e("Failed to drop some tables.") and die("Failed to drop some tables");
+    };
+    if($@) {
+      chomp($@);
+      $self->{plog}->es("Failed to drop some tables:", $@);
+      die("Failed to drop some tables");
     }
-    $self->{plog}->d("SQL: DROP TABLE $drops");
-    $self->{dbh}->do("DROP TABLE $drops")
-      or $self->{plog}->e("Failed to drop some tables.") and die("Failed to drop some tables");
-  };
-  if($@) {
-    chomp($@);
-    $self->{plog}->es("Failed to drop some tables:", $@);
-    die("Failed to drop some tables");
+    $self->{plog}->d("Completed drop.");
   }
-  $self->{plog}->d("Completed drop.");
   return 1;
 }
 
