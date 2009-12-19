@@ -74,12 +74,16 @@ my $limit = undef;
 my $output_tmpl = "TABLENAME_%Y%m%d%H%M%S";
 my $mode = 'table';
 
-my $pretend = 0;
-
 my $mysqldump_path = '/usr/bin/mysqldump';
+my $mk_archiver_path = '/usr/local/bin/mk-archiver';
+my %mkopts;
+
+my $no_compress = 0;
+my $pretend = 0;
 
 sub main {
   my @ARGV = @_;
+  my @mkos;
   GetOptions(
     'help' => sub { pod2usage(); },
     'git-version' => sub { print "$0 - SCRIPT_GIT_VERSION\n"; },
@@ -105,27 +109,37 @@ sub main {
     'max-age=s' => \$limit,
     'sleep=i' => \$op_sleep,
     'output=s' => \$output_tmpl,
-    'mysqldump=s' => \$mysqldump_path
+    'mysqldump-path=s' => \$mysqldump_path,
+    'mk-archiver-path=s' => \$mk_archiver_path,
+    'no-compress' => \$no_compress,
+    'mkopt=s' => \@mkos
   );
   $mode = lc($mode);
+
+  foreach(@mkos) {
+    my ($k,$v) = split /=/, $_, 2;
+    $mkopts{$k} = $v;
+  }
 
   if(not $db_host) {
     pod2usage("--db-host is required.");
   }
 
-  if($mode eq "table" and not $table or (not $table_prefix or not $date_format or not $limit)) {
-    pod2usage("--table-prefix|--table, --date-format, and --max-age are required for table mode.");
+  if($mode eq "table" and not $table) {
+    pod2usage("--table-prefix, --date-format, and --max-age, or --table are required for table mode.");
   }
-
-  if($mode eq "row" and (not $table or not $table_column or not $row_condition or not $row_limit)) {
+  elsif($mode eq "table" and (not $table and (not $table_prefix or not $date_format or not $limit))) {
+    pod2usage("--table-prefix, --date-format, and --max-age, or --table are required for table mode.");
+  }
+  elsif($mode eq "row" and (not $table or not $table_column or not $row_condition or not $row_limit)) {
     pod2usage("--table, --column, --condition, and --limit are required for row mode.");
   }
 
   $pl = ProcessLog->new($0, $logfile, $email);
   $dbh = DBI->connect("DBI:mysql:host=$db_host;database=$db_schema", $db_user, $db_pass);
   $pl->start();
-  $limit = parse_limit_time($limit);
   if($mode eq "table" and $table_prefix) {
+    $limit = parse_limit_time($limit);
     my @tables = map { $_->[0] } @{$dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`")};
     $pl->d("Selected tables:", Dumper(\@tables));
     @tables = grep /^$table_prefix/, @tables;
@@ -165,12 +179,19 @@ sub table_archive {
   my $d = TableDumper->new($dbh, $pl, $db_user, $db_host, $db_pass);
   $d->mysqldump_path($mysqldump_path);
   $d->noop($pretend);
+  my $interpolated_out = out_fmt($table);
   eval {
     if($ssh_host) {
       $d->remote_dump_and_drop($ssh_user, $ssh_host, \@ssh_ids, $ssh_pass, out_fmt($t), $db_schema, $t);
+      unless($no_compress) {
+        $d->remote_compress($interpolated_out);
+      }
     }
     else {
-      $d->dump_and_drop(out_fmt($t), $db_schema, $t);
+      $d->dump_and_drop($interpolated_out, $db_schema, $t);
+      unless($no_compress) {
+        $d->compress($interpolated_out);
+      }
     }
   };
   if($@) {
@@ -182,18 +203,34 @@ sub table_archive {
 }
 
 sub row_archive {
-  my $r = RowDumper->new($dbh, $pl, $db_schema, $table, $table_column);
+  my $r = RowDumper->new($dbh, $pl, $db_host, $db_user, $db_pass, $db_schema, $table, $table_column);
+  my $interpolated_out = out_fmt($table);
   $r->noop($pretend);
-  $pl->m("Starting row dump of $db_schema.$table with $op_sleep second sleeps");
-  while($r->dump(out_fmt($table), $row_condition, $row_limit, split(/,/, $row_cond_values))) {
-    $r->drop($row_condition, $row_limit, split(/,/, $row_cond_values));
-    sleep($op_sleep);
+  $r->mk_archiver_path($mk_archiver_path);
+
+  foreach(keys %mkopts) {
+    $pl->d("Setting mk-archiver opt: $_=$mkopts{$_}");
+    $r->mk_archiver_opt($_, $mkopts{$_});
   }
-  $r->finish();
+
+  $pl->m("Starting row dump of $db_schema.$table"); #with $op_sleep second sleeps");
+  if($ssh_user) {
+    $r->remote_archive($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out, $row_condition, $row_limit);
+  }
+  else {
+    $r->archive($interpolated_out, $row_condition, $row_limit);
+  }
   $pl->m("Finished row dump of $db_schema.$table.");
-  $pl->m("Compressing row dump of $db_schema.$table.");
-  $r->compress(out_fmt($table));
-  $pl->m("Finished compressing row dump of $db_schema.$table.");
+  unless($no_compress) {
+    $pl->m("Compressing row dump of $db_schema.$table.");
+    if($ssh_user) {
+      $r->remote_compress($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out);
+    }
+    else {
+      $r->compress($interpolated_out);
+    }
+    $pl->m("Finished compressing row dump of $db_schema.$table.");
+  }
   1;
 }
 
@@ -281,6 +318,18 @@ The string may include any of the C<strftime(3)> format specifiers (see C<--date
 In addition, it may also include any number of of the string C<TABLENAME> which will be replaced with the name of the table being processed.
 
 Default: TABLENAME_%Y%m%d%H%M%S
+
+=item --mysqldump-path=s
+
+Default: /usr/bin/mysqldump
+
+Path to the mysqldump binary. If dumping remotely, this is treated as the path to it on the remote machine.
+
+=item --mk-archiver-path=s
+
+Default: /usr/local/bin/mk-archiver
+
+Path to the mk-archiver binary. If dumping remotely, this is treated as the path to it on the remote machine.
 
 =item --logfile=s
 

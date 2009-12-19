@@ -80,7 +80,7 @@ sub dump {
       local $SIG{TERM} = sub { die("Command interrupted by SIGTERM"); };
       my $ret = qx/($cmd) 2>&1/;
       if($? != 0) {
-        $self->{plog}->e("mysqldump failed with: ". $? >> 8);
+        $self->{plog}->e("mysqldump failed with: ". ($? >> 8));
         $self->{plog}->e("messages: $ret");
         die("Error doing mysqldump");
       }
