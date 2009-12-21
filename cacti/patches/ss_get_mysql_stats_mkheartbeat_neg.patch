@@ -1,0 +1,19 @@
+diff --git a/cacti/scripts/ss_get_mysql_stats.php b/cacti/scripts/ss_get_mysql_stats.php
+index 4e47af1..1d0398a 100644
+--- a/cacti/scripts/ss_get_mysql_stats.php
++++ b/cacti/scripts/ss_get_mysql_stats.php
+@@ -355,9 +355,12 @@ function ss_get_mysql_stats( $options ) {
+ 
+          # Check replication heartbeat, if present.
+          if ( $heartbeat ) {
++            # Can return negative values if time is out of sync.
++            # This is desirable behavior. Since, the more places you can expose
++            # a problem, the faster you'll find it.
+             $result2 = run_query(
+-               "SELECT GREATEST(0, UNIX_TIMESTAMP() - UNIX_TIMESTAMP(ts) - 1)"
+-               . "FROM $heartbeat WHERE id = 1", $conn);
++               "SELECT NOW() - ts FROM $heartbeat WHERE id = 1", $conn
++            );
+             $status['slave_lag'] = $result2[0][0];
+          }
+
