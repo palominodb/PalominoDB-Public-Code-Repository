@@ -1,0 +1,16 @@
+Please, please, please:
+Run: `make' BEFORE attempting to send any of these files to a client.
+
+DO NOT ATTEMPT TO USE ANY SCRIPTS OUT OF scripts/, ONLY FILES IN dist/
+SHOULD BE USED.
+
+If you do not have a dist/ directory, then you didn't run `make'. :)
+
+The makefile in this directory does IMPORTANT pre-processing on the
+scripts to get them ready for use. Things like:
+  Applying patches
+  Building templates
+  Running tests
+
+When make is done, it will have placed the production-ready scripts
+in dist/.
