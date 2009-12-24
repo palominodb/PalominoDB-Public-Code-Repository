@@ -95,6 +95,75 @@ sub dump {
   return 1;
 }
 
+sub compress {
+  my ($self, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
+    $self->{plog}->d("Compressing '$file' with $self->{gzip_path}");
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        $ret = qx/$self->{gzip_path} $file 2>&1/;
+        if($? != 0) {
+          $self->{plog}->e("$self->{gzip_path} returned: ". ($? >> 8) ."\n", $ret);
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+sub remote_compress {
+  my ($self, $host, $user, $id, $pass, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    #return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
+    $self->{plog}->d("Remote compressing '$file' with $self->{gzip_path}");
+    eval {
+      $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
+      $self->{plog}->d("Logging into $user\@$host.");
+      $self->{ssh}->login($user, $pass);
+    };
+    if($@) {
+      $self->{plog}->e("Unable to login. $@");
+      return undef;
+    }
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        my ( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$self->{gzip_path} $file");
+        if($exit != 0) {
+          $self->{plog}->e("$self->{gzip_path} returned: ". $exit ."\n", $ret);
+          $self->{plog}->e("Stderr: $stderr");
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+
 sub ssh_options {
   my ($self, $opts) = @_;
   my $old = $self->{ssh_options};
@@ -105,8 +174,8 @@ sub ssh_options {
 sub remote_dump {
   my ($self, $user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
   my $cmd = $self->_make_mysqldump_cmd($dest, $schema, $table_s);
-  $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
   eval {
+    $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
     $self->{plog}->d("Logging into $user\@$host.");
     $self->{ssh}->login($user, $pass);
   };
@@ -185,7 +254,7 @@ sub _make_mysqldump_cmd {
   $cmd .=" --single-transaction -Q $schema ";
   $cmd .= join(" ", $table_s) if( defined $table_s );
   $cmd .= qq| > "$dest"|;
-  $cmd .= qq| && $self->{gzip} "$dest" ; else echo 'Dump already present.' 1>&2; exit 1 ; fi|;
+  $cmd .= qq| ; else echo 'Dump already present.' 1>&2; exit 1 ; fi|;
   $cmd;
 }
 

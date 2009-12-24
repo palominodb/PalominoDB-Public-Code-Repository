@@ -64,7 +64,7 @@ my $row_limit = 5_000;
 my $op_sleep = 10;
 
 my $ssh_host = undef;
-my $ssh_user = 'mysql';
+my $ssh_user = undef;
 my $ssh_pass = undef;
 my @ssh_ids  = undef;
 

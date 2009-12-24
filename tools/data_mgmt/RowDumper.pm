@@ -133,8 +133,8 @@ sub remote_compress {
   unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
     #return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
     $self->{plog}->d("Remote compressing '$file' with $self->{gzip_path}");
-    $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
     eval {
+      $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
       $self->{plog}->d("Logging into $user\@$host.");
       $self->{ssh}->login($user, $pass);
     };
@@ -197,8 +197,8 @@ sub archive {
 sub remote_archive {
   my ($self, $host, $user, $id, $pass, $dest, $condition, $limit) = @_;
   my $cmd = $self->_mk_archiver_cmd($condition, $dest);
-  $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
   eval {
+    $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
     $self->{plog}->d("Logging into $user\@$host.");
     $self->{ssh}->login($user, $pass);
   };
