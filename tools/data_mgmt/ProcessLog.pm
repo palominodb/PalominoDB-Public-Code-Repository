@@ -1,7 +1,7 @@
 package ProcessLog;
 use Mail::Send;
 use Sys::Hostname;
-use Sys::Syslog;
+use Sys::Syslog qw(:standard :macros);
 use Digest::SHA1;
 use Time::HiRes qw(time);
 
@@ -106,8 +106,6 @@ sub m {
   my $fh = $self->{LOG};
   my $t = time();
   $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
-  #print $fh _p('msg', undef, undef, $t, @_);
-  #print _p('msg', undef, undef, $t, @_);
 }
 
 # Log a message with a stack trace.
@@ -124,8 +122,6 @@ sub e {
   my $fh = $self->{LOG};
   my $t = time();
   $self->{logsub}->($self, 'err', $package, $line, $t, @_);
-  #print $fh _p('err', $package, $line, $t, @_);
-  #print _p('err', $package, $line, $t, @_);
 }
 
 # Log an error with a stack trace.
@@ -141,8 +137,6 @@ sub i {
   my $fh = $self->{LOG};
   my $t = time();
   $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
-  #print $fh _p('ifo', undef, undef, $t, @_);
-  #print _p('ifo', undef, undef, $t, @_);
 }
 
 # Log some information with a stack trace.
@@ -158,9 +152,8 @@ sub d {
   my ($package, undef, $line) = caller 0;
   my $fh = $self->{LOG};
   if(_PdbDEBUG) {
+    my $t = time();
     $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
-    #print $fh _p('dbg', $package, $line, time(), @_);
-    #print STDERR _p('dbg', $package, $line, time(), @_);
   }
 }
 
