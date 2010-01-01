@@ -2,7 +2,7 @@ Name: zrm-innobackupex
 Summary: innobackupex copy plugin for ZRM
 Version: 0.72
 Vendor: PalominoDB
-Release: 2
+Release: 3
 License: Private
 Group: Application/System
 Source: http://palominodb.com/src/zrm-innobackupex-%{version}.tgz
@@ -17,7 +17,7 @@ true mysql hotcopy.
 %package client
 Summary: Just the backup-server side (client) code required. No socket-server.
 Group: Application/System
-Requires: xtrabackup >= 1.0
+Requires: xtrabackup >= 1.0, MySQL-zrm >= 2.1
 
 %description client
 Provides just the plugin needed by the backup-server. This package should not
@@ -47,10 +47,15 @@ be installed on database servers.
 if [[ -f /etc/xinetd.d/mysql-zrm-socket-server ]]; then
   %{__sed} -i -e '/disable/ s/no/yes/' /etc/xinetd.d/mysql-zrm-socket-server
 fi
-%{__echo} "You must restart xinetd for %{name} to take effect,"
-%{__echo} "if this is the first time it's been installed."
-%{__echo} ""
-%{__echo} "The original ZRM socket-server has been disabled, if it was enabled."
+echo "You must restart xinetd for %{name} to take effect,"
+echo "if this is the first time it's been installed."
+echo ""
+echo "The original ZRM socket-server has been disabled, if it was enabled."
+
+%postun
+if [[ -f /etc/xinetd.d/mysql-zrm-socket-server ]]; then
+  %{__sed} -i -e '/disable/ s/yes/no/' /etc/xinetd.d/mysql-zrm-socket-server
+fi
 
 %files
 %defattr(0644,root,root)
