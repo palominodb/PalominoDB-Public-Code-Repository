@@ -17,7 +17,7 @@ CREATE TABLE `process_list` (
   `Host` varchar(64) NOT NULL,
   `Db` varchar(64) DEFAULT NULL,
   `Command` enum('binlog dump','change user','close stmt','connect','connect out','create db','daemon','debug','delayed insert','drop db','drror','dxecute','fetch','field list','init db','kill','long data','ping','prepare','processlist','query','quit','refresh','register slave','reset stmt','set option','shutdown','sleep','statistics','table dump') DEFAULT NULL,
-  `Time` int(11) NOT NULL,
+  `Time` int(11),
   `State` enum('after create','analyzing','checking permissions','checking table','cleaning up','closing tables','converting heap to myisam','copy to tmp table','copying to group table','copying to tmp table','copying to tmp table on disk','creating index','creating sort index','creating table','creating tmp table','deleting from main table','deleting from reference tables','discard_or_import_tablespace','end','executing','execution of init_command','freeing items','flushing tables','fulltext initialization','init','killed','locked','logging slow query','login','opening tables','opening table','preparing','purging old relay logs','query end','reading from net','removing duplicates','removing tmp table','rename','rename result table','reopen tables','repair by sorting','repair done','repair with keycache','rolling back','saving state','searching rows for update','sending data','setup','sorting for group','sorting for order','sorting index','sorting result','statistics','system lock','table lock','updating','updating main table','updating reference tables','user lock','user sleep','waiting for tables','waiting for table','waiting on cond','writing to net') DEFAULT NULL,
   `Info` text
 /*  `Flagged` tinyint(1) TODO-ish: If this is true, then this is the query that caused the processlist to be saved. */
@@ -43,6 +43,7 @@ sub new {
    if(not defined($args->{logdsn}->{i})) {
       $args->{logdsn}->{i} = 30;
    }
+   $args->{logdbh}->{InactiveDestroy}  = 1;
    $args->{logdsn}->{c} ||= 100;
    $args->{cycles} = 0;
    $args->{sth} = $args->{logdbh}->prepare(
@@ -66,18 +67,26 @@ sub watch_event {
       }
    }
    $data = $self->{dbh}->selectall_arrayref("SHOW FULL PROCESSLIST", { Slice => {} }) unless($data);
-   foreach my $r (@$data) {
-      ProcLogDebug && mk_loadavg::_d('Writing row'); 
-      $self->{sth}->execute($time_at, $r->{Id}, $r->{User}, $r->{Host}, $r->{db}, lc($r->{Command}), $r->{Time}, lc($r->{State}), $r->{Info});
-   }
-   if($self->{cycles} > $self->{logdsn}->{c}) {
-      ProcLogDebug && mk_loadavg::_d('Purging old rows');
-      ProcLogDebug && mk_loadavg::_d("DELETE FROM `$self->{logdsn}->{D}`.`$self->{logdsn}->{t}` WHERE eventTime < NOW() - INTERVAL $self->{logdsn}->{i} DAY ORDER BY eventTime");
-      $self->{logdbh}->do("DELETE FROM `$self->{logdsn}->{D}`.`$self->{logdsn}->{t}` WHERE eventTime < NOW() - INTERVAL $self->{logdsn}->{i} DAY ORDER BY eventTime");
-      $self->{cycles} = 0;
-   }
-   else {
-      $self->{cycles} += 1;
+   eval {
+      foreach my $r (@$data) {
+         ProcLogDebug && mk_loadavg::_d('Writing row'); 
+         $self->{sth}->execute($time_at, $r->{Id}, $r->{User}, $r->{Host}, $r->{db}, lc($r->{Command}), $r->{Time}, lc($r->{State}), $r->{Info});
+      }
+      if($self->{cycles} > $self->{logdsn}->{c}) {
+         ProcLogDebug && mk_loadavg::_d('Purging old rows');
+         ProcLogDebug && mk_loadavg::_d("DELETE FROM `$self->{logdsn}->{D}`.`$self->{logdsn}->{t}` WHERE eventTime < NOW() - INTERVAL $self->{logdsn}->{i} DAY ORDER BY eventTime");
+         $self->{logdbh}->do("DELETE FROM `$self->{logdsn}->{D}`.`$self->{logdsn}->{t}` WHERE eventTime < NOW() - INTERVAL $self->{logdsn}->{i} DAY ORDER BY eventTime");
+         $self->{cycles} = 0;
+      }
+      else {
+         $self->{cycles} += 1;
+      }
+      $self->{logdbh}->commit;
+   };
+
+   if($@) {
+      warn "Transaction aborted because $@";
+      eval { $self->{logdbh}->rollback };
    }
    return 1;
 }
@@ -101,6 +110,7 @@ sub set_dbh {
          "VALUES(". $self->{logdbh}->quote($self->{dsn}->{h}) .", FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, ?, ?)"
       );
    }
+   $self->{logdbh}->{InactiveDestroy}  = 1;
    return 1;
 }
 
