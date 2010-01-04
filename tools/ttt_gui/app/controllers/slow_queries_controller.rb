@@ -1,7 +1,12 @@
 require 'digest/sha1'
 class SlowQueriesController < ApplicationController
   class Filter
-    @@type_types=SqlProfilerHistory.columns_hash
+    @@type_types={}
+    begin
+      @@type_types=SqlProfilerHistory.columns_hash
+    rescue ActiveRecord::StatementInvalid => ar_si
+    end
+
     attr_reader :type, :value
     def initialize(from_hash = {'sample' => "", 'value' => ''})
       @type = from_hash['type']

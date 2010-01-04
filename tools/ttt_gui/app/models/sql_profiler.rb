@@ -1,5 +1,6 @@
 require 'active_record'
 
+begin
 class SqlProfiler < ActiveRecord::Base
   self.abstract_class = true
   establish_connection(
@@ -11,4 +12,5 @@ class SqlProfiler < ActiveRecord::Base
     :socket   => TTT_CONFIG['gui_options']['slow_query_socket']
   )
 end
-
+rescue NoMethodError => nme
+end

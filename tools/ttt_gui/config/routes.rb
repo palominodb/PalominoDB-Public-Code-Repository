@@ -5,7 +5,9 @@ ActionController::Routing::Routes.draw do |map|
   map.resources :dashboard
   map.resources( :servers, :requirements => { :id => SrvID }) do |servers|
     servers.resource(:top_tables, :requirements => {:server_id => SrvID })
-    servers.resource(:slow_queries, :requirements => {:server_id => SrvID})
+    if TTT_CONFIG['gui_options'] and TTT_CONFIG['gui_options']['have_slow_query']
+      servers.resource(:slow_queries, :requirements => {:server_id => SrvID})
+    end
     servers.resources(:databases,:requirements => { :server_id =>SrvID, :id =>DbID }) do |tables|
       tables.resources :tables, :requirements => { :server_id =>SrvID, :id => TblID }
       tables.resources :history, :requirements => { :server_id =>SrvID, :database_id => DbID, :id => TblID }
@@ -16,8 +18,10 @@ ActionController::Routing::Routes.draw do |map|
   map.resource :top_databases
 
   #map.connect 'slow_queries/:id/edit', :controller => 'slow_queries', :action => 'edit', :method => 'post'
-  map.resources :slow_queries
-  map.resources :sql_profiler_queries
+  if TTT_CONFIG['gui_options'] and TTT_CONFIG['gui_options']['have_slow_query']
+    map.resources :slow_queries
+    map.resources :sql_profiler_queries
+  end
 
   map.resources :databases
   map.resources :graphs
