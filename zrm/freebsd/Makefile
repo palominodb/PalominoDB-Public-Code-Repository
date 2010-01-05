@@ -6,7 +6,7 @@
 #
 
 PORTNAME =      zrm-innobackupex
-PORTVERSION =   0.72
+PORTVERSION =   0.73
 DISTFILES =     ${PORTNAME}-${PORTVERSION}.tgz
 CATEGORIES =    sysutils
 MASTER_SITES =  http://bastion.palominodb.com/src/

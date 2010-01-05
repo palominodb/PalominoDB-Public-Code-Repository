@@ -8,6 +8,13 @@ if [ -z "$INNOBACKUPEX_PATH" ]; then
   fi
 fi
 
+MIN_XTRA_VERSION=1.0
+XTRA_VERSION=$(xtrabackup --version | head -n1 | awk '{print $3}')
+
+if echo '!'"$XTRA_VERSION >= $MIN_XTRA_VERSION" | bc -lq >/dev/null ; then
+  echo "Minimum version not met for xtrabackup."
+fi
+
 # Only support installs rooted at /usr, for now.
 perl -I/usr/lib/mysql-zrm -MZRM::SnapshotCommon -e '1;'
 if [ ! $? ]; then
