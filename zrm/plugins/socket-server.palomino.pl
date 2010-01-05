@@ -24,7 +24,7 @@ use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
 use POSIX;
-use DBI;
+
 
 # Set remote-mysql-binpath in mysql-zrm.conf if mysql client binaries are 
 # in a different location
@@ -209,6 +209,7 @@ sub doRealHotCopy()
   my $dbh = undef;
   my $prev_wait = undef;
   eval {
+    require "DBI";
     $dbh = DBI->connect("DBI:mysql:host=localhost", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
   };
   if( $@ ) {
