@@ -184,6 +184,9 @@ sub add_partitions {
         push @part_dates, ($last_p->{date} + DateTime::Duration->new(days => 7 + $du2->in_units('days') % 7));
         $du2->subtract(days => 7 + $du2->in_units('days') % 7);
       }
+      elsif($range eq 'days') {
+        $du2 = $d2->delta_days($last_p->{date});
+      }
       $pl->d('delta post adjustment:',Dumper($du2));
     }
 
