@@ -4,6 +4,7 @@ use Sys::Hostname;
 use Sys::Syslog qw(:standard :macros);
 use Digest::SHA1;
 use Time::HiRes qw(time);
+use File::Spec;
 
 use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
 use constant Level1 => 1;
@@ -218,18 +219,36 @@ sub _p {
 #
 # This method is partially deprecated.
 sub email_and_die {
+  my ($self, $extra) = @_;
+  $self->failure_email($extra);
+  die($extra);
+}
+
+sub failure_email {
   my ($self,$extra) = shift;
   $self->i("Not emailing: $extra") if(not defined $self->{email_to});
-  $self->msg("Emailing out failure w/ extra: $extra\n");
+  $self->m("Emailing out failure w/ extra: $extra\n") if($extra);
   my $msg = Mail::Send->new(Subject => "$self->{script_name} FAILED", To => $self->{email_to});
   my $fh = $msg->open;
   print $fh "$self->{script_name} on ". hostname() . " failed at ". scalar localtime() ."\n";
-  print $fh "\nThe Error: $extra\n";
+  print $fh "\nThe Error: $extra\n" if($extra);
   print $fh $self->stack() . "\n";
   print $fh "RUN ID (for grep): $self->{run_id}\n";
-  print $fh "Logfile: $self->{log_path}\n";
+  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
   $fh->close;
-  die($extra)
+}
+
+sub success_email {
+  my ($self, $extra) = shift;
+  $self->i("Not emailing: $extra") if(not defined $self->{email_to});
+  $self->m("Emailing out success w/ extra: $extra\n") if($extra);
+  my $msg = Mail::Send->new(Subject => "$self->{script_name} SUCCESS", To => $self->{email_to});
+  my $fh = $msg->open;
+  print $fh "$self->{script_name} on ". hostname() . " succeeded at ". scalar localtime() ."\n";
+  print $fh "\nMessage: $extra\n" if($extra);
+  print $fh "RUN ID (for grep): $self->{run_id}\n";
+  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
+  $fh->close;
 }
 
 1;
