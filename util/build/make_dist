@@ -5,6 +5,7 @@ use English qw(-no_match_vars);
 require 'insert_module';
 
 my $input = "";
+my $module_path = shift @ARGV;
 my $infile = shift @ARGV;
 my $outfile = shift @ARGV;
 my @modules;
@@ -20,7 +21,7 @@ my @modules;
 (@modules) = $input =~ /^# (\w+) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
 
 foreach my $m (@modules) {
-  $input = SrcUtils::insert_module($m, $input);
+  $input = SrcUtils::insert_module($module_path, $m, $input);
 }
 
 open my $output, ">$outfile";

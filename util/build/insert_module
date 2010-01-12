@@ -8,12 +8,11 @@ use File::Basename;
 
 # Read in the standard input, and replace the desired module by the contents of
 # the most recent version of the module.
-# Example: :%!../maatkit/insert_module TableParser
 
-sub insert_module($$) {
-  my ($module, $input) = @_;
+sub insert_module {
+  my ($path, $module, $input) = @_;
   my $module_src = "";
-  open my $file, "<", "$module.pm"
+  open my $file, "<", "$path/$module.pm"
     or die $OS_ERROR;
   {
     $INPUT_RECORD_SEPARATOR = undef;
@@ -39,8 +38,9 @@ if(fileparse($0) eq "insert_module") {
     $INPUT_RECORD_SEPARATOR = undef;
     $input = <STDIN>;
   }
+  my $path = shift @ARGV;
   my $module = shift @ARGV;
 
-  print insert_module($module, $input);
+  print insert_module($path, $module, $input);
 }
 1;
