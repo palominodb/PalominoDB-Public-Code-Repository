@@ -158,10 +158,10 @@ sub has_maxvalue_data {
     return 0; # Can't have maxvalue data since there isn't a partition for that.
   }
   my $sql =
-      qq#EXPLAIN PARTITIONS SELECT COUNT(*)
+      qq|EXPLAIN PARTITIONS SELECT COUNT(*)
            FROM `$self->{schema}`.`$self->{name}`
          WHERE $col > $descr
-        #;
+        | ;
   $self->{pl}->d('SQL:', $sql);
   eval {
     $explain_result = $dbh->selectrow_hashref($sql);
