@@ -9,7 +9,7 @@ use constant WARNING => 1;
 use constant CRITICAL => 2;
 use constant UNKNOWN => 3;
 
-use constant MK_HEARTBEAT_DEFAULT => "/usr/local/bin/mk-heartbeat";
+use constant MK_HEARTBEAT_DEFAULT => "/usr/bin/mk-heartbeat";
 use constant WARN_MIN_LAG_DEFAULT => 0;
 use constant CRIT_MIN_LAG_DEFAULT => 0;
 use constant WARN_MAX_LAG_DEFAULT => 2;
