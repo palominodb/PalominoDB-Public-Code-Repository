@@ -18,7 +18,7 @@ use constant CRIT_MAX_LAG_DEFAULT => 2;
 use constant DB_USER_DEFAULT => 'heartbeat';
 use constant DB_PASS_DEFAULT => 'hb2';
 use constant DB_SCHEMA_DEFAULT => 'heartbeat';
-use constant DB_TABLE_DEFAULT => 'hb';
+use constant DB_TABLE_DEFAULT => 'heartbeat';
 
 # Replication can be off by negative times if the clocks are not completely synced.
 # Default is 0 to go critical immediately if this situation is encountered.
