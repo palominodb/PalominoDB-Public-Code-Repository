@@ -39,7 +39,7 @@ sub mk_myisam {
   my $eng = $self->_getengine($schema, $table);
   if(lc($eng) ne "myisam") {
     $self->{plog}->d("`$schema`.`$table` is not myisam -- converting.");
-    $self->{dbh}->do("/*". $self->{plog}->name ." on ". hostname() . " */ ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or $self->{plog}->e("`$schema`.`$table` failed to convert.", DBI->errstr) and die("Error converting table.")
+    $self->{dbh}->do("/*". $self->{plog}->name ." on ". hostname() . " */ ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or $self->{plog}->e("`$schema`.`$table` failed to convert.", DBI->errstr) and die("Error converting table.");
     $self->{plog}->d("`$schema`.`$table` converted to myisam.");
     return 1;
   }

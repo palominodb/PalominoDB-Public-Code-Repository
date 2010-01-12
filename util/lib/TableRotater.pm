@@ -6,7 +6,7 @@ use DateTime;
 sub new {
   my $class = shift;
   my ($dbh, $plog, $host, $user, $pass, $format) = @_;
-  $format ||= "%Y%m%d"
+  $format ||= "%Y%m%d";
   my $self = {};
   $self->{dbh} = $dbh;
   $self->{plog} = $plog;
@@ -23,7 +23,7 @@ sub date_rotate {
   my ($self, $schema, $table) = @_;
 
   my $dt = DateTime->new;
-  my $rot_table = $dt->strftime("${table}_$format")
+  my $rot_table = $dt->strftime("${table}_$format");
   $self->{plog}->d("Going to rotate `$schema`.`$table` to `$schema`.`$rot_table`");
   my $tmp_table = substr("${table}_". $self->{plog}->runid(), 0, 64);
 
@@ -41,7 +41,7 @@ sub date_rotate {
     );
     $self->{dbh}->do("RENAME TABLE `$schema`.`$table` TO `$schema`.`$rot_table`, `$schema`.`$tmp_table` TO `$schema`.`$table`")
       or $self->{plog}->e("Failed to rename tables.") and die("Failed to rename tables");
-  }
+  };
   if($@) {
     chomp($@);
     $self->{plog}->es("Failure to rotate tables:", $@);

@@ -4,7 +4,18 @@ use warnings;
 
 use English qw(-no_match_vars);
 
-my @input = <STDIN>;
+my $inf = shift @ARGV;
+my $outf = shift @ARGV;
+
+my @input = undef;
+
+open my $fh, "<", $inf
+  or die $OS_ERROR;
+  @input = <$fh>;
+
+open $fh, '>', $outf
+  or die $OS_ERROR;
+
 my @modules = ();
 
 foreach (@input) {
@@ -21,5 +32,5 @@ grep {
   }
 } @input;
 
-print @input;
+print $fh @input;
 

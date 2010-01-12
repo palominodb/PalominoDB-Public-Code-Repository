@@ -20,7 +20,7 @@ sub insert_module {
   }
   close $file;
 
-  my ($ver) = split(/\n/,qx@../../util/gitver.sh $module.pm@);
+  my ($ver) = split(/\n/,qx@../../util/gitver.sh $path/$module.pm@);
   chomp($ver);
 
   $module_src =~ s/^ *#.*\n//gm; # strip comments out
