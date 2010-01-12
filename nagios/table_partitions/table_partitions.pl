@@ -69,9 +69,16 @@ unless($range =~ /^(?:days|weeks|months)$/) {
 
 my $dbh =  DBI->connect("DBI:mysql:$db_schema;host=$db_host", $db_user, $db_pass, { RaiseError => 1, PrintError => 0, AutoCommit => 0});
 
-my $pl = ProcessLog->new('', '/dev/null', undef);
+my $pl = ProcessLog->null;#new('', '/dev/null', undef);
 my $parts = TablePartitions->new($pl, $dbh, $db_schema, $db_table);
-my $last_ptime = to_date($parts->desc_from_days($parts->last_partition->{name}));
+my $last_ptime = 0;
+my $last_p = $parts->last_partition;
+
+if($last_p->{description} eq 'MAXVALUE') {
+  $last_p = $parts->partitions->[-2];
+}
+
+$last_ptime = to_date($parts->desc_from_days($last_p->{name}));
 my $today = DateTime->today(time_zone => 'local');
 
 my $du = $last_ptime - $today;
@@ -79,6 +86,8 @@ my $du = $last_ptime - $today;
 if($range eq 'days') {
   $du = $last_ptime->delta_days($today);
 }
+
+$dbh->disconnect;
 
 if($du->in_units($range) < $verify) {
   print "CRITICAL: Not enough partitions. ". $du->in_units($range) . " $range less than $verify $range\n";
@@ -88,6 +97,9 @@ else {
   print "OK: Enough partitions. ". $du->in_units($range) . " $range greater than, or equal to $verify $range\n";
   exit(OK);
 }
+
+print 'UNKNOWN: Very strange error. How did we get here?';
+exit(UNKNOWN);
 
 sub to_date {
   my ($dstr) = @_;

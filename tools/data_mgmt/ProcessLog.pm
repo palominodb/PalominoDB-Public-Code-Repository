@@ -58,6 +58,12 @@ sub new {
   return $self;
 }
 
+# Create a null processlog, useful for nagios plugins.
+sub null {
+  my $class = shift;
+  $class->new('', '/dev/null', undef);
+}
+
 # Returns script name.
 sub name {
   my $self = shift;

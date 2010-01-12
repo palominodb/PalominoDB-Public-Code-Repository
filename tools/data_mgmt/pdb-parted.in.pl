@@ -38,12 +38,13 @@ $Data::Dumper::Sortkeys = 1;
 my $pretend = 0;
 my $uneven = 0;
 
+my $pl = 0;
+
 sub main {
   my @ARGV = @_;
   my (
     $dsn,
     $dbh,
-    $pl,
     $parts,
     # options
     $logfile,
@@ -124,10 +125,10 @@ sub main {
 
   my $r = 0;
   if($add) {
-    $r = add_partitions($pl, $add, $dbh, $parts, $prefix, $range, $db_schema, $db_table);
+    $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_schema, $db_table, $i_am_sure);
   }
   elsif($drop) {
-    $r = drop_partitions($pl, $drop, $dbh, $parts, $db_schema, $db_table, $i_am_sure);
+    $r = drop_partitions($drop, $dbh, $parts, $db_schema, $db_table, $i_am_sure);
   }
 
   $dbh->disconnect;
@@ -137,12 +138,21 @@ sub main {
 }
 
 sub add_partitions {
-  my ($pl, $add, $dbh, $parts, $prefix, $range, $db_schema, $db_table) = @_;
+  my ($add, $dbh, $parts, $prefix, $range, $db_schema, $db_table, $i_am_sure) = @_;
 
+  my $ret = 1;
   my $last_p = $parts->last_partition;
   my $next_pN = undef;
   my ($dur, $reqdur) = (undef, undef);
   my $today = DateTime->today(time_zone => 'local');
+  my $reorganize = uc($last_p->{description}) eq 'MAXVALUE';
+  if($reorganize) {
+    $last_p = $parts->partitions()->[-2];
+    if($parts->has_maxvalue_data and !$i_am_sure) {
+      $pl->e("Refusing to modify partitioning when data in a MAXVALUE partition exists.\n", "Re-run this tool with --i-am-sure if you are sure you want to do this.");
+      return undef;
+    }
+  }
 
   $last_p->{name} =~ /^$prefix(\d+)$/;
   $next_pN = $1;
@@ -164,7 +174,7 @@ sub add_partitions {
     $pl->m("At least the requested partitions exist already.\n",
       'Requested out to:', ($today + $reqdur)->ymd(), "\n",
       'Partitions out to:', $last_p->{date}->ymd(), 'exist.');
-    return 1;
+    $ret = 1;
   }
   else {
     my @part_dates = ();
@@ -201,19 +211,38 @@ sub add_partitions {
       push @part_dates, $d;
     }
 
+    if($reorganize) {
+      $parts->start_reorganization($parts->last_partition()->{name});
+      push @part_dates, 'MAXVALUE';
+    }
+
     $pl->i("Will add", scalar @part_dates, "partitions to satisfy", $add, $range, 'requirement.');
 
     my $i=0;
     foreach my $date (@part_dates) {
-      $parts->add_range_partition($prefix . ($next_pN+$i), $date->ymd, $pretend);
+      if($reorganize) {
+        if($date eq 'MAXVALUE') {
+          $parts->add_reorganized_part($prefix . ($next_pN+$i), $date);
+        }
+        else {
+          $parts->add_reorganized_part($prefix . ($next_pN+$i), $date->ymd);
+        }
+      }
+      else {
+        $ret = $parts->add_range_partition($prefix . ($next_pN+$i), $date->ymd, $pretend);
+      }
       $i++;
     }
+
+    if($reorganize) {
+      $ret = $parts->end_reorganization($pretend);
+    }
   }
-  return 1;
+  return $ret;
 }
 
 sub drop_partitions {
-  my ($pl, $drop, $dbh, $parts, $schema, $table, $i_am_sure) = @_;
+  my ($drop, $dbh, $parts, $schema, $table, $i_am_sure) = @_;
 
   $pl->e("Refusing to drop more than 1 partition unless --i-am-sure is passed.")
     and return undef

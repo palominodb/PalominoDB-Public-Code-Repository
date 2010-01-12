@@ -18,7 +18,12 @@ sub new {
 
   $self->_get_partitions();
 
-  return $self;
+  if($self->{partition_method} ne 'RANGE') {
+    return undef;
+  }
+  else {
+    return $self;
+  }
 }
 
 sub _get_version {
@@ -97,13 +102,30 @@ sub expression {
   $self->{partition_expression};
 }
 
-# Returns true if the partitioning expression
-# looks date-like. i.e., has to_days(<column>).
-# TODO: Add additional methods?
+# TODO Fix me. These (expression_column,expr_datelike) are pretty naive implementations.
+# TODO Unfortunately, I don't have the docs on me to figure something better
+# TODO -brian Jan/09/2010
+# TODO Found docs, updated, but still naive.
+# -brian Jan/11/2010
+sub expression_column {
+  my ($self) = @_;
+  my ($col, $fn) = $self->expr_datelike;
+  return $col if(defined($col));
+  $self->{partition_expression} =~ /^(A-Za-z\-_\$)\(([A-Za-z0-9\-_\$]+)\)/i;
+  return $2 if ($1 and $2);
+  return $self->{partition_expression};
+}
+
 sub expr_datelike {
   my ($self) = @_;
-  $self->{partition_expression} =~ /^to_days\(([A-Za-z0-9\-_\$]+)\)/;
-  return $1;
+  my %datefuncs = ( 'to_days' => 1, 'month' => 1, 'year' => 1 );
+  $self->{partition_expression} =~ /^([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
+  if($datefuncs{lc($1)}) {
+    return ($2, $1);
+  }
+  else {
+    return undef;
+  }
 }
 
 # Return partitions (Not sub-partitions) that match $reg
@@ -112,6 +134,111 @@ sub match_partitions {
   my %res;
   map { $res{$_->{name}} = {name => $_->{name}, position => $_->{position}, description => $_->{description} } if($_->{name} =~ $reg); } @{$self->{partitions}};
   values %res;
+}
+
+sub has_maxvalue_data {
+  my ($self) = @_;
+  my $dbh = $self->{dbh};
+  my $explain_result = undef;
+  my $descr = undef;
+  my $col = $self->expression_column;
+  if ( $self->{partitions}->[-1]->{description} eq 'MAXVALUE' ) {
+    $descr = $self->{partitions}->[-2]->{description};
+    if($self->expr_datelike) {
+      my (undef, $fn) = $self->expr_datelike;
+      if($fn eq 'to_days') {
+        $descr = "from_days($descr)";
+      }
+      else {
+        die("No support for maxvalue calculation unless using to_days for dates");
+      }
+    }
+  }
+  else {
+    return 0; # Can't have maxvalue data since there isn't a partition for that.
+  }
+  my $sql =
+      qq#EXPLAIN PARTITIONS SELECT COUNT(*)
+           FROM `$self->{schema}`.`$self->{name}`
+         WHERE $col > $descr
+        #;
+  $self->{pl}->d('SQL:', $sql);
+  eval {
+    $explain_result = $dbh->selectrow_hashref($sql);
+    $self->{pl}->d(Dumper($explain_result));
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->es($EVAL_ERROR);
+    return undef;
+  }
+  delete $explain_result->{select_type};
+  delete $explain_result->{id};
+  delete $explain_result->{Extra};
+  my $r = 0;
+  foreach my $k (keys %$explain_result) {
+    if(defined $explain_result->{$k}) {
+      $r = 1;
+    }
+  }
+  return $r;
+}
+
+sub start_reorganization {
+  my ($self, $p) = @_;
+  die("Need partition name to re-organize") unless($p);
+  my $part = undef;
+  foreach my $par (@{$self->{partitions}}) {
+    $part = $par if($par->{name} eq $p);
+  }
+  return undef unless($part);
+  $self->{re_organizing} =  [];
+  push @{$self->{re_organizing}},$part;
+  return 1;
+}
+
+sub add_reorganized_part {
+  my ($self, $name, $desc) = @_;
+  return undef unless($self->{re_organizing});
+  my ($col, $fn) = $self->expr_datelike;
+  #kif($fn and $col and uc($desc) ne 'MAXVALUE') {
+  #k  $desc = "$fn($desc)";
+  #k  $self->{pl}->d($desc);
+  #k}
+  push @{$self->{re_organizing}}, {name => $name, description => $desc};
+  return 1;
+}
+
+sub end_reorganization {
+  my ($self, $pretend) = @_;
+  return undef unless $self->{re_organizing};
+  my $sql = "ALTER TABLE `$self->{schema}`.`$self->{name}` REORGANIZE PARTITION";
+  my $orig_part = shift @{$self->{re_organizing}};
+  my (undef, $fn) = $self->expr_datelike;
+  $sql .= " $orig_part->{name} INTO (";
+  while($_ = shift @{$self->{re_organizing}}) {
+      $sql .= "\nPARTITION $_->{name} VALUES LESS THAN ";
+    if(uc($_->{description}) eq 'MAXVALUE') {
+      $sql .= 'MAXVALUE';
+    }
+    else {
+      $sql .= "($fn(" . $self->{dbh}->quote($_->{description}) . '))';
+    }
+    $sql .= ',';
+  }
+  chop($sql);
+  $sql .= "\n)";
+  $self->{pl}->d("SQL: $sql");
+  eval {
+    unless($pretend) {
+      $self->{dbh}->do($sql);
+      $self->_get_partitions();
+    }
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->e("Error reorganizing partition $orig_part->{name}: $@");
+    return undef;
+  }
+  return 1;
 }
 
 # True on success, undef on failure.
@@ -128,7 +255,7 @@ sub add_range_partition {
     }
   }
   my $qtd_desc = $self->{dbh}->quote($description);
-  $self->{pl}->d("ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN (to_days($qtd_desc)))");
+  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN (to_days($qtd_desc)))");
   eval {
     unless($pretend) {
       $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN (to_days($qtd_desc)))");
@@ -148,7 +275,7 @@ sub drop_partition {
     $self->{pl}->m("Unable to drop partition from non-RANGE partition scheme.");
     return undef;
   }
-  $self->{pl}->d("ALTER TABLE `$self->{schema}`.`$self->{name}` DROP PARTITION $name");
+  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` DROP PARTITION $name");
   eval {
     unless($pretend) {
       $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` DROP PARTITION $name");
@@ -180,6 +307,7 @@ sub desc_from_days {
       last;
     }
   }
+  $self->{pl}->d("SQL: SELECT FROM_DAYS($desc)");
   my ($ds) = $self->{dbh}->selectrow_array("SELECT FROM_DAYS($desc)");
   return $ds;
 }
