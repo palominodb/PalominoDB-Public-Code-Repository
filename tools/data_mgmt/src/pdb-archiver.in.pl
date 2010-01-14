@@ -75,7 +75,7 @@ my $output_tmpl = "TABLENAME_%Y%m%d%H%M%S";
 my $mode = 'table';
 
 my $mysqldump_path = '/usr/bin/mysqldump';
-my $mk_archiver_path = '/usr/local/bin/mk-archiver';
+my $mk_archiver_path = '/usr/bin/mk-archiver';
 my %mkopts;
 
 my $no_compress = 0;
@@ -86,7 +86,7 @@ sub main {
   my @mkos;
   GetOptions(
     'help' => sub { pod2usage(); },
-    'git-version' => sub { print "$0 - SCRIPT_GIT_VERSION\n"; },
+    'git-version' => sub { print "$0 - SCRIPT_GIT_VERSION\n"; exit(0); },
     'pretend' => \$pretend,
     'email=s' => \$email,
     'mode=s'  => \$mode,
@@ -125,8 +125,8 @@ sub main {
     pod2usage("--db-host is required.");
   }
 
-  if($mode eq "table" and not $table) {
-    pod2usage("--table-prefix, --date-format, and --max-age, or --table are required for table mode.");
+  if($mode eq "table" and not $table and not $table_prefix) {
+    pod2usage("Either --table-prefix or --table is required");
   }
   elsif($mode eq "table" and (not $table and (not $table_prefix or not $date_format or not $limit))) {
     pod2usage("--table-prefix, --date-format, and --max-age, or --table are required for table mode.");
@@ -138,6 +138,7 @@ sub main {
   $pl = ProcessLog->new($0, $logfile, $email);
   $dbh = DBI->connect("DBI:mysql:host=$db_host;database=$db_schema", $db_user, $db_pass);
   $pl->start();
+  my $r=0;
   if($mode eq "table" and $table_prefix) {
     $limit = parse_limit_time($limit);
     my @tables = map { $_->[0] } @{$dbh->selectall_arrayref("SHOW TABLES FROM `$db_schema`")};
@@ -152,7 +153,8 @@ sub main {
       my $a = $tblage->age_by_name($t) || 0;
       if($a and DateTime::Duration->compare(DateTime->now(time_zone => 'local') - $a,
           DateTime::Duration->new(%$limit), $a) == 1) {
-        table_archive($t);
+        $r=table_archive($t);
+        last if($r);
         sleep $op_sleep;
       }
       else {
@@ -161,25 +163,29 @@ sub main {
     }
   }
   elsif($mode eq "table" and $table) {
-    table_archive($table);
+    $r=table_archive($table);
   }
   elsif($mode eq "row") {
-    row_archive();
+    $r=row_archive();
   }
   else {
     $pl->e("Unknown options combination chosen. Aborting.");
   }
   $pl->end();
-  1;
+  if($r) {
+    $pl->failure_email();
+  }
+  $r;
 }
 
 sub table_archive {
   my $t = shift;
+  my $r=0;
   $pl->m("Starting archive of $db_schema.$t");
   my $d = TableDumper->new($dbh, $pl, $db_user, $db_host, $db_pass);
   $d->mysqldump_path($mysqldump_path);
   $d->noop($pretend);
-  my $interpolated_out = out_fmt($table);
+  my $interpolated_out = out_fmt($t);
   eval {
     if($ssh_host) {
       $d->remote_dump_and_drop($ssh_user, $ssh_host, \@ssh_ids, $ssh_pass, out_fmt($t), $db_schema, $t);
@@ -197,13 +203,15 @@ sub table_archive {
   if($@) {
     chomp($@);
     $pl->e($@);
+    $r = 1;
   }
   $pl->m("Finished archive of $db_schema.$t");
-  1;
+  $r;
 }
 
 sub row_archive {
   my $r = RowDumper->new($dbh, $pl, $db_host, $db_user, $db_pass, $db_schema, $table, $table_column);
+  my $rv=0;
   my $interpolated_out = out_fmt($table);
   $r->noop($pretend);
   $r->mk_archiver_path($mk_archiver_path);
@@ -213,25 +221,30 @@ sub row_archive {
     $r->mk_archiver_opt($_, $mkopts{$_});
   }
 
-  $pl->m("Starting row dump of $db_schema.$table"); #with $op_sleep second sleeps");
-  if($ssh_user) {
-    $r->remote_archive($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out, $row_condition, $row_limit);
-  }
-  else {
-    $r->archive($interpolated_out, $row_condition, $row_limit);
-  }
-  $pl->m("Finished row dump of $db_schema.$table.");
-  unless($no_compress) {
-    $pl->m("Compressing row dump of $db_schema.$table.");
+  $pl->m("Starting row dump of $db_schema.$table");
+  eval {
     if($ssh_user) {
-      $r->remote_compress($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out);
+      $r->remote_archive($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out, $row_condition, $row_limit);
     }
     else {
-      $r->compress($interpolated_out);
+      $r->archive($interpolated_out, $row_condition, $row_limit);
     }
-    $pl->m("Finished compressing row dump of $db_schema.$table.");
+    $pl->m("Finished row dump of $db_schema.$table.");
+    unless($no_compress) {
+      $pl->m("Compressing row dump of $db_schema.$table.");
+      if($ssh_user) {
+        $r->remote_compress($ssh_host, $ssh_user, @ssh_ids, $ssh_pass, $interpolated_out);
+      }
+      else {
+        $r->compress($interpolated_out);
+      }
+      $pl->m("Finished compressing row dump of $db_schema.$table.");
+    }
+  };
+  if($@) {
+    $rv=1;
   }
-  1;
+  $rv;
 }
 
 sub parse_limit_time {
@@ -261,14 +274,14 @@ sub out_fmt {
   $dt->strftime($t);
 }
 
-main(@ARGV);
+exit(main(@ARGV));
 1;
 
 __END__
 
 =head1 NAME
 
-pdb-archiver.pl - mysqldump/rowdump and compress tables.
+pdb-archiver - mysqldump/rowdump and compress tables.
 
 =head1 RISKS AND BUGS
 
@@ -278,7 +291,7 @@ At the time of this writing, this software could use substantially more argument
 
 =head1 SYNOPSIS
 
-pdb-archiver.pl [-h]
+pdb-archiver [-h]
 
 Run with -h or --help for options. Use: C<perldoc pdb-archiver.pl> for full documentation. Set the environment variable C<Pdb_DEBUG> to something greater than 0 to see plenty of debugging information.
 
@@ -291,6 +304,10 @@ Run with -h or --help for options. Use: C<perldoc pdb-archiver.pl> for full docu
 This help.
 
 Help is most awesome. It's like soap for your brain.
+
+=item --pretend
+
+Just report on actions that would be taken.
 
 =item --git-version
 
@@ -327,13 +344,13 @@ Path to the mysqldump binary. If dumping remotely, this is treated as the path t
 
 =item --mk-archiver-path=s
 
-Default: /usr/local/bin/mk-archiver
+Default: /usr/bin/mk-archiver
 
 Path to the mk-archiver binary. If dumping remotely, this is treated as the path to it on the remote machine.
 
 =item --logfile=s
 
-Path for logfile. Default: ./pdb-archiver.pl.log
+Path for logfile. Default: ./pdb-archiver.log
 
 =item --db-host=s B<Mandatory.>
 

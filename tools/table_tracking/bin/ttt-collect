@@ -19,6 +19,8 @@ opts = GetoptLong.new(
   [ '--list-stats', '-l', GetoptLong::NO_ARGUMENT ]
 )
 
+TTT::CollectorRegistry.load
+
 dsn=nil
 cfg=nil
 debug=false
@@ -66,7 +68,6 @@ DOC_EOF
     when '--list-stats'
       rf=Text::Reform.new
       rf.trim=true
-      TTT::CollectorRegistry.load
       cols=TTT::CollectorRegistry.all
       names= cols.map { |c| c.stat.collector }
       descs= cols.map { |c| c.desc }

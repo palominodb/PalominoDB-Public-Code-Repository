@@ -3,15 +3,13 @@ require 'ttt/information_schema'
 require 'yaml'
 
 describe TTT::InformationSchema do
+  include TestDbHelper
   before :all do
-    @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-    ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(
-      STDOUT,
-      ENV['TTT_DEBUG'].to_i == 1 ?
-      ActiveSupport::BufferedLogger::Severity::DEBUG :
-      ActiveSupport::BufferedLogger::Severity::INFO)
-      TTT::Db.open(@ttt_config)
-      TTT::InformationSchema.connect('localhost', @ttt_config)
+    test_connect
+    test_connect_is('localhost')
+  end
+  after :all do
+    test_cleanup
   end
   it "should throw Exception on find()" do
     caught_excep=false
@@ -25,16 +23,14 @@ describe TTT::InformationSchema do
 end
 
 describe TTT::TABLE do
+  include TestDbHelper
   before :all do
-    @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-    @ttt_config['dsn_connection'].delete 'password'
-    ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(
-      STDOUT,
-      ENV['TTT_DEBUG'].to_i == 1 ?
-      ActiveSupport::BufferedLogger::Severity::DEBUG :
-      ActiveSupport::BufferedLogger::Severity::INFO)
-      TTT::Db.open(@ttt_config)
-      TTT::InformationSchema.connect('localhost', @ttt_config)
+    test_connect
+    test_connect_is('localhost')
+    test_migration(CreateTestDataTable)
+  end
+  after :all do
+    test_cleanup
   end
   it "should throw Exception on find()" do
     caught_excep=false
@@ -56,7 +52,30 @@ describe TTT::TABLE do
     end
   end
 
+
   it "all should find `test`.`test_data`" do
     TTT::TABLE.all.any? { |t| t.schema == "test" and t.name == "test_data" }.should == true
   end
+
+  {
+    :collation      => 'utf8_general_ci',
+    :engine         => 'InnoDB',
+    :table_type     => 'BASE TABLE',
+    :rows           => 0,
+    :comment        => '',
+    :auto_increment => 1,
+    :frm_version    => 10,
+    :row_format     => 'Compact',
+    :create_syntax  => "CREATE TABLE `test_data` (\n  `id` int(11) NOT NULL AUTO_INCREMENT,\n  `name` varchar(5) DEFAULT NULL,\n  `value` varchar(20) DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8",
+    :checksum       => nil,
+    :check_time     => nil,
+    :data_length    => 16384,
+    :index_length   => 0,
+    :data_free      => 4194304
+  }.each do |k,v|
+    it "`test`.`test_data` should #{k} == '#{v ? v : 'nil'}'" do
+      TTT::TABLE.get('test','test_data').send(k).should == v
+    end
+  end
+
 end

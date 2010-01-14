@@ -6,6 +6,9 @@ use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use File::Basename;
 
+my ($f, $d, $s) = fileparse(__FILE__);
+my $DIR = $d;
+
 # Read in the standard input, and replace the desired module by the contents of
 # the most recent version of the module.
 
@@ -20,7 +23,7 @@ sub insert_module {
   }
   close $file;
 
-  my ($ver) = split(/\n/,qx@../../util/gitver.sh $path/$module.pm@);
+  my ($ver) = split(/\n/,qx@${DIR}/../gitver.sh $path/$module.pm@);
   chomp($ver);
 
   $module_src =~ s/^ *#.*\n//gm; # strip comments out

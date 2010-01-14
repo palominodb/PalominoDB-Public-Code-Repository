@@ -1,0 +1,11 @@
+set log_level = 10
+set log_file  = '/dev/null'
+
+kill Time > 10
+pass Time > 20
+
+kill User == 'Fred'
+pass User == 'Bob'
+
+kill Db == 'null'
+pass Host == 'special'

@@ -104,7 +104,7 @@ module Pdb
           if @raw["servers"][d["primary"]].nil? or !@raw["servers"][d["primary"]]["writefor"].include? clu
             raise SemanticsError.new(SemanticsError::PrimaryMismatch), "Cluster (#{clu}) lists #{d["primary"]} as the primary, but the server doesn't agree."
           end
-          if !d["failover"].nil? and !@raw["servers"][d["failover"]]["writefor"].include? clu
+          if !d["failover"].nil? and !@raw["servers"][d["failover"]]["readfor"].include? clu
             raise SemanticsError.new(SemanticsError::FailoverMismatch), "Cluster (#{clu}) lists #{d["failover"]} as the failover, but the server doesn't agree."
           end
         end

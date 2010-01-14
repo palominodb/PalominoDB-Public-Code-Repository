@@ -1,4 +1,55 @@
 package Pdb::DSN;
+=pod
+
+=head1 NAME
+
+Pdb::DSN - Perl interface to the PalominoDB DSN format.
+
+=head1 SYNOPSIS
+
+    my $dsn = Pdb::DSN->new("http://int.example.com/dsn/dsn.yml");
+    $dsn    = Pdb::DSN->new("/path/to/dsn.yml");
+
+    $dsn->get_all_hosts();         # => ['s1', 's2']
+    $dsn->get_all_clusters();      # => ['c1']
+
+    $dsn->cluster_primary('c1');   # => 's1'
+    $dsn->cluster_failover('c2');  # => 's2'
+
+    $dsn->host_active('s1');       # => 1 (active)
+    $dsn->host_active('s2');       # => 0 (not active)
+
+=head1 DYNAMIC METHODS
+
+PalominoDB DSN format allows for arbitrary application-specific keys
+to be included in the file to support operational processes.
+Since, extending the dsn for every imaginable key makes little sense
+Pdb::DSN exposes these via 'dynamic methods'.
+
+Presently, there are two kinds of dynamic methods:
+
+=over 8
+
+=item server methods
+
+These methods start with C<server_> followed by the application specific
+key name. They always take a server name as an argument.
+Example:
+
+    $dsn->server_delay('s1');
+
+This would retrieve: servers->s1->delay from the dsn.
+
+=item cluster methods
+
+These are the same as server methods, except that they start with
+C<cluster_> and take a cluster name as an argument.
+
+=back
+
+=head1 METHODS
+=cut
+
 use strict;
 use warnings FATAL => 'all';
 use 5.008;
@@ -209,7 +260,7 @@ sub AUTOLOAD {
     return $self->{raw}->{'servers'}->{$host}->{$1};
   }
   if($name =~/^cluster_(.+)$/) {
-    return $self->{raw}->{'cluster'}->{$host}->{$1};
+    return $self->{raw}->{'clusters'}->{$host}->{$1};
   }
   return undef;
 }
@@ -220,3 +271,4 @@ sub _truth {
   return 0 if(!$str or $str =~ /(?:[nf]|false|no)/i);
 }
 1;
+

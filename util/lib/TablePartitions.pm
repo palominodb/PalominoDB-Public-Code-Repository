@@ -32,6 +32,10 @@ sub _get_version {
 
   my ($version) = $dbh->selectrow_array('SELECT VERSION()');
   my ($major, $minor, $micro, $dist) = $version =~ /^(\d+)\.(\d+)\.(\d+)-(.*)/;
+  unless($major) {
+    ($major, $minor, $micro) = $version =~ /^(\d+)\.(\d+)\.(\d+)/;
+    $dist = '';
+  }
   ["$major.$minor", $major, $minor, $micro, $dist];
 }
 
@@ -55,14 +59,19 @@ sub _get_partitions_by_IS {
   my $qtd_schema = $dbh->quote($self->{schema});
   my $qtd_table  = $dbh->quote($self->{name});
 
-  my $rows = $dbh->selectall_arrayref(
-    "SELECT * FROM `information_schema`.`PARTITIONS` WHERE TABLE_SCHEMA=$qtd_schema AND TABLE_NAME=$qtd_table",
-    { Slice => {} });
+  my $sql = "SELECT * FROM `information_schema`.`PARTITIONS` WHERE TABLE_SCHEMA=$qtd_schema AND TABLE_NAME=$qtd_table";
+
+  $self->{pl}->d('SQL:', $sql);
+
+  my $rows = $dbh->selectall_arrayref($sql, { Slice => {} });
+
+  $self->{pl}->es("Table does not have any partitions, or does not exist.")
+    and die("Table does not have any partitions, or does not exist")
+  unless(scalar @$rows >= 1);
 
   $self->{partitions} = [];
   $self->{partition_method} = $rows->[0]->{PARTITION_METHOD};
   $self->{partition_expression} = $rows->[0]->{PARTITION_EXPRESSION};
-  $self->{pl}->es("Table does not have any partitions") and die("Table does not have any partitions") unless(scalar @$rows >= 1);
   foreach my $r (@$rows) {
     my $p = {
       name => $r->{PARTITION_NAME},
@@ -158,7 +167,7 @@ sub has_maxvalue_data {
     return 0; # Can't have maxvalue data since there isn't a partition for that.
   }
   my $sql =
-      qq|EXPLAIN PARTITIONS SELECT COUNT(*)
+      qq|SELECT COUNT(*) AS cnt
            FROM `$self->{schema}`.`$self->{name}`
          WHERE $col > $descr
         | ;
@@ -171,16 +180,7 @@ sub has_maxvalue_data {
     $self->{pl}->es($EVAL_ERROR);
     return undef;
   }
-  delete $explain_result->{select_type};
-  delete $explain_result->{id};
-  delete $explain_result->{Extra};
-  my $r = 0;
-  foreach my $k (keys %$explain_result) {
-    if(defined $explain_result->{$k}) {
-      $r = 1;
-    }
-  }
-  return $r;
+  return $explain_result->{cnt};
 }
 
 sub start_reorganization {
@@ -200,10 +200,6 @@ sub add_reorganized_part {
   my ($self, $name, $desc) = @_;
   return undef unless($self->{re_organizing});
   my ($col, $fn) = $self->expr_datelike;
-  #kif($fn and $col and uc($desc) ne 'MAXVALUE') {
-  #k  $desc = "$fn($desc)";
-  #k  $self->{pl}->d($desc);
-  #k}
   push @{$self->{re_organizing}}, {name => $name, description => $desc};
   return 1;
 }
@@ -221,7 +217,12 @@ sub end_reorganization {
       $sql .= 'MAXVALUE';
     }
     else {
-      $sql .= "($fn(" . $self->{dbh}->quote($_->{description}) . '))';
+      if($fn) {
+        $sql .= "($fn(" . $self->{dbh}->quote($_->{description}) . '))';
+      }
+      else {
+        $sql .= "(" . $_->{description} . ')';
+      }
     }
     $sql .= ',';
   }
@@ -238,6 +239,7 @@ sub end_reorganization {
     $self->{pl}->e("Error reorganizing partition $orig_part->{name}: $@");
     return undef;
   }
+  $self->{re_organizing} = 0;
   return 1;
 }
 

@@ -27,8 +27,8 @@ module TTT
     # Forces a reload of all the collectors.
     # Useful for a long-running application (such as a web interface)
     def self.reload!
-      @@loaded=false
-      load_all
+      self.unload
+      self.load
     end
     # Loads all collectors under: <gems path>/table-tracking-toolkit-<version>/lib/ttt/collector/*
     # This must be called before collectors will function.
@@ -40,6 +40,12 @@ module TTT
         end
         @@loaded=true
       end
+    end
+
+    # Forget all loaded collectors
+    def self.unload
+      @@collectors=[]
+      @@loaded=false
     end
   end
 
@@ -88,6 +94,11 @@ module TTT
 
       def get_prev_version
         stat.find(@prev_snapshot.to_a)
+      end
+
+      def stat_updated(new_id, old_id)
+        self<<[new_id, old_id]
+        delete(old_id)
       end
 
       def <<(ids)
@@ -171,11 +182,14 @@ module TTT
             recache_tables!
 
             srv=TTT::Server.find_or_create_by_name(host)
+            srv.updated_at = nil
             srv.save # Should reset updated_at.
             @cached_tables.each do |tbl|
               sch=srv.schemas.find_or_create_by_name(tbl.schema)
+              sch.updated_at = nil
               sch.save # reset updated_at.
               t=sch.tables.find_or_create_by_name(tbl.name)
+              t.updated_at = nil
               t.save
             end
           rescue Mysql::Error => mye
@@ -235,11 +249,23 @@ module TTT
       CollectorRegistry << self
     end
 
+    def id
+      stat.collector
+    end
+
     def run(c_runner)
       c_runner.logger.info "[host-start] #{c_runner.host} - #{c_runner.stat}"
       res=@actions.call(c_runner)
       c_runner.logger.info "[host-end] #{c_runner.host} - #{c_runner.stat}"
       res
+    end
+
+    def eql? (o)
+      o.stat == stat
+    end
+
+    def hash
+      stat.hash
     end
 
   end

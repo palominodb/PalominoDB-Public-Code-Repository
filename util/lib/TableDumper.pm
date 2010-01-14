@@ -99,15 +99,15 @@ sub compress {
   my ($self, $file) = @_;
   unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
     return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
-    $self->{plog}->d("Compressing '$file' with $self->{gzip_path}");
+    $self->{plog}->d("Compressing '$file' with $self->{gzip}");
     my $ret = undef;
     unless($self->{noop}) {
       eval {
         local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
         local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
-        $ret = qx/$self->{gzip_path} $file 2>&1/;
+        $ret = qx/$self->{gzip} $file 2>&1/;
         if($? != 0) {
-          $self->{plog}->e("$self->{gzip_path} returned: ". ($? >> 8) ."\n", $ret);
+          $self->{plog}->e("$self->{gzip} returned: ". ($? >> 8) ."\n", $ret);
           die("Failed to compress '$file'");
         }
       };
@@ -128,7 +128,7 @@ sub remote_compress {
   my ($self, $host, $user, $id, $pass, $file) = @_;
   unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
     #return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
-    $self->{plog}->d("Remote compressing '$file' with $self->{gzip_path}");
+    $self->{plog}->d("Remote compressing '$file' with $self->{gzip}");
     eval {
       $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
       $self->{plog}->d("Logging into $user\@$host.");
@@ -143,9 +143,9 @@ sub remote_compress {
       eval {
         local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
         local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
-        my ( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$self->{gzip_path} $file");
+        my ( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$self->{gzip} $file");
         if($exit != 0) {
-          $self->{plog}->e("$self->{gzip_path} returned: ". $exit ."\n", $ret);
+          $self->{plog}->e("$self->{gzip} returned: ". $exit ."\n", $ret);
           $self->{plog}->e("Stderr: $stderr");
           die("Failed to compress '$file'");
         }
@@ -207,17 +207,19 @@ sub remote_dump {
 
 sub drop {
   my ($self, $schema, $table_s) = @_;
-  $self->{plog}->d("dropping: $table_s");
+  my $drops = '';
+  if(ref($table_s) eq 'ARRAY') {
+    map { $drops .= "`$schema`.`$_`," } @$table_s;
+    chop($drops);
+  }
+  else {
+    $drops = "`$schema`.`$table_s`";
+  }
+  $self->{plog}->d("SQL: DROP TABLE $drops");
   unless($self->{noop}) {
     eval {
       local $SIG{INT} = sub { die("Query interrupted by SIGINT"); };
       local $SIG{TERM} = sub { die("Query interrupted by SIGTERM"); };
-      my $drops = map { "`$schema`.`$_`," } @$table_s;
-      chop($drops);
-      if($drops eq "") {
-        $drops = "`$schema`.`$table_s`";
-      }
-      $self->{plog}->d("SQL: DROP TABLE $drops");
       $self->{dbh}->do("DROP TABLE $drops")
         or $self->{plog}->e("Failed to drop some tables.") and die("Failed to drop some tables");
     };
@@ -235,14 +237,14 @@ sub dump_and_drop {
   my ($self, $dest, $schema, $table_s) = @_;
   $self->{plog}->d("Dumping and dropping: ". join(" $schema.", $table_s));
   $self->dump($dest, $schema, $table_s);
-  $self->drop($schema, $table_s);
+  $self->drop($schema, [$table_s]);
   return 1;
 }
 
 sub remote_dump_and_drop {
   my ($self, $user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
   $self->remote_dump($user, $host, $id, $pass, $dest, $schema, $table_s);
-  $self->drop($schema, $table_s);
+  $self->drop($schema, [$table_s]);
   return 1;
 }
 

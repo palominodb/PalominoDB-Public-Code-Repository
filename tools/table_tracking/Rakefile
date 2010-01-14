@@ -44,7 +44,7 @@ E_DESC
   s.require_path = "lib"
   s.has_rdoc = true
   s.extra_rdoc_files = ["README", "sample-config.yml"]
-  s.add_dependency("pdb-dsn", ">= 0.0.2")
+  s.add_dependency("pdb-dsn", ">= 0.2.5")
   s.add_dependency("activerecord", ">= 2.3.2")
   s.add_dependency("actionmailer", ">= 2.3.2")
   s.add_dependency("actionpack", ">= 2.3.2")
@@ -57,10 +57,18 @@ Gem::PackageTask.new(spec) do |pkg|
   pkg.need_tar = true
 end
 
-Spec::Rake::SpecTask.new('test') do |t|
-  t.spec_files = FileList['test/**/[0-9]*_*.rb']
-  t.spec_opts = ['--format', 'specdoc']
+task :clean do
+  rm 'test-db.sqlite3' rescue nil
 end
+Spec::Rake::SpecTask.new do |t|
+  t.spec_files = FileList['test/lib/*.rb']
+  t.spec_files += FileList['test/[0-9]*.rb']
+  t.rcov =  true
+  t.spec_opts = ['--format', 'specdoc']
+  t.rcov_opts = ['-t', '--exclude', '/Library' ]
+end
+
+task :test => [:clean, :spec]
 
 namespace :db do
   task :rollback do

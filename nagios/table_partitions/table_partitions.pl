@@ -33,13 +33,12 @@ use DateTime;
 use constant OK       => 0;
 use constant WARNING  => 1;
 use constant CRITICAL => 2;
-use constant UNKNOWN  => 2;
+use constant UNKNOWN  => 3;
 
 my (
   $db_host,
   $db_user,
   $db_pass,
-#  $db_defaults,
   $db_schema,
   $db_table,
   $range,
@@ -69,7 +68,7 @@ unless($range =~ /^(?:days|weeks|months)$/) {
 
 my $dbh =  DBI->connect("DBI:mysql:$db_schema;host=$db_host", $db_user, $db_pass, { RaiseError => 1, PrintError => 0, AutoCommit => 0});
 
-my $pl = ProcessLog->null;#new('', '/dev/null', undef);
+my $pl = ProcessLog->null;
 my $parts = TablePartitions->new($pl, $dbh, $db_schema, $db_table);
 my $last_ptime = 0;
 my $last_p = $parts->last_partition;
@@ -127,6 +126,10 @@ options:
   --table,-t     DB table.
   --range,-r     One of: days, weeks, or months.
   --verify,-n    How many -r to ensure exist.
+
+=head1 VERSION
+
+SCRIPT_GIT_VERSION
 
 =cut
 

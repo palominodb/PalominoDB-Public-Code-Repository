@@ -20,7 +20,7 @@ my @databases = qw();
 
 my @db_checkips;
 
-@ARGV = shellwords(@ARGV) if(scalar @ARGV > 1);
+@ARGV = shellwords(@ARGV) unless(scalar @ARGV > 1);
 
 my $getopt_result = GetOptions(
   "nagios-host=s" => \$nagios_host,

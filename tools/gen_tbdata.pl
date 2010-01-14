@@ -13,7 +13,8 @@ my $n_rows = 500_000;
 
 my $generate_table=0;
 my $table_engine="InnoDB";
-my %columns = ( "name" => "char(255)", "value" => "char(255)", "last_updated" => "timestamp" );
+#my %columns = ( "name" => "char(255)", "value" => "char(255)", "last_updated" => "timestamp" );
+my %columns = ();
 
 GetOptions(
   "h|help" => sub { pod2usage(); },

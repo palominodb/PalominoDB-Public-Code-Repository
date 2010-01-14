@@ -8,6 +8,14 @@ $Data::Dumper::Indent = 0;
 
 use constant QSDEBUG => $ENV{QSDEBUG} || 0;
 
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
+
 sub new {
    my ($class, $args) = @_;
    $args ||= {};
@@ -18,7 +26,7 @@ sub new {
    $args->{config} = {};
 
    $args->{reserved_syms} = ['User', 'Host', 'Db', 'Time', 'Command', 'State', 'Info'];
-   $args->{special_syms} = ['log_file', 'log_level', 'pretend', 'usestatus', 'usevars'];
+   $args->{special_syms} = ['log_file', 'log_level', 'querylog', 'querylog_dsn', 'pretend', 'usestatus', 'usevars'];
 
    bless $args, $class;
    $args->set_sym('User', q#$p->{User}#, 'strref');
@@ -47,14 +55,40 @@ sub compile {
 
    my $code = join("\n", @lines);
    print $lfh "Compiled sub: @lines\n" if($self->config('log_level') >= 3);
-   QSDEBUG && mk_loadavg::_d("sniper sub: @lines");
+   QSDEBUG && _d("sniper sub: @lines");
    $self->{rules} = eval "$code" or die("Error in sniper routine: $EVAL_ERROR");
    return 1;
 }
 
 sub run {
-   my ($self, @args) = @_;
-   return $self->{rules}->(@args);
+   my ($self, $p) = @_;
+   map {
+     if(defined($p->{$_})) {
+       $p->{$_} = lc($p->{$_});
+     }
+     else {
+       my ($type) = @{$self->_vtype($_)};
+       if($type eq 'sym' and $self->{syms}->{$_}->[0] eq 'intref') {
+         # Special meaning, not reaally a string.
+         # This is the special value NaN not "NaN".
+         # See perlop for details.
+         $p->{$_} = 'NaN';
+       }
+       else {
+         $p->{$_} = 'null';
+       }
+     }
+   } keys %$p;
+   my $r = undef;
+   QSDEBUG && _d('evaluating proc:', Dumper($p));
+   eval {
+     $r = $self->{rules}->($p);
+   };
+   if($@) {
+     QSDEBUG && _d('proc:', Dumper($p), 'died with:', $@);
+     die();
+   }
+   return $r;
 }
 
 sub config {
@@ -67,6 +101,8 @@ sub config {
 sub load {
    my ($self,$file) = @_;
    open my $cfh, "<", $file or die($OS_ERROR);
+
+   $self = __PACKAGE__->new if($self->config('log_file'));
 
    while (<$cfh>) {
       if($self->_parse($_)) {
@@ -97,20 +133,19 @@ sub _parse {
    $as{original_line} = $line;
    $as{original_toks} = [@toks];
    $self->_action(\%as,\@toks);
-   QSDEBUG && mk_loadavg::_d(Dumper(\@toks));
+   QSDEBUG && _d(Dumper(\@toks));
    $self->_expressions(\%as, \@toks);
    $Data::Dumper::Indent = 3;
-   QSDEBUG && mk_loadavg::_d(Dumper(\%as));
+   QSDEBUG && _d(Dumper(\%as));
    $Data::Dumper::Indent = 0;
 
-   push @{$self->{list}}, \%as;# unless($as{action} eq 'set');
+   push @{$self->{list}}, \%as;
    return 1;
 }
 
 sub recompile {
    my ($self) = @_;
    my @origlist = @{$self->{list}};
-   #QSDEBUG && mk_loadavg::_d(
    $self->{list} = ();
    foreach my $l (@origlist) {
       my %as = ();
@@ -127,7 +162,7 @@ sub recompile {
 
 sub set_sym {
    my ($self, $name, $value, $type) = @_;
-   QSDEBUG && mk_loadavg::_d('n:', $name, 'v:', $value, 't:', $type);
+   QSDEBUG && _d('n:', $name, 'v:', $value, 't:', $type);
    $self->{syms}->{$name} = [$type, $value];
 }
 
@@ -153,20 +188,20 @@ sub _expr_to_perl {
    my $p1s = "";
    my $p2s = "";
 
-   QSDEBUG && mk_loadavg::_d("compiling:", %$expr);
-   QSDEBUG && mk_loadavg::_d("op:", $op);
+   QSDEBUG && _d("compiling:", %$expr);
+   QSDEBUG && _d("op:", $op);
    ($p1s, $op) = $self->_val_to_perl($op, @p1);
    ($p2s, $op) = $self->_val_to_perl($op, @p2);
 
    return "$p1s $op $p2s" if($op);
-   QSDEBUG && mk_loadavg::_d(@$p1s, @$p2s);
+   QSDEBUG && _d(@$p1s, @$p2s);
    return "@$p1s @$p2s";
 }
 
 sub _val_to_perl {
    my ($self, $op, @val) = @_;
    my $p2s = undef;
-   QSDEBUG && mk_loadavg::_d($op, @val);
+   QSDEBUG && _d($op, @val);
    if($val[0] eq 'str') {
       if($op) {
          die("non-sensical operator '$op' for string operands") if($op eq '>=' or $op eq '<=' or $op eq '>' or $op eq '<');
@@ -207,7 +242,7 @@ sub _val_to_perl {
       die("operator not =~ when operand regex") if($op and $op ne '=~');
       $p2s = $val[1];
    }
-   QSDEBUG && mk_loadavg::_d($p2s, $op);
+   QSDEBUG && _d($p2s, $op);
    return ($p2s, $op);
 }
 
@@ -220,11 +255,18 @@ sub to_perl {
       push @lines, "if( $cond ) {";
       push @lines, '   $pass=0;' if($r->{action} eq 'kill');
       push @lines, '   $pass=1;' if($r->{action} eq 'pass');
+      push @lines, '   _logquery($p);' if($r->{logquery} eq 'pass');
       push @lines, '  return $pass;' if($r->{immediate});
       push @lines, '}';
    }
    return @lines;
 }
+
+sub _logquery {
+  my ($self, $p) = @_;
+  # TODO
+}
+
 # Return a nicely formatted stacktrace.
 sub _stack {
   my ($level) = @_;
@@ -265,11 +307,16 @@ sub _action {
    my ($self, $st, $toks) = @_;
    my $t = shift @$toks;
    $st->{immediate} = 0;
+   $st->{logquery} = 0;
    my $action = _expect($t, qr/(pass|kill|set)/) or die("Unknown action: $t from '$t @$toks' on line '$st->{original_line}'");
    $st->{action} = $action;
    if($action eq "pass" or $action eq "kill") {
       if(_expect($toks->[0], qr/(now)/)) {
          $st->{immediate} = 1;
+         shift @$toks;
+      }
+      if(_expect($toks->[0], qr/(log)/)) {
+         $st->{logquery} = 1;
          shift @$toks;
       }
    }
@@ -312,7 +359,7 @@ sub _expressions {
 sub _term {
    my ($self, $st, $toks) = @_;
 
-   #QSDEBUG && mk_loadavg::_d("_term: st:", Dumper($st), "   toks:", Dumper($toks));
+   #QSDEBUG && _d("_term: st:", Dumper($st), "   toks:", Dumper($toks));
 
    my $param1 = $self->_value($st, $toks);
    $param1 or die("Unknown parameter starting at '@$toks' on line '$st->{original_line}'");
@@ -333,7 +380,7 @@ sub _expression {
 
    return $e if(scalar(@$toks) == 0);
 
-   QSDEBUG && mk_loadavg::_d('expr1: ', Dumper($e), 'toks: ', scalar @$toks);
+   QSDEBUG && _d('expr1: ', Dumper($e), 'toks: ', scalar @$toks);
 
    if($e) {
       $e->{opr2} = [$self->_term($st, $toks)];
@@ -342,29 +389,24 @@ sub _expression {
       $e = $self->_term($st, $toks);
    }
 
-   QSDEBUG && mk_loadavg::_d('expr2: ', Dumper($e), 'toks: ', scalar @$toks);
+   QSDEBUG && _d('expr2: ', Dumper($e), 'toks: ', scalar @$toks);
 
    return $e if(scalar(@$toks) == 0);
 
    if($toks->[0] and _expect($toks->[0], qr/^(and|or)$/)) {
-      QSDEBUG && mk_loadavg::_d("FOUND AND/OR EXPRESSION");
+      QSDEBUG && _d("FOUND AND/OR EXPRESSION");
       $e = {op => $toks->[0], opr1 => [$e], opr2 => undef};
       shift @$toks;
       $e = $self->_expression($st, $toks, $e);
    }
 
-   QSDEBUG && mk_loadavg::_d('expr3: ', Dumper($e), 'toks: ', scalar @$toks);
+   QSDEBUG && _d('expr3: ', Dumper($e), 'toks: ', scalar @$toks);
    return $e;
 
 }
 
 sub _vtype {
    my ($self, $v) = @_;
-
-   #my $syms = join('|', keys %{$self->{syms}});
-   #my $syms_match = qr/^(?:$syms)$/;
-
-   #QSDEBUG && mk_loadavg::_d($syms_match);
 
    if(not defined($v)) {
       return ['undef', 'null'];
@@ -388,23 +430,6 @@ sub _value {
    my ($self, $st, $toks) = @_;
 
    return $self->_vtype($toks->[0]);
-
-   #my $syms = join('|', keys %{$self->{syms}});
-   #my $syms_match = qr/^(?:$syms)$/;
-
-   #if($toks->[0] =~ /(\d+)/) {
-   #   return ['int', int($1)];
-   #}
-   #elsif($toks->[0] =~ $syms_match) {
-   #   return ['sym', $toks->[0]];
-   #}
-   #elsif($toks->[0] =~ /^\/.*\/i?$/) {
-   #   return ['regex', $toks->[0]];
-   #}
-   #elsif($toks->[0] =~ /(.*)/) { # Strings have lowest priority
-   #   return ['str', $1];
-   #}
-   #return undef;
 }
 
 1;
@@ -418,6 +443,14 @@ use English qw(-no_match_vars);
 $Data::Dumper::Indent = 0;
 
 use constant QSDEBUG => $ENV{QSDEBUG} || 0;
+
+sub _d {
+   my ($package, undef, $line) = caller 0;
+   @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+        map { defined $_ ? $_ : 'undef' }
+        @_;
+   print STDERR "# $package:$line $PID ", join(' ', @_), "\n";
+}
 
 sub new {
    my ($class, $args) = @_;
@@ -461,11 +494,10 @@ sub watch_event {
    }
    $self->{qr}->recompile() if($self->{qr}->config('usevars') or $self->{qr}->config('usestatus'));
    foreach my $p (@$data) {
-      map { $p->{$_} = (defined($p->{$_}) ? lc($p->{$_}) : 'null') } keys %$p;
       my $r = $self->{qr}->run($p);
-      QSDEBUG && mk_loadavg::_d("Proc: ", Dumper($p), "  Result: ", $r);
+      QSDEBUG && _d("Proc: ", Dumper($p), "  Result: ", $r);
       unless($r) {
-         QSDEBUG && mk_loadavg::_d("KILL $p->{Id}");
+         QSDEBUG && _d("KILL $p->{Id}");
          $self->{dbh}->do("KILL $p->{Id}") unless ($self->{qr}->config('pretend'));
       }
    }

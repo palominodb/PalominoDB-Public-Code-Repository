@@ -1,0 +1,89 @@
+diff --git a/patches/mysqlsla-legacy/mysqlsla-report.pl b/patches/mysqlsla-legacy/mysqlsla-report.pl
+index 38f9486..9901e01 100644
+--- a/patches/mysqlsla-legacy/mysqlsla-report.pl
++++ b/patches/mysqlsla-legacy/mysqlsla-report.pl
+@@ -27,6 +27,7 @@
+ # http://www.gnu.org/copyleft/gpl.html
+ 
+ use strict;
++use warnings FATAL => 'all';
+ use POSIX qw(mktime);
+ use Time::HiRes qw(gettimeofday tv_interval);
+ use DBI;
+@@ -767,9 +768,26 @@ sub parse_slow_logs
+             next;
+          }
+ 
+-         $_ = <LOG>;
+-         ($time, $lock, $rows_sent, $rows_examined) =
+-            /^# Query_time: (.*?)\s+Lock_time: (.*?)\s+Rows_sent: (\d+)\s+Rows_examined: (\d+)/;
++         AGAIN: $_ = <LOG>;
++         d("parse_slow_logs: header '$_'");
++         if(/^# Query_time/)
++         {
++            ($time, $lock, $rows_sent, $rows_examined) =
++               /^# Query_time: (.*?)\s+Lock_time: (.*?)\s+Rows_sent: (\d+)\s+Rows_examined: (\d+)/;
++            # Some bad queries have their query time set very high ( > 2^32s which is many, many, days ).
++            # Skip those.
++            if($time >= 2**28)
++            {
++               d("parse_slow_logs: stmt FAILS $time < ". 2**28);
++               next;
++            }
++         }
++         elsif(/^# Thread_id/) {
++             ($use_db) =
++                /^# Thread_id: \d+  Schema: (.+?)/;
++             goto AGAIN;
++         }
++
+ 
+          $stmt = '';
+ 
+@@ -784,6 +802,8 @@ sub parse_slow_logs
+ 
+          chomp $stmt;
+ 
++         next if( $stmt eq '' ); # Empty statement is boring.
++
+          $valid_stmt = 0;
+          $use_db     = '';
+ 
+@@ -834,7 +854,7 @@ sub parse_slow_logs
+          {
+             $valid_stmt = 1;
+ 
+-            $stmt =~ /^\s*(\w+)/;
++            $stmt =~ /^\s*#?\s*(\w+)/;
+             $q = $1;
+ 
+             if(! (exists $filter{uc $1} && !$filter{uc $1}) )
+@@ -1098,6 +1118,21 @@ sub do_email_report {
+             $emailText .= '#' . $i . ': ' . $$detailsRow{'query'} . "\n";
+             $emailText .= "\tcount                      : " . $$detailsRow{'count'} . " (" . $$detailsRow{'percent'} . "%)\n";
+             if ($$row{'log_type'} eq $logTypes{SLOW}) {
++                $$detailsRow{'time_total'}        = defined $$detailsRow{'time_total'} ? $$detailsRow{'time_total'} : 0e0;
++                $$detailsRow{'time_min'}          = defined $$detailsRow{'time_min'} ? $$detailsRow{'time_min'} : 0e0;
++                $$detailsRow{'time_avg'}          = defined $$detailsRow{'time_avg'} ? $$detailsRow{'time_avg'} : 0e0;
++                $$detailsRow{'time_max'}          = defined $$detailsRow{'time_max'} ? $$detailsRow{'time_max'} : 0e0;
++                $$detailsRow{'lock_time_total'}   = defined $$detailsRow{'lock_time_total'} ? $$detailsRow{'lock_time_total'} : 0e0;
++                $$detailsRow{'lock_time_min'}     = defined $$detailsRow{'lock_time_min'} ? $$detailsRow{'lock_time_min'} : 0e0;
++                $$detailsRow{'lock_time_avg'}     = defined $$detailsRow{'lock_time_avg'} ? $$detailsRow{'lock_time_avg'} : 0e0;
++                $$detailsRow{'lock_time_max'}     = defined $$detailsRow{'lock_time_max'} ? $$detailsRow{'lock_time_max'} : 0e0;
++                $$detailsRow{'rows_sent_min'}     = defined $$detailsRow{'rows_sent_min'} ? $$detailsRow{'rows_sent_min'} : 0e0;
++                $$detailsRow{'rows_sent_avg'}     = defined $$detailsRow{'rows_sent_avg'} ? $$detailsRow{'rows_sent_avg'} : 0e0;
++                $$detailsRow{'rows_sent_max'}     = defined $$detailsRow{'rows_sent_max'} ? $$detailsRow{'rows_sent_max'} : 0e0;
++                $$detailsRow{'rows_examined_min'} = defined $$detailsRow{'rows_examined_min'} ? $$detailsRow{'rows_examined_min'} : 0e0;
++                $$detailsRow{'rows_examined_avg'} = defined $$detailsRow{'rows_examined_avg'} ? $$detailsRow{'rows_examined_avg'} : 0e0;
++                $$detailsRow{'rows_examined_max'} = defined $$detailsRow{'rows_examined_max'} ? $$detailsRow{'rows_examined_max'} : 0e0;
++
+                 $emailText .= sprintf ("\ttime      (tot/min/avg/max): %d/%d/%d/%d\n", $$detailsRow{'time_total'}, $$detailsRow{'time_min'}, $$detailsRow{'time_avg'}, $$detailsRow{'time_max'});
+                 $emailText .= sprintf ("\tlock time (tot/min/avg/max): %d/%d/%d/%d\n", $$detailsRow{'lock_time_total'}, $$detailsRow{'lock_time_min'}, $$detailsRow{'lock_time_avg'}, $$detailsRow{'lock_time_max'});
+                 $emailText .= sprintf ("\trows sent     (min/avg/max): %d/%d/%d\n", $$detailsRow{'rows_sent_min'}, $$detailsRow{'rows_sent_avg'}, $$detailsRow{'rows_sent_max'});
+@@ -1856,4 +1891,4 @@ sub d
+    $debug_msg =~ s/\n\'$/'/;
+ 
+    print "$debug_msg\n";
+-}
+\ No newline at end of file
++}

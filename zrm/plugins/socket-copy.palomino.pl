@@ -25,6 +25,14 @@
 # --destination-directory <destination file>
 ################################################################################
 
+# ###########################################################################
+# ProcessLog package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End ProcessLog package
+# ###########################################################################
+
+package main;
 
 use strict;
 use Socket;
@@ -67,9 +75,11 @@ my $params;
 my $host;
 my @snapshotParamList;
 my $snapshotConfString;
+my %config;
+my $pl; # ProcessLog
 
-$SIG{'PIPE'} = sub { die "Pipe broke"; };
-$SIG{'TERM'} = sub { close SOCK; die "TERM broke\n"; };
+$SIG{'PIPE'} = sub { $pl->end; die "Pipe broke"; };
+$SIG{'TERM'} = sub { close SOCK; $pl->end; die "TERM broke\n"; };
 
 if($^O eq "linux") {
 	$TAR_WRITE_OPTIONS = "--same-owner -cphsC";
@@ -81,6 +91,12 @@ elsif($^O eq "freebsd") {
 }
 else {
 	&printAndDie("Unable to determine which tar options to use!");
+}
+
+sub printAndDie {
+  $pl->e(@_);
+  $pl->end;
+  die("ERROR: @_");
 }
 
 # Parses the command line for all of the copy parameters
@@ -150,13 +166,22 @@ sub getCopyParameters()
 			}
 		}
 	}
-	print "socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir\n";
+	$pl->m("socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir");
 }
 
 sub doLocalTar()
 {
 	my $cmd;
 	my $tarCmd = $^O eq "linux" ? "$TAR --same-owner -psC " : "$TAR -pC";
+
+  if( $config{'tar-force-ownership'} == 0 ) {
+    if($^O eq 'linux') {
+      $tarCmd = "$TAR --no-same-owner --no-same-permissions -sC";
+    }
+    elsif($^O eq 'freebsd') {
+      $tarCmd = "$TAR -C";
+    }
+  }
 
 	my $srcDir = dirname( $srcFile );
 	my $srcFile = basename( $srcFile );	
@@ -174,12 +199,14 @@ sub doLocalTar()
 	my $destCmd = "$tarCmd $destDir -x";
 	$cmd = "$srcCmd|$destCmd";
 
+  $pl->m("local-tar:\n\t$cmd");
+
 	my $r = system( $cmd );
 	if( $lsCmd ne "" ){
 		unlink $d;
 	}
 	if( $r > 0 ){
-		die "Could not copy data $!\n";
+    &printAndDie("Could not copy data $!");
 	}
 }
 
@@ -304,8 +331,11 @@ sub sendArgsToRemoteHost()
 # This will read the data from the socket and pipe the output to tar
 sub readTarStream()
 {
-	unless( open( TAR_H, "|$TAR $TAR_READ_OPTIONS $destDir 2>/dev/null" ) ){
-		die "tar failed $!";
+  my $tmpfile = tmpnam();
+  my $tar_cmd = "|$TAR $TAR_READ_OPTIONS $destDir 2>$tmpfile";
+  $pl-m("read-tar-stream:\n\t$tar_cmd\n");
+	unless( open( TAR_H, "$tar_cmd" ) ){
+		&printAndDie("tar failed $!");
 	}
 	binmode( TAR_H );
 
@@ -320,16 +350,37 @@ sub readTarStream()
 		read SOCK, $buf, $buf;
 		print TAR_H unpack( "u", $buf );
 	}
+  {
+    local $/;
+    open my $fh, "<$tmpfile";
+    my $errs = <$fh>;
+    chomp($errs);
+    $pl->e("tar-errors:", $errs) if($errs !~ /\s*/);
+    close $fh;
+    unlink $tmpfile;
+  }
 	unless( close(TAR_H) ){
-		die "close of pipe failed\n";
+    &printAndDie('tar pipe failed');
 	}
 }
 
 # This will read the data from the socket and pipe the output to tar
 sub readInnoBackupStream()
 {
-	unless( open( TAR_H, "|$TAR --same-owner -xipC $destDir 2>/dev/null" ) ){
-		die "tar failed $!";
+  my $tar_cmd = "|$TAR ";
+  my $tmpfile = tmpnam();
+  if( $config{'tar-force-ownership'} == 0 ) {
+    $tar_cmd .= "--no-same-owner --no-same-permissions -xiC ";
+  }
+  else {
+    $tar_cmd .= "--same-owner -xipC ";
+  }
+  $tar_cmd .= "$destDir 2>$tmpfile";
+  $pl->m("read-inno-tar-stream:", $tar_cmd);
+  #print "read-inno-tar-stream:\n\t$tar_cmd\n";
+
+	unless( open( TAR_H, "$tar_cmd" ) ){
+    &printAndDie("tar failed $!");
 	}
 	binmode( TAR_H );
 
@@ -341,12 +392,33 @@ sub readInnoBackupStream()
 	# Then write the unpacked data to tar
 	while( read( SOCK, $buf, 4 ) ){
 		$buf = unpack( "N", $buf );
+    if($buf > 8*1024*1024) {
+      # Buffer should never be larger than this.
+      # So, we abort if it is.
+      # This handles the case where the other side dies
+      # and garbage is sent.
+      last;
+    }
 		read SOCK, $buf, $buf;
 		print TAR_H unpack( "u", $buf );
 	}
+  {
+    local $/;
+    open my $fh, '<', $tmpfile;
+    my $errs = <$fh>;
+    chomp($errs);
+    $pl->e("tar-errors:", $errs);# if($errs !~ /\s*/);
+    close $fh;
+    unlink $tmpfile;
+  }
 	unless( close(TAR_H) ){
-		die "close of pipe failed\n";
+    &printAndDie("tar pipe failed");
 	}
+
+  if( $config{'apply-xtrabackup-logs'} == 1 ) {
+    $pl->m("Applying logs..");
+    $pl->x(\&system, "innobackup-1.5.1 --apply-log $destDir");
+  }
 }
 
 #This will tar the directory and write output to the socket
@@ -355,7 +427,7 @@ sub readInnoBackupStream()
 sub writeTarStream()
 {
 	unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $_[1] 2>/dev/null|" ) ){
-		&printandDie( "tar failed $!\n" );
+		&printAndDie( "tar failed $!\n" );
 	}
 	binmode( TAR_H );
 	my $buf;
@@ -367,7 +439,6 @@ sub writeTarStream()
 	close( TAR_H );
 }
 
-my %config;
 #Read the config file
 # This reads the conf file that is prepared by mysql-zrm.
 # Please note this does not do any validation of the config file
@@ -491,14 +562,37 @@ sub doCopyBetween()
 
 &parseConfFile();
 &setUpConfParams();
+
+unless( exists $config{'socket-copy-logfile'} ) {
+  $config{'socket-copy-logfile'} = '/var/log/mysql-zrm/socket-copy.log';
+}
+unless( exists $config{'socket-copy-email'} ) {
+  $config{'socket-copy-email'} = undef;
+}
+
+$pl = ProcessLog->new('socket-copy', $config{'socket-copy-logfile'}, $config{'socket-copy-email'});
+$pl->quiet(1); # Hide messages from the console.
+$pl->start;
+
+if( $config{"tar-force-ownership"} == 0 or $config{"tar-force-ownership"} =~ /[Nn][oO]?/ ) {
+  $config{"tar-force-ownership"} = 0;
+  if( $^O eq "linux" ) {
+    $TAR_WRITE_OPTIONS = "--no-same-owner --no-same-permissions -chsC";
+    $TAR_READ_OPTIONS = "---no-same-owner --no-same-permissions -xhsC";
+  }
+  elsif( $^O eq "freebsd" ) {
+    $TAR_WRITE_OPTIONS = " -ch -f - -C";
+    $TAR_READ_OPTIONS  = " -x -f - -C";
+  }
+}
+
 &getInputs();
 &connectToHost();
 &sendArgsToRemoteHost();
 if( $action eq "copy from" ){
-	#&readTarStream();
 	&readInnoBackupStream();
 }elsif( $action eq "mysqlhotcopy" ){
-	&readInnoBackupStream();
+  &printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
 }elsif( $action eq "copy between" ){
 	&doCopyBetween();
 }elsif( $action eq "copy to" ){
@@ -515,4 +609,6 @@ if( $action eq "copy from" ){
 }
 close( SOCK );
 select( undef, undef, undef, 0.250 );
+$pl->end;
 exit(0);
+1;

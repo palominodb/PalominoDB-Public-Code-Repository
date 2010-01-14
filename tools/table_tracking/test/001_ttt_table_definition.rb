@@ -3,6 +3,7 @@ require 'ttt/table_definition'
 require 'yaml'
 
 describe TTT::TableDefinition do
+  include TestDbHelper
   def create_entry(serv,db,table,create,created_at=Time.now, updated_at=Time.now)
     TTT::TableDefinition.create do |t|
       t.server = serv
@@ -21,13 +22,15 @@ describe TTT::TableDefinition do
       raise ActiveRecord::Rollback, "Done."
     end
   end
-  before(:all) do
-    @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-    ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ENV['TTT_DEBUG'].to_i == 1 ? ActiveSupport::BufferedLogger::Severity::DEBUG : ActiveSupport::BufferedLogger::Severity::INFO)
-    TTT::Db.open(@ttt_config)
+  before :all do
+    test_connect
+    test_connect_is('localhost')
     TTT::TableDefinition.record_timestamps = false
   end
 
+  after :all do
+    test_cleanup
+  end
 
   it "method 'new?' should report new" do
     do_with_rollback do

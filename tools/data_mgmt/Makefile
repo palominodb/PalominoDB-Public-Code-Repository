@@ -1,6 +1,6 @@
 TOOL_PATH = ../../util/build
 LIB_PATH = ../../util/lib
-TOOLS_RELEASE = 0.02
+TOOLS_RELEASE = 0.05
 
 all: dirs pdb-archiver pdb-parted
 

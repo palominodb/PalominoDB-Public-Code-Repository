@@ -28,7 +28,7 @@ class CreateSnapshotsTable < ActiveRecord::Migration
     add_index :snapshots, [:run_time, :collector_run_id], :name => 'snap_by_time_and_collector'
 
     TTT::TrackingTable.each do |c|
-      #next if c.collector == :volume
+      next unless [:volume, :definition, :view].include? c.collector
       c_id=c.collector_id
       c.all(:select => :run_time, :group => :run_time, :order => :run_time).each do |defn_time|
         txn=TTT::Snapshot.head

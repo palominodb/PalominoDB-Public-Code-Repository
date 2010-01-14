@@ -107,6 +107,12 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     elsif($var eq "my.cnf_path") {
       $mycnf_path = $val;
     }
+    elsif($var eq "mysql_install_path") {
+      $ENV{PATH} = "$val:". $ENV{PATH};
+    }
+    elsif($var eq "perl_dbi_path") {
+      eval "use lib '$val'";
+    }
   }
 }
 
@@ -177,6 +183,7 @@ sub restore_wait_timeout {
   my ($dbh, $prev_wait) = @_;
 
   if($dbh and $prev_wait){
+    &printLog("Re-setting wait_timeout to $prev_wait\n");
     $dbh->do("SET GLOBAL wait_timeout=$prev_wait");
   }
   else {
@@ -281,8 +288,10 @@ sub doRealHotCopy()
 		}
 	}
 	unlink("/tmp/innobackupex-log");
-  restore_wait_timeout($dbh, $prev_wait);
-  $dbh->disconnect;
+  if($dbh) {
+    restore_wait_timeout($dbh, $prev_wait);
+    $dbh->disconnect;
+  }
 	sendNagiosAlert("OK: Copied data successfully.", 0);
 }
 

@@ -17,6 +17,9 @@ my @modules;
   close $file;
 }
 
+my $script_ver = qx@../../util/gitver.sh $infile@;
+
+$input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
 
 (@modules) = $input =~ /^# (\w+) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
 

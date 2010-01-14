@@ -16,18 +16,18 @@ open my $fh, "<", $inf
 open $fh, '>', $outf
   or die $OS_ERROR;
 
-my @modules = ();
+my %modules = ();
 
 foreach (@input) {
   if(/^# (\w+) package ([a-f0-9]{40}|GIT_VERSION)/) {
-    push @modules, $1;
+    $modules{$1} = 1;
   }
 }
 
 grep {
-  foreach my $m (@modules) {
+  foreach my $m (keys %modules) {
     if(/^use\s+$m/) {
-      $_ = undef;
+      $_ = "";
     }
   }
 } @input;

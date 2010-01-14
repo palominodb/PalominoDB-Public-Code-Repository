@@ -1,10 +1,15 @@
 package ProcessLog;
-use Mail::Send;
+my $mail_available = 1;
+eval 'use Mail::Send';
+if($@) {
+  $mail_available = 0;
+}
 use Sys::Hostname;
 use Sys::Syslog qw(:standard :macros);
 use Digest::SHA1;
 use Time::HiRes qw(time);
 use File::Spec;
+use Fcntl;
 
 use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
 use constant Level1 => 1;
@@ -171,6 +176,31 @@ sub ds {
   $self->d($self->stack());
 }
 
+# Execute a perlsub redirecting stdout/stderr
+# to an anonymous temporary file.
+# This is useful for wrapping an external tool.
+# 
+sub x {
+  my ($self, $subref, @args) = @_;
+  my $r = undef;
+  my $saved_fhs = undef;
+  my $proc_fh = undef;
+  eval {
+    $saved_fhs = $self->_save_stdfhs();
+    open($proc_fh, '+>', undef) or die("Unable to open anonymous tempfile");
+    open(STDOUT, '>&', $proc_fh) or die("Unable to dup anon fh to STDOUT");
+    open(STDERR, '>&', \*STDOUT) or die("Unable to dup STDOUT to STDERR");
+    $r = $subref->(@args);
+  };
+  # Restore the filehandles out here
+  # since, we may be wrapping a sub that calls 'exit' at some point.
+  $self->_restore_stdfhs($saved_fhs);
+  # Rewind the filehandle to the beginning to allow the calling application
+  # to deal with it.
+  seek($proc_fh, 0, SEEK_SET); 
+  return {rcode => $r, error => $EVAL_ERROR, fh => $proc_fh};
+}
+
 # Return a nicely formatted stacktrace.
 sub stack {
   my ($self, $level) = @_;
@@ -207,6 +237,32 @@ sub _p {
   $prefix. join(' ',@_). "\n";
 }
 
+# To support the test harness, mainly
+# Presently not used by any public functions.
+sub _flush {
+  my ($self) = @_;
+  unless($self->{log_path} =~ /^syslog:/) {
+    $self->{LOG}->flush;
+  }
+  1;
+}
+
+sub _save_stdfhs {
+  my ($self) = @_;
+  open my $stdout_save, ">&", \*STDOUT or die("Unable to dup stdout");
+  open my $stderr_save, ">&", \*STDERR or die("Unable to dup stderr");
+  return { o => $stdout_save, e => $stderr_save };
+}
+
+sub _restore_stdfhs {
+  my ($self, $fhs) = @_;
+  my $o = $fhs->{o};
+  my $e = $fhs->{e};
+  open STDOUT, ">&", $o;
+  open STDERR, ">&", $e;
+  return 1;
+}
+
 # Send an email to the pre-defined location.
 # If no email was specified at creation time, this method does nothing.
 # Accepts an argument $extra which is intended to be a summary of the problem.
@@ -226,13 +282,15 @@ sub _p {
 # This method is partially deprecated.
 sub email_and_die {
   my ($self, $extra) = @_;
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
   $self->failure_email($extra);
   die($extra);
 }
 
 sub failure_email {
   my ($self,$extra) = shift;
-  $self->i("Not emailing: $extra") if(not defined $self->{email_to});
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
+  $self->i("Not emailing:", $extra) if(not defined $self->{email_to});
   $self->m("Emailing out failure w/ extra: $extra\n") if($extra);
   my $msg = Mail::Send->new(Subject => "$self->{script_name} FAILED", To => $self->{email_to});
   my $fh = $msg->open;
@@ -246,7 +304,8 @@ sub failure_email {
 
 sub success_email {
   my ($self, $extra) = shift;
-  $self->i("Not emailing: $extra") if(not defined $self->{email_to});
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
+  $self->i("Not emailing:",$extra) if(not defined $self->{email_to});
   $self->m("Emailing out success w/ extra: $extra\n") if($extra);
   my $msg = Mail::Send->new(Subject => "$self->{script_name} SUCCESS", To => $self->{email_to});
   my $fh = $msg->open;

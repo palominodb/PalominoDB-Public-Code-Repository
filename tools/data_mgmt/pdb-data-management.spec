@@ -1,6 +1,6 @@
 Name: pdb-data-management
 Summary: PalominoDB tools for data management
-Version: 0.02
+Version: 0.05
 Vendor: PalominoDB
 Release: 1
 License: Private

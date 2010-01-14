@@ -48,6 +48,9 @@ module TTT
       tables=[]
       connection.execute("SHOW DATABASES").each do |db|
         db=db[0]
+        # Skip invalid database names, since, mysql apparently doesn't
+        # prune 'bad' names for us.
+        next if db.include? '.'
         tables<<get(db, '%')
       end
       tables.flatten!

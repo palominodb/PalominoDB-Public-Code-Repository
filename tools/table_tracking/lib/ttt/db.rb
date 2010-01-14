@@ -14,21 +14,38 @@ module TTT
   # In general all you should need to do is pass a Hash of
   # options loaded from a config.yml.
   class Db
+    @@app_config=nil
     # Establishes a connection to the TTT database.
-    # opts can either be ActiveRecord options, or TTT options.
-    # if it contains the key 'ttt_connection', then it's assumed to be
-    # TTT options.
-    # if it contains 'adapter' or :adapter, then it's assumed to be
-    # ActiveRecord options.
-    # Either way, it winds up being options to: ActiveRecord::Base#establish_conneciton so you should see that document for details.
+    # See sample-config.yml for an example of TTT configuration.
+    # This method uses the key 'ttt_connection'. See ActiveRecord::Base#establish_conneciton for details on the options that are available.
     def self.open(opts)
       if opts.has_key? "ttt_connection" then
+        @@app_config=opts
         ActiveRecord::Base.establish_connection(opts["ttt_connection"])
-      elsif opts.has_key? "adapter" or opts.has_key? :adapter then
-        ActiveRecord::Base.establish_connection(opts)
       else
         raise ArgumentError.new("Bad connection information")
       end
+    end
+
+    # Generates a new interface class.
+    # Do not store this result in a constant
+    # as that will trigger some ActiveRecord magic
+    # and reset the connection that was made.
+    #
+    # Note: This method is only for accessing 'DSN' tables.
+    # TTT tables should have dedicated classes.
+    def self.open_schema(host, schema, table)
+      nc=Class.new(ActiveRecord::Base)
+      c=@@app_config['dsn_connection'].merge(
+          {
+            'adapter'  => 'mysql',
+            'host'     => host,
+            'database' => schema
+          }
+      )
+      nc.establish_connection(c)
+      nc.set_table_name table
+      nc
     end
 
     # Runs TTT specific migrations. At the moment, all this does
