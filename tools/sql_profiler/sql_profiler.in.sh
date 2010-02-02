@@ -11,6 +11,7 @@ mysql_username="sqlprofiler"
 mysql_password="sqlprofiler"
 mk_query_digest=$(which mk-query-digest || echo "not found.")
 ttt_server_name=""
+email_to=""
 
 filter_file=""
 
@@ -27,6 +28,7 @@ usage() {
   echo "mk_query_digest  - Path to mk-query-digest (if not in path). Default: $mk_query_digest"
   echo "ttt_server_name  - Name of this machine as known by TTT."
   echo "                   Default: \`hostname -f\` (`hostname -f`)"
+  echo "email_to         - Where to send email. No default (not sent)."
   echo ""
 }
 
@@ -62,9 +64,19 @@ main() {
     socket="S=$mysql_socket,"
   fi
 
-  # Do Not change the table names in the below command.
+  # Do Not change the table names in the below commands.
   # TTT-GUI presently requires these names. k?
+
+  ## Parse slow logs and load the review tables
   $mk_query_digest --create-review-table --create-review-history-table --no-report --review ${socket}h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_queries --review-history D=$mysql_schema,t=sql_profiler_histories --limit 100% --filter "$filter" $slow_logs
+
+  ## if we want email, parse AGAIN and generate the report
+  ## This is necessary to get the top N queries. Fortunately,
+  ## most slow logs are pretty small, so, this isn't a horrific task.
+  if [[ -n $email_to ]]; then
+    $mk_query_digest --review ${socket}h=$mysql_host,u=$mysql_username,p=$mysql_password,D=$mysql_schema,t=sql_profiler_queries --review-history D=$mysql_schema,t=sql_profiler_histories $slow_logs | mail -s "SQLProfiler report for $ttt_server_name" $email_to
+  fi
+
   cleanup
 }
 
