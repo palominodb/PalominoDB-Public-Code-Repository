@@ -15,8 +15,10 @@ my $DIR = $d;
 sub insert_module {
   my ($path, $module, $input) = @_;
   my $module_src = "";
-  open my $file, "<", "$path/$module.pm"
-    or die $OS_ERROR;
+  my $mpath = "$path/$module.pm";
+  $mpath =~ s/::/\//g;
+  open my $file, "<", "$mpath"
+    or die "While looking for $mpath: $OS_ERROR";
   {
     $INPUT_RECORD_SEPARATOR = undef;
     $module_src = <$file>;
