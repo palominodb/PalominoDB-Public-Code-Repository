@@ -5,11 +5,11 @@ if($@) {
   $mail_available = 0;
 }
 use Sys::Hostname;
-use Sys::Syslog qw(:standard :macros);
+use Sys::Syslog;
 use Digest::SHA1;
 use Time::HiRes qw(time);
 use File::Spec;
-use Fcntl;
+use Fcntl qw(:seek);
 
 use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
 use constant Level1 => 1;
@@ -39,10 +39,10 @@ sub new {
     openlog($script_name, "", $1);
     $self->{logsub} = sub {
       my $self = shift;
-      my $lvl = LOG_DEBUG;
-      $lvl = LOG_INFO if($_[0] eq "msg");
-      $lvl = LOG_INFO if($_[0] eq "ifo");
-      $lvl = LOG_ERR  if($_[0] eq "err");
+      my $lvl = 'debug';
+      $lvl = 'info' if($_[0] eq "msg");
+      $lvl = 'info' if($_[0] eq "ifo");
+      $lvl = 'error'  if($_[0] eq "err");
       foreach my $l (split "\n", _p(@_)) {
         syslog($lvl, $l);
       }
