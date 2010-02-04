@@ -1,8 +1,0 @@
-<table>
-  <tr><td colspan="2" style="font-weight: bold">Volume</td></td>
-  <tr><td colspan="2" style="font-weight: bold"><%#= TTT::Collector.get_last_run(:volume) %></td></tr>
-  <% TTT::Server.all.each do |v| %>
-    <tr><td><%= link_to v.name, server_path(v.name) %></td>
-      <td><%= number_to_human_size v.cached_size%></td></tr>
-  <% end %>
-</table>

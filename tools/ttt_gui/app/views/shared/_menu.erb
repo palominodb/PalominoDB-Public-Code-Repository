@@ -1,5 +1,4 @@
 <div id="#menu" style="clear: both; height: 3em">
-  <%= link_to_unless_current "Dashboard", :controller => "dashboard", :action => "index" %>,
   <% if TTT_CONFIG['gui_options'] && TTT_CONFIG['gui_options']['have_slow_query'] %>
     <%= link_to_unless_current "Slow Queries", :controller => "slow_queries", :action => "index" %>,
   <% end %>

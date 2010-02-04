@@ -2,7 +2,6 @@ SrvID=/[0-9a-zA-Z\._\-]+/
 DbID=/[0-9A-Za-z\$_]+/
 TblID=DbID
 ActionController::Routing::Routes.draw do |map|
-  map.resources :dashboard
   map.resources( :servers, :requirements => { :id => SrvID }) do |servers|
     servers.resource(:top_tables, :requirements => {:server_id => SrvID })
     if TTT_CONFIG['gui_options'] and TTT_CONFIG['gui_options']['have_slow_query']
@@ -62,7 +61,7 @@ ActionController::Routing::Routes.draw do |map|
   #   end
 
   # You can have the root of your site routed with map.root -- just remember to delete public/index.html.
-  map.root :controller => "dashboard"
+  map.root :controller => "servers"
 
   # See how all your routes lay out with "rake routes"
 
