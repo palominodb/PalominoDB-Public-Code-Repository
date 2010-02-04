@@ -248,6 +248,25 @@ describe TTT::TableUser, 'collection' do
     u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
     test_privs(u, [:Select_priv])
   end
+  it "should not error on previously deleted 'guser'@'localhost'" do
+    test_migration(TestGlobalUser)
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(0)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
+    test_privs(u, [:Select_priv])
+
+    test_unmigrate(TestGlobalUser)
+
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(1)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
+    u.deleted?.should == true
+
+    rd=run_collection
+    rd.changed?.should == false
+  end
 
   it "should find 'guser'@'localhost' insert grant" do
     test_migration(TestGlobalUser)
@@ -264,6 +283,31 @@ describe TTT::TableUser, 'collection' do
     rd.save(1)
     u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
     test_privs(u, [:Select_priv, :Insert_priv])
+  end
+
+  it "should find 'guser'@'localhost' insert revoke" do
+    test_migration(TestGlobalUser)
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(0)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
+    test_privs(u, [:Select_priv])
+
+    test_migration(AddGlobalUserPriv1)
+
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(1)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
+    test_privs(u, [:Select_priv, :Insert_priv])
+
+    test_unmigrate(AddGlobalUserPriv1)
+
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(2)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ?', 'guser', 'localhost'])
+    test_privs(u, [:Select_priv])
   end
 
   it "'guser'@'localhost' is deleted" do

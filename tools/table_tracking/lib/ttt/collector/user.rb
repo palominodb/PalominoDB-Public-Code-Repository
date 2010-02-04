@@ -113,7 +113,7 @@ TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
   # Global privs
   prev_version.each do |u|
     curp = 
-      case u.permtype
+      case u.permtype & ~0x3
       when TTT::TableUser::GLOBAL_PERMISSION
         mysqlusers.find(:first,:conditions => ['User = ? AND Host = ?', u.User, u.Host])
       when TTT::TableUser::HOST_PERMISSION
@@ -128,7 +128,9 @@ TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
         mysqlprocs.find(:first, :conditions => ['Host = ? AND Db = ? AND User = ? AND Routine_name = ? AND Routine_type = ?', u.Host, u.schema, u.User, u.Routine_name, u.Routine_type])
       else
         raise RuntimeError, "Invalid, Corrupt, or hand modified data found. Found user was not of any known type."
+        nil
       end
+    next if u.deleted? and curp.nil?
     # Delete check
     if curp.nil? and !u.deleted?
       newu = rd.stat.new(u.attributes.merge(:created_at => nil, :updated_at => nil, :run_time => rd.runtime, :permtype => u.permtype | TTT::TableUser::DELETED_PERMISSION))
