@@ -10,6 +10,7 @@ use Digest::SHA1;
 use Time::HiRes qw(time);
 use File::Spec;
 use Fcntl qw(:seek);
+use English qw(-no_match_vars);
 
 use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
 use constant Level1 => 1;
