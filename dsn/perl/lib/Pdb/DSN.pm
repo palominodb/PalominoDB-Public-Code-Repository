@@ -48,6 +48,7 @@ C<cluster_> and take a cluster name as an argument.
 =back
 
 =head1 METHODS
+
 =cut
 
 use strict;
