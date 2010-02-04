@@ -40,12 +40,16 @@ my $central_dsn = undef;
 my $only_report = 0;
 my $pretend = 0;
 
-my @ignore_tables = ('mysql.slow_log', 'mysql.general_log');
-my @ignore_databases = ();
+my @global_ignore_tables = ('mysql.slow_log', 'mysql.general_log');
+my @global_ignore_databases = ();
 my $mk_table_checksum_path = '/usr/bin/mk-table-checksum';
+
+my %checksum_master_opts;
 
 my $csum_dsn = undef;
 my $csum_dbh = undef;
+
+my $global_chunk_size = 50_000;
 
 sub main {
   my (@ARGV) = @_;
@@ -76,7 +80,7 @@ sub main {
     return 1;
   }
   no warnings;
-  *mk_table_checksum::print_inconsistent_tbls = \&main::save_to_central_server;
+  *mk_table_checksum::print_inconsistent_tbls = \&pdb_dsn_checksum::save_to_central_server;
   use warnings FATAL => 'all';
 
 
@@ -93,10 +97,13 @@ sub main {
     if(defined(my $opts = $dsn->server_checksum_options($s))) {
       $pl->i("CLUSTER ($c) CHECKSUM OPTIONS:", Dumper($opts));
       if($opts->{ignore_tables}) {
-        push @ignore_tables, @{$opts->{ignore_tables}};
+        $checksum_master_opts{$s}{ignore_tables} = $opts->{ignore_tables};
       }
       if($opts->{ignore_databases}) {
-        push @ignore_databases, @{$opts->{ignore_databases}};
+        $checksum_master_opts{$s}{ignore_databases} = $opts->{ignore_databases};
+      }
+      if($opts->{chunk_size}) {
+        $checksum_master_opts{$s}{chunk_size} = $opts->{chunk_size};
       }
     }
   }
@@ -104,7 +111,10 @@ sub main {
   unless ($only_report) {
     foreach my $cm (@checksum_masters) {
       $pl->i("CHECKSUMMING CLUSTER PRIMARY:",$cm);
-      my @mk_args = ('--empty-replicate-table', '--replicate', $repl_table, '--user', $user, '--password', $password, '--ignore-databases', join(',', @ignore_databases), '--ignore-tables', join(',',@ignore_tables), $cm);
+      my @ignore_databases = (@{$checksum_master_opts{$cm}{ignore_databases}}, @global_ignore_databases);
+      my @ignore_tables    = (@{$checksum_master_opts{$cm}{ignore_tables}}, @global_ignore_tables);
+      my $c_size           = $checksum_master_opts{$cm}{chunk_size} || $global_chunk_size;
+      my @mk_args = ('--create-replicate-table', '--empty-replicate-table', '--replicate', $repl_table, '--user', $user, '--password', $password, '--ignore-databases', join(',', @ignore_databases), '--ignore-tables', join(',',@ignore_tables), '--chunk-size', $c_size, $cm);
       run_mk_checksum(@mk_args);
     }
   }
@@ -114,6 +124,7 @@ sub main {
     my @mk_args = ('--replicate-check', 2, '--replicate', $repl_table, '--user', $user, '--password', $password, $cm);
     run_mk_checksum(@mk_args);
   }
+  $csum_dbh->commit;
 
   (my $sql = <<"EOF") =~ s/\s+/ /gm;
    SELECT host, db, tbl, chunk, boundaries,
@@ -172,16 +183,40 @@ sub save_to_central_server {
   my $dsn = $args{dsn};
   my $o   = $args{o};
   my $host = $dbh->quote($dsn->{h});
-  $csum_dbh->do(
-    qq# DELETE FROM $central_table WHERE host=$host #
-  );
+  my $del_sql = qq# DELETE FROM $central_table WHERE host=$host #;
+  print(STDERR 'SQL: ', $del_sql);
+  RETRY:
+  eval {
+    $csum_dbh->do($del_sql);
+  };
+  if($EVAL_ERROR) {
+    die $EVAL_ERROR if($EVAL_ERROR !~ /Table '$csum_dsn->{D}.$csum_dsn->{t}' doesn't exist/);
+    my $creat_sql =<<"    EOF";
+
+      CREATE TABLE $central_table (
+        host       char(100)    NOT NULL,
+        db         char(64)     NOT NULL,
+        tbl        char(64)     NOT NULL,
+        chunk      int          NOT NULL,
+        boundaries char(100)    NOT NULL,
+        this_crc   char(40)     NOT NULL,
+        this_cnt   int          NOT NULL,
+        master_crc char(40)         NULL,
+        master_cnt int              NULL,
+        ts         timestamp    NOT NULL,
+        PRIMARY KEY (host, db, tbl, chunk)
+      ) ENGINE=InnoDB
+    EOF
+    print(STDERR 'SQL: ', $creat_sql);
+    $csum_dbh->do($creat_sql);
+    goto RETRY;
+  }
   foreach my $r ( @{$dbh->selectall_arrayref('SELECT * FROM '. $args{o}->get('replicate'), { Slice => {} })} ) {
     my $magic_cols = join(',', map { $_ } sort keys %$r);
     my $magic_vals = join(',', map { $dbh->quote($r->{$_}) } sort keys %$r);
-    $csum_dbh->do(
-      qq# INSERT INTO $central_table (host,$magic_cols) VALUES
-      (${host},$magic_vals) #
-    );
+    my $ins_sql = qq# INSERT INTO $central_table (host,$magic_cols) VALUES (${host},$magic_vals) #;
+    print(STDERR 'SQL: ', $ins_sql);
+    $csum_dbh->do($ins_sql);
   }
   return;
 }
@@ -251,6 +286,11 @@ Username for all servers.
 Password for user.
 
 =head1 EXAMPLES
+
+  pdb-dsn-checksum --dsn /tmp/dsn.yml \
+    --store h=ops,u=ops,p=ops,D=checksums,t=checksums \
+    --replicate-table checksum.checksum --user csum \
+    --password csum --pretend
 
 =cut
 
