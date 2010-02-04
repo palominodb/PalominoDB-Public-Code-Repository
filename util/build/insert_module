@@ -29,6 +29,7 @@ sub insert_module {
   chomp($ver);
 
   $module_src =~ s/^ *#.*\n//gm; # strip comments out
+  $module_src =~ s/=pod\n.*?\n=cut\n//gs; # strip out pod
   $input =~ s/ $module package ([a-f0-9]{40}|GIT_VERSION)/ $module package/; # strip revision
   my $line = "# ###########################################################################\n";
   my $marker = qr/($line# (?:End )?$module package\n$line)/;
