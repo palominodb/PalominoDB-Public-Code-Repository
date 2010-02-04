@@ -19,7 +19,7 @@ open $fh, '>', $outf
 my %modules = ();
 
 foreach (@input) {
-  if(/^# (\w+) package ([a-f0-9]{40}|GIT_VERSION)/) {
+  if(/^# ((?:\w|::)+) package ([a-f0-9]{40}|GIT_VERSION)/) {
     $modules{$1} = 1;
   }
 }
