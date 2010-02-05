@@ -29,7 +29,7 @@ open LOG, ">>/var/log/mysql-zrm/socket-server.log" or die "Unable to open snapsh
 
 sub printLog()
 {
-        print LOG "$0:" . $_[0];
+  print LOG "$0:" . $_[0];
 }
 
 
@@ -52,64 +52,64 @@ sub getSnapshotDeviceDetails()
 
 sub doGetSnapshotdeviceDetails()
 {
-	if( !defined $opt{"directory"} ){
-		&printAndDie( "Please supply --directory" );
-	} 
-	if( !defined  $opt{"sname"} ) {
-		&printAndDie( "Please supply --sname" );
-	}
-	&getSnapshotDeviceDetails( $opt{"directory"}, $opt{"sname"} );
+  if( !defined $opt{"directory"} ){
+    &printAndDie( "Please supply --directory" );
+  } 
+  if( !defined  $opt{"sname"} ) {
+    &printAndDie( "Please supply --sname" );
+  }
+  &getSnapshotDeviceDetails( $opt{"directory"}, $opt{"sname"} );
 }
 
 sub doCreateSnapshot()
 {
-	&printLog("Making snapshot.");
-	sleep(5);
-	mkdir("/tmp/zrm-innosnap");
-	return;
+  &printLog("Making snapshot.");
+  sleep(5);
+  mkdir("/tmp/zrm-innosnap");
+  return;
 }
 
 sub doMount()
 {
-	&printLog("Mounting snapshot.");
-	sleep(5);
-	open RUNFIL, ">/tmp/zrm-innosnap/running";
-	print RUNFIL time, "\n";
-	print RUNFIL "$ZRM::SnapshotCommon::config{'user'}\n";
-	print RUNFIL "$ZRM::SnapshotCommon::config{'password'}\n";
-	close RUNFIL;
-	return;
+  &printLog("Mounting snapshot.");
+  sleep(5);
+  open RUNFIL, ">/tmp/zrm-innosnap/running";
+  print RUNFIL time, "\n";
+  print RUNFIL "$ZRM::SnapshotCommon::config{'user'}\n";
+  print RUNFIL "$ZRM::SnapshotCommon::config{'password'}\n";
+  close RUNFIL;
+  return;
 }
 
 sub doUmount()
 {
-	&printLog("Unmounting snapshot.");
-	sleep(5);
-	unlink("/tmp/zrm-innosnap/running");
-	return;
+  &printLog("Unmounting snapshot.");
+  sleep(5);
+  unlink("/tmp/zrm-innosnap/running");
+  return;
 }
 
 sub doRemoveSnapshot()
 {
-	&printLog("Deleting snapshot.");
-	sleep(5);
-	rmdir("/tmp/zrm-innosnap");
-	return;
+  &printLog("Deleting snapshot.");
+  sleep(5);
+  rmdir("/tmp/zrm-innosnap");
+  return;
 }
 
 &initSnapshotPlugin();
 if( $action eq "get-vm-device-details" ){
-	&doGetSnapshotdeviceDetails();
+  &doGetSnapshotdeviceDetails();
 }elsif( $action eq "create-snapshot" ){
-	&doCreateSnapshot();
+  &doCreateSnapshot();
 }elsif( $action eq "mount" ){
-	&doMount();
+  &doMount();
 }elsif( $action eq "umount" ){
-	&doUmount();
+  &doUmount();
 }elsif( $action eq "remove-snapshot" ){
-	&doRemoveSnapshot();
+  &doRemoveSnapshot();
 }else{
-	&printAndDie( "Unknown action" );
+  &printAndDie( "Unknown action" );
 }
 exit( 0 );
 
