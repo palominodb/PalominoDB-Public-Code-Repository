@@ -40,6 +40,7 @@ use File::Temp qw/ :POSIX /;
 use Getopt::Long;
 use File::Basename;
 use File::Spec::Functions;
+use Data::Dumper;
 
 
 $ENV{PATH}="/usr/local/bin:/opt/csw/bin:/usr/bin:/usr/sbin:/bin:/sbin";
@@ -90,13 +91,18 @@ elsif($^O eq "freebsd") {
 	$TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-	&printAndDie("Unable to determine which tar options to use!");
+  &printAndDie("Unable to determine which tar options to use!");
 }
 
 sub printAndDie {
   $pl->e(@_);
   $pl->end;
   die("ERROR: @_");
+}
+
+sub my_exit {
+  $pl->end;
+  exit($_[0]);
 }
 
 # Parses the command line for all of the copy parameters
@@ -137,7 +143,7 @@ sub getCopyParameters()
 
 	if( $srcHost eq "localhost" && $destHost eq "localhost" ){
 		&doLocalTar();
-		exit(0);
+		my_exit(0);
 	}
 
 	if( defined $opt{"create-link"} ){
@@ -244,7 +250,7 @@ sub getMySQLHotCopyParameters()
 	}
 
 	if( ! $host || $host eq "localhost" ){
-		exit( system( "$MYSQL_BINPATH/mysqlhotcopy $params $destDir" ) );
+		my_exit( system( "$MYSQL_BINPATH/mysqlhotcopy $params $destDir" ) );
 	}
 	$action = "mysqlhotcopy";
 }
@@ -307,6 +313,7 @@ sub getInputs()
 #This will opne the connection to the remote host
 sub connectToHost()
 {
+  $pl->m('connect-to-host:\thost:', $host, '\tport:', $REMOTE_PORT);
 	my $iaddr = inet_aton($host) or die "no host: $host";
 	my $paddr = sockaddr_in($REMOTE_PORT, $iaddr);
 	my $proto = getprotobyname('tcp');
@@ -315,12 +322,14 @@ sub connectToHost()
 	select( SOCK );
 	$| = 1;
 	select( STDOUT );
+  $pl->m('connected to host.');
 }
 
 # This will send the required arguments to the remote host
 sub sendArgsToRemoteHost()
 {
 	my $tmp=File::Spec->tmpdir();
+  $pl->m('send-args-to-host:\n', join("\n  ", ($VERSION, $action, $params, $tmp, $REMOTE_MYSQL_BINPATH)));
 	print SOCK "$VERSION\n";
 	print SOCK "$action\n";
 	print SOCK "$params\n";
@@ -463,6 +472,7 @@ sub parseConfFile()
 # Setup the parameters that are relevant from the conf 
 sub setUpConfParams()
 {
+  $pl->m('setup-config-parameters');
 	if( $config{"socket-remote-port"} ){
 		$REMOTE_PORT = $config{"socket-remote-port"};
 	}
@@ -470,6 +480,7 @@ sub setUpConfParams()
 		$REMOTE_MYSQL_BINPATH = $config{"remote-mysql-binpath"};
 	}
 	if( defined $ENV{'SNAPSHOT_CONF'} ){
+    $pl->m('read-snapshot-config');
 		my $fName = $ENV{'SNAPSHOT_CONF'};
 		unless( open( TMP, $fName ) ){
 			return;
@@ -482,6 +493,8 @@ sub setUpConfParams()
 		foreach(@snapshotParamList){
 			$snapshotConfString .= "$_=$config{$_}\n";
 		}
+    $pl->m('snapshot-param-list:', Dumper(\@snapshotParamList));
+    $pl->m('snapshot-param-string:', $snapshotConfString);
 	}
 }
 
@@ -511,6 +524,7 @@ sub doCreateLinks()
 
 sub doSnapshotCommand()
 {
+  $pl->m("do-snapshot:\tplugin:",$config{'snapshot-plugin'});
 	print SOCK $config{"snapshot-plugin"}."\n";
 	my $num = @snapshotParamList;
 	$num += 2; # For user/pass
@@ -520,21 +534,25 @@ sub doSnapshotCommand()
 		print SOCK "user=$config{'user'}\n";
 		print SOCK "password=$config{'password'}\n";
 	}
+  $pl->m('  sent config data.');
 	my $status = <SOCK>;
 	chomp( $status );
+  $pl->m('  result:', $status);
 	my $num = <SOCK>;
 	chomp($num);
 	my $i;
 	for( $i = 0 ; $i < $num; $i++ ){
 		my $r = <SOCK>;	
 		if( $status eq "SUCCESS" ){
+      $pl->m(' ', $r);
 			print STDOUT $r;
 		}else{
 			print STDERR $r;
+      $pl->e(' ', $r);
 		}
 	}
 	if( $status ne "SUCCESS" ){
-		exit(1);
+		my_exit(1);
 	}
 }
 
@@ -555,7 +573,7 @@ sub doCopyBetween()
 		}
 	}
 	if( $status ne "SUCCESS" ){
-		exit(1);
+		my_exit(1);
 	}
 
 }
@@ -609,6 +627,5 @@ if( $action eq "copy from" ){
 }
 close( SOCK );
 select( undef, undef, undef, 0.250 );
-$pl->end;
-exit(0);
+my_exit(0);
 1;
