@@ -56,6 +56,20 @@ module TTT
       :Super_priv,
     ]
 
+    ALL_GLOBAL_PRIVS = (PRIV_FLAG_COLUMNS - [:Grant_priv])
+    ALL_DB_PRIVS   = [:Select_priv, :Insert_priv, :Update_priv,
+      :Delete_priv, :Create_priv, :Drop_priv, :References_priv,
+      :Index_priv, :Alter_priv, :Create_tmp_table_priv,
+      :Lock_tables_priv, :Create_view_priv, :Show_view_priv,
+      :Create_routine_priv, :Execute_priv, :Event_priv, :Trigger_priv]
+    ALL_HOST_PRIVS =  ALL_DB_PRIVS
+    ALL_TABLE_PRIVS  = [:Select_priv, :Insert_priv, :Update_priv,
+      :Delete_priv, :Create_priv, :Drop_priv, :References_priv,
+      :Index_priv, :Alter_priv, :Create_view_priv, :Show_view_priv,
+      :Trigger_priv]
+    ALL_COLUMN_PRIVS = [:Select_priv, :Insert_priv, :Update_priv, :References_priv]
+    ALL_PROC_PRIVS = [:Execute_priv, :Alter_routine_priv]
+
 
     def schema
       self.Db
@@ -113,6 +127,54 @@ module TTT
 
     def proc_perm?
       (permtype & PROC_PERMISSION) != 0
+    end
+
+    def perm_to_s(perm)
+      perm.to_s.upcase.gsub('_', ' ').gsub(' PRIV', '').gsub('REPL', 'REPLICATION').gsub('TMP TABLE', 'TEMPORARY TABLES')
+    end
+
+    def to_s
+      gstr='GRANT '
+      perms=(perms_set.delete :Grant_priv)
+      has_grant=(perms_set.member? :Grant_priv)
+      pw=((Password().nil? or Password().empty?) ? '' : "IDENTIFIED BY PASSWORD '#{Password()}'")
+      on_ref = 'ON *.*'
+      user_ref = "'#{User()}'@'#{Host().nil? or Host().empty? ? '%' : Host()}'"
+      priv_massage = Proc.new { |pstr| pstr }
+      privstype_set=case permtype & ~0x3
+      when GLOBAL_PERMISSION
+        ALL_GLOBAL_PRIVS.to_set
+      when HOST_PERMISSION
+        ALL_HOST_PRIVS.to_set
+      when DB_PERMISSION
+        on_ref = "ON `#{Db()}`.*"
+        ALL_DB_PRIVS.to_set
+      when TABLE_PERMISSION
+        on_ref = "ON `#{Db()}`.`#{Table_name()}`"
+        ALL_TABLE_PRIVS.to_set
+      when COLUMN_PERMISSION
+        on_ref = "ON `#{Db()}`.`#{Table_name()}`"
+        priv_massage = Proc.new { |p| "#{p} (#{Column_name()})" }
+        ALL_COLUMN_PRIVS.to_set
+      when PROC_PERMISSION
+        ALL_PROC_PRIVS.to_set
+      else
+        self.inspect
+      end
+
+      if perms.superset? privstype_set
+        gstr += priv_massage.call('ALL PRIVILEGES') + ' '
+      elsif perms.empty?
+        gstr += 'USAGE '
+      else
+        gstr += perms.map { |p| priv_massage.call(perm_to_s(p)) }.join(', ') + ' '
+      end
+      gstr += [on_ref, 'TO', user_ref, pw, (has_grant ? 'WITH GRANT OPTION' : '')].join(' ')
+      if deleted?
+        "DROP USER #{user_ref}"
+      else
+        gstr
+      end
     end
   end
 end
