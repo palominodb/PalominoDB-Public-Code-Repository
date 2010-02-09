@@ -3,9 +3,6 @@ require 'active_record'
 require 'sqlite3' # For catching exceptions
 require 'ttt/table'
 require 'ttt/information_schema'
-require 'ttt/table_definition'
-require 'ttt/table_volume'
-require 'ttt/table_view'
 require 'ttt/server'
 
 module TTT
