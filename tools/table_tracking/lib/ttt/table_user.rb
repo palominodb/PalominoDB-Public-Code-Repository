@@ -145,7 +145,11 @@ module TTT
       when GLOBAL_PERMISSION
         ALL_GLOBAL_PRIVS.to_set
       when HOST_PERMISSION
-        ALL_HOST_PRIVS.to_set
+        if deleted?
+          return "DELETE FROM  `mysql`.`host` WHERE Host='#{Host()}' AND Db='#{Db()}'"
+        else
+          return "REPLACE INTO `mysql`.`host` (Host,Db,#{perms.to_a.sort.join(',')}) VALUES ('#{Host()}','#{Db()}',#{perms_to_a.sort.map{|c| "'Y'"}.join(',')})"
+        end
       when DB_PERMISSION
         on_ref = "ON `#{Db()}`.*"
         ALL_DB_PRIVS.to_set
