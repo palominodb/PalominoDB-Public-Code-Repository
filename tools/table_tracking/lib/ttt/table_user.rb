@@ -70,6 +70,13 @@ module TTT
     ALL_COLUMN_PRIVS = [:Select_priv, :Insert_priv, :Update_priv, :References_priv]
     ALL_PROC_PRIVS = [:Execute_priv, :Alter_routine_priv]
 
+    def database_name
+      schema
+    end
+
+    def table_name
+      self.Table_name
+    end
 
     def schema
       self.Db
