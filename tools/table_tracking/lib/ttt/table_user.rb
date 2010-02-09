@@ -22,7 +22,7 @@ module TTT
     # This is or-ed with the above to mark a permission as deleted.
     DELETED_PERMISSION = 1<<1
     # These two bits are reserved for later use.
-    RESERVED_PERMISSION1 = 1<<2
+    UNREACHABLE_ENTRY  = 1<<2
     RESERVED_PERMISSION2 = 1<<3
 
     PRIV_FLAG_COLUMNS = [
@@ -108,6 +108,10 @@ module TTT
       sn
     end
 
+    def unreachable?
+      (permtype & UNREACHABLE_ENTRY) != 0
+    end
+
     def deleted?
       (permtype & DELETED_PERMISSION) != 0
     end
@@ -187,5 +191,63 @@ module TTT
         gstr
       end
     end
-  end
-end
+
+    def tchanged?
+      last=previous_version()
+      last.nil? or last.deleted? or perms_set != last.perms_set
+    end
+
+    def previous_version
+      extra_cons,extra_cons_i=case permtype & ~0x3
+                              when GLOBAL_PERMISSION
+                                previous_global
+                              when HOST_PERMISSION
+                                previous_host
+                              when DB_PERMISSION
+                                previous_db
+                              when TABLE_PERMISSION
+                                previous_table
+                              when COLUMN_PERMISSION
+                                previous_column
+                              when PROC_PERMISSION
+                                previous_proc
+                              end
+      self.class.last(:conditions => ['id < ? AND permtype & ? != 0 AND server = ?' + ' AND ' + extra_cons, id, permtype & ~0x3 , server] + extra_cons_i)
+    end
+
+    def create_unreachable_entry(host, runtime)
+      TTT::TableUser.new(
+        :server => host,
+        :run_time => runtime,
+        :permtype => UNREACHABLE_ENTRY,
+        :created_at => '0000-00-00 00:00:00',
+        :updated_at => '0000-00-00 00:00:00'
+      )
+    end
+
+    protected
+    def previous_global
+      ['Host = ? AND User = ?', [Host(), User()]]
+    end
+
+    def previous_host
+      ['Host = ? AND Db = ?', [Host(), Db()]]
+    end
+
+    def previous_db
+      ['Host = ? AND Db = ? AND User = ?', [Host(), Db(), User()]]
+    end
+
+    def previous_table
+      ['Host = ? AND Db = ? AND User = ? AND Table_name = ?', [Host(), Db(), User(), Table_name()]]
+    end
+
+    def previous_column
+      ['Host = ? AND Db = ? AND User = ? AND Table_name = ? AND Column_name = ?', [Host(), Db(), User(), Table_name(), Column_name()]]
+    end
+
+    def previous_proc
+      ['Host = ? AND Db = ? AND User = ? AND Routine_name = ? AND Routine_type = ?', [Host(), Db(), User(), Routine_name(), Routine_type()]]
+    end
+  end # TTT::TableUser
+end # TTT
