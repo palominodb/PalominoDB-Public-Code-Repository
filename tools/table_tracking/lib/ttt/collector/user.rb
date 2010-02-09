@@ -2,7 +2,6 @@ require 'rubygems'
 require 'ttt/db'
 require 'ttt/table_user'
 require 'ttt/server'
-require 'ruby-debug'
 
 TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
   mysqlusers   = TTT::Db.open_schema(rd.host, 'mysql', 'user')
@@ -232,6 +231,13 @@ TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
       rd.stat_updated(newu.id, u.id)
     end
   end
+end
 
-
+TTT::Formatter.for :user, :text do |stream,frm,data,options|
+  col_width=frm.page_width
+  unless options[:header]
+    stream.puts frm.format('<'*15 + ' ' + '['*(col_width-15), data.server, data.to_s)
+  else
+    stream.puts frm.format('<'*15 + ' ' + '['*(col_width-15), 'host', 'grant')
+  end
 end
