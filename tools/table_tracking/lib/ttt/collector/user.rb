@@ -2,6 +2,7 @@ require 'rubygems'
 require 'ttt/db'
 require 'ttt/table_user'
 require 'ttt/server'
+require 'ttt/formatters'
 
 TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
   mysqlusers   = TTT::Db.open_schema(rd.host, 'mysql', 'user')
