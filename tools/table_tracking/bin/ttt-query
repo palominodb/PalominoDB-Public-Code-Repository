@@ -43,6 +43,7 @@ find_params[:conditions] = []
 sql_conditions={}
 
 find_type=:normal
+TTT::CollectorRegistry.load
 
 opts.each do |opt,val|
   case opt
@@ -139,7 +140,6 @@ DOC_EOF
     when '--list-stats'
       rf=Text::Reform.new
       rf.trim=true
-      TTT::CollectorRegistry.load
       cols=TTT::CollectorRegistry.all
       names= cols.map { |c| c.stat.collector }
       descs= cols.map { |c| c.desc }
@@ -166,12 +166,8 @@ DOC_EOF
             $1.to_f.seconds.ago
         end
         sql_conditions[:since] = time
-        #find_params[:conditions].reject! { |v| v =~ /^run_time/ }
-        #find_params[:conditions] << ["run_time >= ?", time]
-        #find_params[:conditions].flatten!
       end
       when '--where'
-        #find_params[:conditions] << val
         sql_conditions[:where] = [] unless sql_conditions[:where].class == Array
         sql_conditions[:where] << val
       when '--group'
