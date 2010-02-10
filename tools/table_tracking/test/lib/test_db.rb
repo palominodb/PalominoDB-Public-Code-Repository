@@ -43,7 +43,7 @@ module TestDbHelper
     @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
     @ttt_config['ttt_connection'] = { :adapter => 'sqlite3', :database => Dir.pwd + '/test-db.sqlite3' }
     ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(
-      STDOUT,
+      ENV['TTT_DEBUG'].to_i == 1 ? STDOUT : '/dev/null',
       ENV['TTT_DEBUG'].to_i == 1 ?
       ActiveSupport::BufferedLogger::Severity::DEBUG :
       ActiveSupport::BufferedLogger::Severity::INFO

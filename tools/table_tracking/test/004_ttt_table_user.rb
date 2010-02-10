@@ -44,6 +44,15 @@ class TestTblUser < TestMigration
   end
 end
 
+class TestTblUser1 < TestMigration
+  def self.up
+    grant_tbl('tbluser1', 'localhost', 'test', 'test_data', ['select'], nil)
+  end
+  def self.down
+    drop_user('tbluser1', 'localhost')
+  end
+end
+
 class TestColUser < TestMigration
   def self.up
     grant_col('coluser', 'localhost', 'test', 'test_data', [['select', 'name', 'value']], nil)
@@ -91,6 +100,16 @@ class AddTblUserPriv1 < TestMigration
 
   def self.down
     revoke_tbl('tbluser', 'localhost', 'test', 'test_data', ['insert'])
+  end
+end
+
+class AddTblUserPriv2 < TestMigration
+  def self.up
+    grant_tbl('tbluser1', 'localhost', 'test', 'test_data', ['insert'],nil)
+  end
+
+  def self.down
+    revoke_tbl('tbluser1', 'localhost', 'test', 'test_data', ['insert'])
   end
 end
 
@@ -152,7 +171,7 @@ describe TTT::TableUser, 'instances' do
   }.each do |p,v|
     it "permission #{p} should work" do
       u=TTT::TableUser.new(:server => 'localhost', :Host => 'localhost', :User => 'test_user')
-      u.permtype = TTT::TableUser::RESERVED_PERMISSION1
+      u.permtype = TTT::TableUser::RESERVED_PERMISSION2
       u.permtype |= v
       [:Select_priv, :Insert_priv, :Execute_priv, :Update_priv].each { |pr| u[pr] = (rand(2) == 0 ? 'N' : 'Y') }
       u.send(p).should == true
@@ -457,6 +476,25 @@ describe TTT::TableUser, 'collection' do
     u.save
     test_migration(AddGlobalUserPriv1)
     lambda { run_collection }.should raise_exception(RuntimeError)
+  end
+
+  it 'should correctly detect previous versions' do
+    test_migration(CreateTestDataTable)
+    test_migration(TestTblUser)
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(0)
+    u=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ? AND Db = ? AND Table_name = ?',
+                          'tbluser', 'localhost', 'test', 'test_data'])
+    test_privs(u, [:Select_priv])
+    test_migration(AddTblUserPriv1)
+    test_migration(TestTblUser1)
+    rd=run_collection
+    rd.changed?.should == true
+    rd.save(1)
+    u2=TTT::TableUser.find(:last, :conditions => ['User = ? AND Host = ? AND Db = ? AND Table_name = ?',
+                          'tbluser', 'localhost', 'test', 'test_data'])
+    u2.previous_version.id.should == u.id
   end
 
   after do
