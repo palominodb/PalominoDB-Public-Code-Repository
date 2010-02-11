@@ -26,8 +26,8 @@ end
 # Makes a simple table for testing with.
 class CreateTestDataTable < TestMigration
   def self.up
-    create_database('test')
-    create_table('test.test_data') do |t|
+    connection.execute('CREATE DATABASE IF NOT EXISTS test')
+    create_table('test.test_data', :options => 'ENGINE=InnoDB CHARSET=utf8') do |t|
       t.string :name, :limit => 5
       t.string :value, :limit => 20
     end
@@ -40,8 +40,7 @@ end
 
 module TestDbHelper
   def test_connect
-    @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-    @ttt_config['ttt_connection'] = { :adapter => 'sqlite3', :database => Dir.pwd + '/test-db.sqlite3' }
+    @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/test-config.yml")
     ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(
       ENV['TTT_DEBUG'].to_i == 1 ? STDOUT : '/dev/null',
       ENV['TTT_DEBUG'].to_i == 1 ?
@@ -54,6 +53,7 @@ module TestDbHelper
 
   def test_connect_is(host)
     TTT::InformationSchema.connect(host, @ttt_config)
+    TTT::InformationSchema.connection.execute('CREATE DATABASE IF NOT EXISTS test')
   end
 
   def test_migration(migClass)
