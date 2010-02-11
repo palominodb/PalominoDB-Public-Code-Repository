@@ -1,5 +1,6 @@
 require 'ttt/db'
 require 'ttt/information_schema'
+require 'test/lib/test_db'
 require 'yaml'
 
 describe TTT::InformationSchema do
