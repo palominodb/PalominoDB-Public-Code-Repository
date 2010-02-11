@@ -13,6 +13,7 @@ my $n_rows = 500_000;
 
 my $generate_table=0;
 my $table_engine="InnoDB";
+my $for_infile = 0;
 #my %columns = ( "name" => "char(255)", "value" => "char(255)", "last_updated" => "timestamp" );
 my %columns = ();
 
@@ -24,7 +25,8 @@ GetOptions(
   "g|generate-table" => \$generate_table,
   "c|column=s" => \%columns,
   "r|rows=i" => \$n_rows,
-  "e|engine=s" => \$table_engine
+  "e|engine=s" => \$table_engine,
+  "i|for-infile" => \$for_infile
 );
 
 delete $columns{'id'}; # Hardcoded as existing.
@@ -54,7 +56,12 @@ sub generate_integer {
 }
 
 sub generate_timestamp {
-  return( int(time - rand(2**32)) );
+  my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) =
+                                  localtime(int(time - rand(2**28)));
+  $year += 1900;
+  $mon  += 1;
+
+  return "$year-$mon-$mday ${hour}:${min}:${sec}";
 }
 
 #my %generators = {
@@ -71,8 +78,8 @@ else {
   *SQL=\*STDOUT
 }
 
-if($generate_table) {
-  print SQL "USE $database;";
+if($generate_table and !$for_infile) {
+  print SQL "USE $database; ";
   print SQL "DROP TABLE IF EXISTS $table;\n\n";
   my $sql_columns = "";
   map {
@@ -84,7 +91,7 @@ if($generate_table) {
 }
 
 my $cols_str = join(",", sort keys %columns);
-foreach (0..$n_rows) {
+foreach (1..$n_rows) {
   my $vals = "";
   map {
     my $t = $columns{$_};
@@ -95,14 +102,30 @@ foreach (0..$n_rows) {
       $vals .= generate_integer(10) . ",";
     }
     elsif($t =~ /^timestamp/) {
-      $vals .= generate_timestamp() . ",";
+      if($for_infile) {
+        $vals .= generate_timestamp() . ",";
+      }
+      else {
+        $vals .= "'". generate_timestamp() . "',";
+      }
     }
     elsif($t =~ /^(?:var)?char\((\d+)\)/) {
-      $vals .= "'". generate_varchar($1) . "',";
+      if($for_infile) {
+        $vals .= generate_varchar($1) . ",";
+      }
+      else {
+        $vals .= "'". generate_varchar($1) . "',";
+      }
     }
   } sort keys %columns;
   $vals =~ s/,$//;
-  print SQL "INSERT INTO $table ($cols_str) VALUES ($vals);\n";
+  if(!$for_infile) {
+    print SQL "INSERT INTO $table ($cols_str) VALUES ($vals);\n";
+  }
+  else {
+    $vals =~ s/,/\t/g;
+    print SQL "$vals\n";
+  }
 }
 close SQL;
 
