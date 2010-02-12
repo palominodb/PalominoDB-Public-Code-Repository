@@ -50,6 +50,7 @@ my $csum_dsn = undef;
 my $csum_dbh = undef;
 
 my $global_chunk_size = 50_000;
+my $cluster = undef;
 
 sub main {
   my (@ARGV) = @_;
@@ -63,7 +64,8 @@ sub main {
     'replicate-table|R=s' => \$repl_table,
     'only-report' => \$only_report,
     'pretend' => \$pretend,
-    'mk-table-checksum-path=s' => \$mk_table_checksum_path
+    'mk-table-checksum-path=s' => \$mk_table_checksum_path,
+    'cluster=s' => \$cluster
   );
 
   unless(defined($central_dsn) and defined($dsnuri) and defined($user) and defined($password) and defined($repl_table)) {
@@ -90,6 +92,7 @@ sub main {
   $csum_dbh = $dp->get_dbh($dp->get_cxn_params($csum_dsn));
 
   foreach my $c ($dsn->get_all_clusters()) {
+    next if( defined($cluster) and $cluster ne $c );
     $pl->d("CLUSTER:", $c);
     my $s = $dsn->cluster_primary($c);
     $pl->i("CLUSTER ($c) PRIMARY:", $s);
@@ -276,6 +279,13 @@ What database.table to use to store checksum results on servers.
 The table needn't exist beforehand, mk-table-checksum will create it if it's missing.
 The user and password given with L<"--user"> and L<"--password"> must be capable of creating, and replacing
 into the table.
+
+=item --cluster <cluster name>
+
+Select a single cluster out of many enabled for checksumming in a dsn.
+
+Normally, the behavior of this program is to checksum each cluster
+listed as enabled in serial. This option negates that.
 
 =item --user,-u <user>
 
