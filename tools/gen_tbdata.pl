@@ -11,10 +11,11 @@ my $table="test_data";
 my $database="test";
 my $n_rows = 500_000;
 
+my $seed=undef;
+my $base_time=time;
 my $generate_table=0;
 my $table_engine="InnoDB";
 my $for_infile = 0;
-#my %columns = ( "name" => "char(255)", "value" => "char(255)", "last_updated" => "timestamp" );
 my %columns = ();
 
 GetOptions(
@@ -26,8 +27,14 @@ GetOptions(
   "c|column=s" => \%columns,
   "r|rows=i" => \$n_rows,
   "e|engine=s" => \$table_engine,
-  "i|for-infile" => \$for_infile
+  "i|for-infile" => \$for_infile,
+  "s|seed=i" => \$seed,
+  "T|seed-time=i" => \$base_time
 );
+
+if($seed) {
+  srand($seed);
+}
 
 delete $columns{'id'}; # Hardcoded as existing.
 
@@ -57,19 +64,12 @@ sub generate_integer {
 
 sub generate_timestamp {
   my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) =
-                                  localtime(int(time - rand(2**28)));
+                                  localtime(int($base_time - rand(2**28)));
   $year += 1900;
   $mon  += 1;
 
   return "$year-$mon-$mday ${hour}:${min}:${sec}";
 }
-
-#my %generators = {
-#  "integer" => \&generate_integer,
-#  "varchar" => \&generate_varchar,
-#  "timestamp" => \&generate_timestamp
-#};
-
 
 unless($out eq "-") {
   open SQL, ">$out";
@@ -85,17 +85,21 @@ if($generate_table and !$for_infile) {
   map {
     my $c = $_;
     my $t = $columns{$c};
+    $t = "INTEGER PRIMARY KEY AUTO_INCREMENT" if($t eq 'int_pk');
     $sql_columns .= ", $c $t";
   } sort keys %columns;
-  print SQL "CREATE TABLE IF NOT EXISTS $table (id INTEGER PRIMARY KEY AUTO_INCREMENT$sql_columns) ENGINE='$table_engine';\n\n";
+  print SQL "CREATE TABLE IF NOT EXISTS $table ($sql_columns) ENGINE='$table_engine';\n\n";
 }
 
 my $cols_str = join(",", sort keys %columns);
-foreach (1..$n_rows) {
+foreach my $i (1..$n_rows) {
   my $vals = "";
   map {
     my $t = $columns{$_};
-    if($t =~ /^integer\((\d+)\)/) {
+    if($t =~ /^int_pk/) {
+      $vals .= "$i,";
+    }
+    elsif($t =~ /^integer\((\d+)\)/) {
       $vals .= generate_integer($1) . ",";
     }
     elsif($t =~ /^integer/) {
@@ -160,3 +164,8 @@ Options:
                               integer
     --rows,-r             Number of rows to generate. Can have '_' as a comma. E.g., 500_000 is 500,000.
     --engine,-e           Engine to use. Should be either MyISAM, MEMORY, or InnoDB(default).
+    --for-infile,-i       Generate data suitable for LOAD DATA INFILE.
+                          This disables --generate-table, --table, --database,
+                          --engine, and the use of column names.
+    --seed,-s             Explicitly set the random seed. Expert use only.
+    --seed-time,-T        Explicitly set the base time used for random timestamp generation. Experts only.
