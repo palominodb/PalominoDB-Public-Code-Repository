@@ -65,6 +65,10 @@ module TestDbHelper
     @migs.push migClass
   end
 
+  def load_data(file, schema, table)
+    TTT::InformationSchema.connection.execute("LOAD DATA INFILE '#{File.expand_path File.dirname(__FILE__)}/../data/#{file}' INTO TABLE `#{schema}`.`#{table}`")
+  end
+
   def test_unmigrate(migClass)
     if @migs[-1] != migClass
       return false

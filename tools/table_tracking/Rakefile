@@ -70,6 +70,25 @@ end
 
 task :test => [:clean, :spec]
 
+test_data_tasks=[]
+FileList['test/data/*.desc'].each do |dfile|
+  dname = "test/data/#{(File.basename(dfile).split ".")[0]}"
+  directory dname
+  open(dfile, 'r') do |f|
+    f.each do |l|
+      l.chomp!
+      fname,args = l.split /\s+/, 2
+      fname = "#{dname}/#{fname}"
+      test_data_tasks << fname
+      file fname => [dname] do
+        sh %{perl ../gen_tbdata.pl -i #{args} -o #{fname}}
+      end
+    end
+  end
+end
+
+task :gen_data => test_data_tasks
+
 namespace :db do
   task :rollback do
     step = ENV['STEP'] ? ENV['STEP'].to_i : 1
