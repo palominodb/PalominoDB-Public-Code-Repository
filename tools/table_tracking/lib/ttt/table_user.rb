@@ -215,7 +215,7 @@ module TTT
       self.class.last(:conditions => ['id < ? AND permtype & ? != 0 AND server = ?' + ' AND ' + extra_cons, id, permtype & ~0x3 , server] + extra_cons_i)
     end
 
-    def create_unreachable_entry(host, runtime)
+    def self.create_unreachable_entry(host, runtime)
       TTT::TableUser.new(
         :server => host,
         :run_time => runtime,
