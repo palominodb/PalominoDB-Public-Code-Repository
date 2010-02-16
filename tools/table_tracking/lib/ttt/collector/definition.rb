@@ -1,8 +1,6 @@
 require 'rubygems'
 require 'ttt/db'
 require 'ttt/table_definition'
-require 'pp'
-
 require 'ttt/formatters'
 
 TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
