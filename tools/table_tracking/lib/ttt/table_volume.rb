@@ -25,13 +25,26 @@ module TTT
         s.size
       end
     end
+
+    def self.server_sizes0(server, time=:latest)
+      s=self.server_sizes(server, time)
+      if s.data_length.nil?
+        s.data_length = 0
+      end
+      if s.index_length.nil?
+        s.index_length = 0
+      end
+      s
+    end
+
     def self.server_sizes(server, time=:latest)
       r=nil
       if time==:latest
-        r=find_most_recent_versions(:conditions => ["server = ?", server])
+        r=find_most_recent_versions({:conditions => ["server = ?", server]}, :latest)
       else
-        r=find_most_recent_versions({:conditions => ["server = ?", server]}, time)
+        r=find_most_recent_versions({:conditions => ["snapshots.run_time = ?  AND server = ?", time, server]})
       end
+      raise Exception, "no rows returned" if r.length == 0
       d_length=0
       i_length=0
       r.each do |t|
@@ -51,18 +64,30 @@ module TTT
     def self.database_size(server,database)
       self.database_sizes(server,database).size
     end
+    def self.database_sizes0(server, database, time=:latest)
+      s=self.database_sizes(server, database, time)
+      if s.data_length.nil?
+        s.data_length = 0
+      end
+      if s.index_length.nil?
+        s.index_length = 0
+      end
+      s
+    end
     # Returns the most recent size (in bytes) for 'schema' on 'server'.
     def self.database_sizes(server,database,time=:latest)
       r=nil
       if time==:latest
-        r=find_most_recent_versions(:conditions => ["server = ? and database_name = ?", server, database])
+        r=find_most_recent_versions({:conditions => ["server = ?", server]}, :latest)
       else
-        r=find_most_recent_versions({:conditions => ["server = ? and database_name = ?", server, database]}, time)
+        r=find_most_recent_versions({:conditions => ["snapshots.run_time = ? and server = ?", time, server]})
       end
+      raise Exception, "no rows returned" if r.length == 0
 
       d_length=0
       i_length=0
       r.each do |t|
+        next unless r.database_name == database
         next if t.unreachable?
         d_length+=t.data_length
         i_length+=t.index_length
@@ -71,15 +96,6 @@ module TTT
       v.readonly!
       v
     end
-    ## Returns the most recent size (in bytes) for 'table' in 'schema' on 'server'.
-    #def self.aggregate_by_table(server,schema,table)
-    #  r=find_most_recent_versions(:conditions => ["server = ? and database_name = ? and table_name = ?", server, schema, table])
-    #  size=0
-    #  r.each do |t|
-    #    size+= t.size # N.B. Data free not included, may not return the number you expect.
-    #  end
-    #  size
-    #end
 
     def unreachable?
       database_name().nil? and table_name().nil? and data_length().nil? and index_length().nil? and data_free().nil?

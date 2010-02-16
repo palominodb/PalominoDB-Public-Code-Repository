@@ -10,6 +10,7 @@ module TTT
   # Includes queries/methods that should be common to all.
   module TrackingTable
     @@tables = {}
+    @@c_id = nil # cached collector id
     def self.tables
       @@tables
     end
@@ -24,33 +25,40 @@ module TTT
       # Finds only the highest numbered id for each server.database.table
       # Returns them as an array of TableDefiniion objects.
       def base.find_most_recent_versions(extra_params={},txn=nil)
-        c_id=TTT::CollectorRun.find_by_collector(self.collector.to_s).id
+        @@c_id ||= TTT::CollectorRun.find_by_collector(self.collector.to_s).id
         latest_txn=nil
         begin
-          latest_txn=TTT::Snapshot.find_last_by_collector_run_id(c_id).txn || TTT::Snapshot.head
+          latest_txn=TTT::Snapshot.find_last_by_collector_run_id(@@c_id).txn || TTT::Snapshot.head
         rescue NoMethodError
           latest_txn=TTT::Snapshot.head
         end
         if txn.class == Fixnum and txn < 0
-          txn=latest-txn
+          txn=latest_txn
           txn=0 if txn < 0
         elsif txn.class == Fixnum and txn > latest_txn
           txn=latest_txn
-        elsif txn.nil? or txn.class != Fixnum
+        elsif txn == :latest
           txn=latest_txn
         end
         extra_copy = extra_params.clone
         find_params={
-          :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{c_id} AND snapshots.txn=#{txn} AND #{self.table_name}.id=snapshots.statistic_id}
+          :joins => %Q{INNER JOIN snapshots ON snapshots.collector_run_id=#{@@c_id} #{txn.nil? ? '' : "AND snapshots.txn=#{txn}"} AND #{self.table_name}.id=snapshots.statistic_id}
         }
         find_params.merge! extra_copy
         res=self.find(:all, find_params)
         res
       end
 
+      def base.find_versions(since=Time.at(0))
+        @@c_id ||= TTT::CollectorRun.find_by_collector(self.collector.to_s).id
+        TTT::Snapshot.find(:select => :txn,
+          :conditions => ['collector_run_id = ? AND run_time > ?',
+          @@c_id, since]).map { |s| s.txn }
+      end
+
       def base.find_time_history(since=Time.now)
-        c_id=TTT::CollectorRun.find_by_collector(self.collector.to_s).id
-        stats=TTT::Snapshot.all(:select => :statistic_id, :conditions => ['run_time > ? AND collector_run_id = ?', since, c_id]).map { |s| s.statistic_id }
+        @@c_id ||= TTT::CollectorRun.find_by_collector(self.collector.to_s).id
+        stats=TTT::Snapshot.all(:select => :statistic_id, :conditions => ['run_time > ? AND collector_run_id = ?', since, @@c_id]).map { |s| s.statistic_id }
         if stats
           self.find(stats.sort)
         else
