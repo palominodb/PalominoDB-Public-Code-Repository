@@ -38,7 +38,22 @@ class CreateTestDataTable < TestMigration
   end
 end
 
+  # Pre-defined times for doing collection testing.
+  TIMES = [
+    Time.parse('2010-01-01 16:05'), # 0
+    Time.parse('2010-01-02 16:05'), # 1
+    Time.parse('2010-01-03 16:05'), # 2
+    Time.parse('2010-01-04 16:05'), # 3
+    Time.parse('2010-01-05 16:05'), # 4
+    Time.parse('2010-01-06 16:05'), # 5
+    Time.parse('2010-01-07 16:05'), # 6
+    Time.parse('2010-01-08 16:05'), # 7
+    Time.parse('2010-01-09 16:05'), # 8
+    Time.parse('2010-01-10 16:05')  # 9
+  ]
+
 module TestDbHelper
+
   def test_connect
     @ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/test-config.yml")
     ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(
@@ -78,7 +93,7 @@ module TestDbHelper
   end
 
   def truncate_test_tables
-    ActiveRecord::Base.connection.select_values("SELECT tbl_name FROM sqlite_master WHERE type='table' AND NOT name = 'sqlite_sequence'").each do |v|
+    ActiveRecord::Base.connection.select_values("SELECT tbl_name FROM sqlite_master WHERE type='table'").each do |v|
       next if v == 'schema_migrations'
       ActiveRecord::Base.connection.execute(%Q{DELETE FROM "#{v}"}, "truncate drop #{v}")
     end
@@ -87,8 +102,8 @@ module TestDbHelper
   def test_cleanup
     return if ENV['TTT_NO_TEST_CLEANUP']
     # Clean up test TTT instance
-    ActiveRecord::Base.connection.select_values("SELECT tbl_name FROM sqlite_master WHERE type='table' AND NOT name = 'sqlite_sequence'").each do |v|
-      #ActiveRecord::Base.connection.execute(%Q{DROP TABLE "#{v}"}, "cleanup: drop #{v}")
+    ActiveRecord::Base.connection.select_values("SELECT tbl_name FROM sqlite_master WHERE type='table' AND NOT name = 'schema_migrations'").each do |v|
+      ActiveRecord::Base.connection.execute(%Q{DELETE FROM "#{v}"}, "cleanup: truncate #{v}")
     end
 
     # Cleanup test DSN instance
