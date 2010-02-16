@@ -73,7 +73,7 @@ module TTT
         @host=host
         @collector=collector
         @tables=tables
-        @prev_snapshot=(collector.stat.find_most_recent_versions({:conditions => ['server = ?', host]}).collect { |v| v.id } ).to_set
+        @prev_snapshot=(collector.stat.find_most_recent_versions({:conditions => ['server = ?', host]}, :latest).collect { |v| v.id } ).to_set
         @cur_snapshot=@prev_snapshot.dup
         @runref=CollectorRun.find_by_collector(collector)
         @runref.last_run=runtime
