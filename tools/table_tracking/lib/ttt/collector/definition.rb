@@ -22,8 +22,7 @@ TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
       rd.logger.info "[new] #{newt.inspect}"
     elsif newt.created_at != oldt.created_at and newt.create_syntax != oldt.create_syntax then
       newt.save
-      rd<<[newt.id, oldt.id]
-      rd.delete oldt.id
+      rd.stat_updated(newt.id, oldt.id)
       rd.logger.info "[changed] #{oldt.inspect}"
     end
   end
@@ -41,8 +40,7 @@ TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
         :updated_at => '0000-00-00 00:00:00'
       )
       tbl.save
-      rd<<[tbl.id, t.id]
-      rd.delete t.id
+      rd.stat_updated(tbl.id, t.id)
       rd.logger.info "[deleted] #{t.inspect}"
     end
   end
