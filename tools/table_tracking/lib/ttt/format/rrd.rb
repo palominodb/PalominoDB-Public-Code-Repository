@@ -31,7 +31,7 @@ module TTT
       def exec_rrd(*args)
         puts "executing: " + args.join(' ')
         @rrd_io.puts(args.join(' '))
-        o=@rrd_io.readpartial(4096).lines.to_a
+        o=@rrd_io.readpartial(4096).split("\n")
         o.map! { |l| l.chomp }
         unless o[-1] =~ /^OK u:\d+.\d+ s:\d+.\d+ r:\d+.\d+$/
           raise RrdError, "RRD Returned: #{o} intead of OK"
