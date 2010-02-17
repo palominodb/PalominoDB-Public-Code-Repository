@@ -1,5 +1,7 @@
 # Methods added to this helper will be available to all templates in the application.
 require 'TimeParseHelper'
+require 'diff/lcs'
+require 'diff/lcs/hunk'
 module ApplicationHelper
   include TimeParseHelper
 
