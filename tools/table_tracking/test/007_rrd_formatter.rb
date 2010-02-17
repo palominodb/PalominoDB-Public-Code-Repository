@@ -29,14 +29,6 @@ describe TTT::RRDFormatter do
     ObjectSpace.each_object() { |o| @volume_collector=o if o.instance_of? TTT::Collector and o.stat == TTT::TableVolume }
   end
   include TestDbHelper
-  TIMES = [
-    Time.parse('2010-01-01 16:01'),
-    Time.parse('2010-01-01 16:02'),
-    Time.parse('2010-01-01 16:03'),
-    Time.parse('2010-01-01 16:04'),
-    Time.parse('2010-01-01 16:05'),
-    Time.parse('2010-01-01 16:06')
-  ]
   before do
     test_connect
     test_connect_is('localhost')
@@ -64,7 +56,7 @@ describe TTT::RRDFormatter do
   end
 
   after do
-    FileUtils.rm_rf(@ttt_config['formatter_options']['rrd']['path'])
+    FileUtils.rm_rf(@ttt_config['formatter_options']['rrd']['path']) unless ENV['NO_REMOVE_RRDS']
     test_cleanup
     @rrd_io.puts('quit')
     @rrd_io.close
@@ -116,17 +108,35 @@ describe TTT::RRDFormatter do
     rd=run_collection(2, true, TIMES[2])
     @rrdf.format([])
     r=rrd_fetch("localhost/test/rrd_test.rrd", 'AVERAGE', TIMES[0], TIMES[2])
-    r.should == ["#{TIMES[0].to_i}: nan nan nan", "#{TIMES[1].to_i}: 0.0000000000e+00 1.0240000000e+03 0.0000000000e+00"]
+    r.should == ["#{TIMES[1].to_i-300.seconds}: 0.0000000000e+00 1.0240000000e+03 0.0000000000e+00"]
   end
 
+  # XXX: Why does rrdtool lock this to 1600 hours, but then
+  # XXX: won't accept entries that are at exactly that? Fishy.
   it 'should report XX average for rrd_test with 5k rows' do
     test_migration(RrdTestTable)
     load_data('007/5k_rows.dat', 'test', 'rrd_test')
     rd=run_collection(0, true, TIMES[0])
     rd=run_collection(1, true, TIMES[1])
     rd=run_collection(2, true, TIMES[2])
+    rd=run_collection(3, true, TIMES[3])
+    rd=run_collection(4, true, TIMES[4])
+    rd=run_collection(5, true, TIMES[5])
+    rd=run_collection(6, true, TIMES[6])
+    rd=run_collection(7, true, TIMES[8])
     @rrdf.format([])
-    r=rrd_fetch("localhost/test/rrd_test.rrd", 'AVERAGE', TIMES[0], TIMES[2])
-    r.should == ["#{TIMES[0].to_i}: nan nan nan", "#{TIMES[2].to_i}: 0.0000000000e+00 1.0240000000e+03 0.0000000000e+00"]
+    r=rrd_fetch("localhost/test/rrd_test.rrd", 'AVERAGE', TIMES[2]-300.seconds, TIMES[2]-300.seconds)
+    r.should == ["#{TIMES[3].to_i-300.seconds}: 1.8000000000e+05 5.3248000000e+04 0.0000000000e+00"]
+  end
+
+  it 'handle nil table results' do
+    test_migration(RrdTestTable)
+    load_data('007/5k_rows.dat', 'test', 'rrd_test')
+    rd=run_collection(0, true, TIMES[0])
+    rd=run_collection(1, true, TIMES[1])
+    test_unmigrate(RrdTestTable)
+    rd=run_collection(2, true, TIMES[2])
+
+    @rrdf.format([])
   end
 end
