@@ -87,7 +87,7 @@ module TTT
       d_length=0
       i_length=0
       r.each do |t|
-        next unless r.database_name == database
+        next unless t.database_name == database
         next if t.unreachable?
         d_length+=t.data_length
         i_length+=t.index_length
