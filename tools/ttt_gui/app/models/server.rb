@@ -8,7 +8,7 @@ class Server
     srv=TTT::Server.find_by_name(name)
     stats={}
     TTT::TrackingTable.tables.each do |s,k|
-      stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', srv.name]})
+      stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', srv.name]}, :latest)
       #stats[s]=k.find(:all, :conditions => ["server = ? and run_time = ?", name, TTT::Collector.get_last_run(s)])
     end
     self.new(name, stats)
@@ -28,7 +28,7 @@ class Server
   def reload
     stats={}
     TTT::TrackingTable.tables.each do |s,k|
-      stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', name]})
+      stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', name]}, :latest)
       #stats[s]=k.find(:all, :conditions => ["server = ? and run_time = ?", name, TTT::Collector.get_last_run(s)])
     end
   end
