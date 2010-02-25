@@ -9,16 +9,11 @@ require 'fileutils'
 require 'tempfile'
 require 'timeout'
 require 'ruby-debug'
+require 'net/http'
+require 'net/https'
+require 'nokogiri'
 
-## Monkey patch the find method to test key restrictions first
-## This fixes the bug with boolean values. The better solution
-## is to explicitly call .to_s on them, but, this works pretty well.
-#module Keybox
-#  module Storage
-#    class Container
-#    end
-#  end
-#end
+Net::HTTP.version_1_2
 
 class AppConfig < Keybox::Storage::Record
   def [](key)
@@ -151,10 +146,6 @@ class AppStorage < Keybox::Storage::Container
       end
     end
   end
-  #def validate_decryption
-  #  debugger
-  #  super
-  #end
 end
 
 class KeyGroup < Keybox::Storage::Record
@@ -277,6 +268,101 @@ def sudo_exec(ssh,password,cmd, user='root')
 
       channel.on_extended_data do |ch, type, data|
         raise "SSH command returned on stderr: #{data}"
+      end
+    end
+  end
+end
+
+def collect_cacti(ccfg, args)
+  def range_to_option(str)
+    "&predefined_timespan=" + (case str
+    when "Last Hour" then 2
+    when "Last 2 Hours" then 3
+    when "Last 4 Hours" then 4
+    when "Last 6 Hours" then 5
+    when "Last 12 Hours" then 6
+    when "Last Day" then 7
+    when "Last 2 Days" then 8
+    when "Last 3 Days" then 9
+    when "Last 4 Days" then 10
+    when "Last Week" then 11
+    when "Last 2 Weeks" then 12
+    when "Last Month" then 13
+    when "Last 2 Months" then 14
+    when "Last 3 Months" then 15
+    when "Last 4 Months" then 16
+    when "Last 6 Months" then 17
+    when "Last Year" then 18
+    when "Last 2 Years" then 19
+    when "Day Shift" then 20
+    when "This Day" then 21
+    when "This Week" then 22
+    when "This Month" then 23
+    when "This Year" then 24
+    when "Previous Day" then 25
+    when "Previous Week" then 26
+    when "Previous Month" then 27
+    when "Previous Year" then 28
+    else 9
+    end).to_s
+  end
+  group=args.shift
+  verbose
+  if group.nil?
+    raise ArgumentError, "Need a group."
+  end
+  g=ccfg.find(group, ['groupname'])[0]
+  if g.nil?
+    raise RuntimeError, "Invalid group."
+  end
+
+  u=URI.parse(g.cacti_host)
+  cactihttp = Net::HTTP.new u.host, u.port
+  while args.length > 0
+    if ['-d', '--debug'].include? args[0]
+      cactihttp.set_debug_output $stderr
+      args.shift
+    elsif ['-v', '--verbose'].include? args[0]
+      verbose=true
+      args.shift
+    end
+  end
+  if u.scheme == "https"
+    cactihttp.use_ssl = true
+  end
+  cactihttp.start do |http|
+    puts "Logging into cacti..." if verbose
+    loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
+    loginPost.set_form_data({
+      'action' => 'login',
+      'login_username' => g.cacti_username,
+      'login_password' => g.cacti_password
+    })
+    res = http.request(loginPost)
+    if res.code == '200'
+      puts "Cookie still valid.."
+    elsif res.code == '302'
+      puts "Got a new cookie."
+      g.cacti_cookie = res['Set-Cookie']
+    else
+      puts res.to_yaml
+      raise RuntimeError, "Login to cacti failed?"
+    end
+
+    puts "Using cookie: #{g.cacti_cookie}" if verbose
+
+    g.all.each do |srv|
+      next unless srv.cacti_page
+      puts "Fetching server page: #{g.cacti_path}/#{srv.cacti_page}#{range_to_option((srv.cacti_graph_range || g.cacti_graph_range))}&graphs=100" if verbose
+      res = http.get(g.cacti_path + '/' + srv.cacti_page + range_to_option((srv.cacti_graph_range || g.cacti_graph_range)) + '&graphs=100&predefined_timeshift=7', { 'Cookie' => g.cacti_cookie } )
+      ng = Nokogiri::HTML(res.body)
+      FileUtils.mkdir_p(g.groupname + '_cacti')
+      ng.xpath('//img[@class="graphimage"]').each do |gi|
+        puts "Fetching #{g.cacti_path}/#{gi['src']}" if verbose
+        gi_res=http.get("#{g.cacti_path}/#{gi['src']}", { 'Cookie' => g.cacti_cookie })
+        f=File.new(g.groupname + '_cacti/' + gi['alt'].gsub(' ','_').gsub('/','') + '.png', 'w')
+        f.write(gi_res.body)
+        f.close
       end
     end
   end
@@ -575,6 +661,8 @@ ccfg=AppStorage.new(pw, 'ccollect.yml')
 action=ARGV.shift
 
 case action
+when 'cacti'
+  collect_cacti ccfg, ARGV
 when 'collect'
   collect_logs ccfg, ARGV
 when 'get'
