@@ -45,9 +45,10 @@ module TTT
       rows.each do |r|
         if last_run!=r.run_time
           stream.puts "--- #{r.run_time}"
+          stream.puts "host        grant"
           last_run=r.run_time
         end
-        stream.puts r.to_s
+        stream.puts "#{r.server}        #{r.to_s}"
       end
     end
 
