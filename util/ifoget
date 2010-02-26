@@ -333,11 +333,16 @@ def collect_cacti(ccfg, args)
   cactihttp.start do |http|
     puts "Logging into cacti..." if verbose
     loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
-    loginPost.set_form_data({
-      'action' => 'login',
-      'login_username' => g.cacti_username,
-      'login_password' => g.cacti_password
-    })
+    unless g.cacti_basic_auth
+      loginPost.set_form_data({
+        'action' => 'login',
+        'login_username' => g.cacti_username,
+        'login_password' => g.cacti_password
+      })
+    else
+      puts "Using basic authentication.." if verbose
+      loginPost.basic_auth g.cacti_username, g.cacti_password
+    end
     res = http.request(loginPost)
     if res.code == '200'
       puts "Cookie still valid.."
@@ -350,16 +355,32 @@ def collect_cacti(ccfg, args)
     end
 
     puts "Using cookie: #{g.cacti_cookie}" if verbose
+    cookieHash = g.cacti_cookie ? { 'Cookie' => g.cacti_cookie } : {}
 
     g.all.each do |srv|
       next unless srv.cacti_page
+
       puts "Fetching server page: #{g.cacti_path}/#{srv.cacti_page}#{range_to_option((srv.cacti_graph_range || g.cacti_graph_range))}&graphs=100" if verbose
-      res = http.get(g.cacti_path + '/' + srv.cacti_page + range_to_option((srv.cacti_graph_range || g.cacti_graph_range)) + '&graphs=100&predefined_timeshift=7', { 'Cookie' => g.cacti_cookie } )
+
+      req = Net::HTTP::Get.new(g.cacti_path + '/' + srv.cacti_page +
+        range_to_option((srv.cacti_graph_range || g.cacti_graph_range)) +
+        '&graphs=100&predefined_timeshift=7', cookieHash)
+
+      if g.cacti_basic_auth
+        req.basic_auth g.cacti_username, g.cacti_password
+      end
+      res = http.request(req)
       ng = Nokogiri::HTML(res.body)
       FileUtils.mkdir_p(g.groupname + '_cacti')
       ng.xpath('//img[@class="graphimage"]').each do |gi|
         puts "Fetching #{g.cacti_path}/#{gi['src']}" if verbose
-        gi_res=http.get("#{g.cacti_path}/#{gi['src']}", { 'Cookie' => g.cacti_cookie })
+        graphReq = Net::HTTP::Get.new("#{g.cacti_path}/#{gi['src']}",
+                                      cookieHash)
+        if g.cacti_basic_auth
+          graphReq.basic_auth g.cacti_username, g.cacti_password
+        end
+
+        gi_res=http.request(graphReq)
         f=File.new(g.groupname + '_cacti/' + gi['alt'].gsub(' ','_').gsub('/','') + '.png', 'w')
         f.write(gi_res.body)
         f.close
@@ -653,8 +674,13 @@ def mod_server(ccfg, args)
   end
 end
 
-hline=HighLine.new
-pw=hline.ask('Password for config: ') { |q| q.echo = false }
+pw=nil
+begin
+  hline=HighLine.new
+  pw=hline.ask('Password for config: ') { |q| q.echo = false }
+rescue RuntimeError
+  pw=$stdin.gets.chomp
+end
 
 ccfg=AppStorage.new(pw, 'ccollect.yml')
 
