@@ -180,6 +180,9 @@ sub ds {
 # Execute a perlsub redirecting stdout/stderr
 # to an anonymous temporary file.
 # This is useful for wrapping an external tool.
+#
+# WARNING: This function is *NOT* thread-safe.
+#          But, it should be fork() safe.
 # 
 sub x {
   my ($self, $subref, @args) = @_;
@@ -199,7 +202,7 @@ sub x {
   # Rewind the filehandle to the beginning to allow the calling application
   # to deal with it.
   seek($proc_fh, 0, SEEK_SET); 
-  return {rcode => $r, error => $EVAL_ERROR, fh => $proc_fh};
+  return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
 }
 
 # Return a nicely formatted stacktrace.
