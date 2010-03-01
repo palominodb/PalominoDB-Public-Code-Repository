@@ -2,7 +2,7 @@
 use strict;
 use warnings;
 
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use Data::Dumper;
 
@@ -35,8 +35,6 @@ GetOptions(
 if($seed) {
   srand($seed);
 }
-
-delete $columns{'id'}; # Hardcoded as existing.
 
 sub generate_varchar {
   my $length_of_randomstring=shift;# the length of 
@@ -86,8 +84,9 @@ if($generate_table and !$for_infile) {
     my $c = $_;
     my $t = $columns{$c};
     $t = "INTEGER PRIMARY KEY AUTO_INCREMENT" if($t eq 'int_pk');
-    $sql_columns .= ", $c $t";
+    $sql_columns .= "$c $t, ";
   } sort keys %columns;
+  $sql_columns =~ s/, $//;
   print SQL "CREATE TABLE IF NOT EXISTS $table ($sql_columns) ENGINE='$table_engine';\n\n";
 }
 
