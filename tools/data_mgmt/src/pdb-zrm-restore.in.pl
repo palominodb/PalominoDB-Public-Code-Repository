@@ -168,15 +168,18 @@ sub main {
   }
 
   if($backups[-1]->backup_level == 1) {
-    $pl->m("Applying binlogs.");
     start_mysqld(\%o, \%cfg);
 
     # XXX Get binlog positions, and pipe into mysql command
-    system("mysqlbinlog5 $datadir/*-bin.[0-9]* | mysql --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
+    $pl->m("Applying binlogs.");
+    unless($o{'dry-run'}) {
+      system("mysqlbinlog5 $datadir/*-bin.[0-9]* | mysql --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
+    }
     stop_mysqld(\%o, \%cfg);
     wait;
   }
 
+  if($o{'dry-run'}) { make_estimate(@backups); }
 
   return 0;
 }
@@ -198,6 +201,9 @@ sub start_mysqld {
     unless($o{'dry-run'}) {
       exec "$o{'mysqld'} --defaults-file=$o{'defaults-file'}"
     }
+    else {
+      exit(0);
+    }
   }
   elsif(not defined $pid) {
     $pl->e('Unable to spawn mysqld:', $!);
@@ -208,6 +214,9 @@ sub start_mysqld {
     # control over to other code.
     unless($o{'dry-run'}) {
       while(read_pidfile($cfg{'mysqld'}{'pid-file'}) !~ /\d+/) { sleep 1; }
+    }
+    else { # This is so the log looks correctly ordered on --dry-run.
+      sleep(1);
     }
   }
 
@@ -230,7 +239,7 @@ sub make_estimate {
   my @backups = @_;
   my $kbytes = 0.0;
   foreach my $bk (@backups) {
-    $kbytes += $bk->backup_level ? 2.10*$bk->backup_size : $bk->backup_size;
+    $kbytes += $bk->backup_level == 1 ? 5.0*$bk->backup_size : $bk->backup_size;
   }
   $pl->i("Space estimate (MB):", $kbytes/1024.0);
   return 0;
@@ -254,17 +263,17 @@ sub extract_backups {
   my ($o, $ddir, @backups) = @_;
   my %o = %$o;
   $pl->m("Extracting backups to $ddir");
-  my ($r, $fh) = [0, undef];
+  my ($r, $fh) = (0, undef);
   foreach my $bk (@backups) {
     $pl->m("Extracting", $bk->backup_dir);
     unless( $o{'dry-run'} ) {
       ($r, $fh) = $bk->extract_to($ddir);
+      if($r != 0) {
+        $pl->e("Extraction errors:");
+        while(<$fh>) { $pl->e($_); }
+      }
+      close($fh);
     }
-    if($r != 0) {
-      $pl->e("Extraction errors:");
-      while(<$fh>) { $pl->e($_); }
-    }
-    close($fh);
   }
   return $r;
 }
