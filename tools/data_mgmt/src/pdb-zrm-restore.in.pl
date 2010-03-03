@@ -15,6 +15,13 @@ use warnings;
 # End ZRMBackup package
 # ###########################################################################
 
+# ###########################################################################
+# IniFile package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End IniFile package
+# ###########################################################################
+
 package pdb_zrm_restore;
 use strict;
 use warnings;
@@ -285,28 +292,9 @@ sub extract_backups {
 # Strips spaces and newlines.
 sub read_config {
   my $file = shift;
-  my %cfg;
-  my $inif;
-  unless(open $inif, "<$file") {
-    $pl->e("Unable to open defaults file: $file");
-    return undef;
-  }
-  my $cur_sec = '';
-  while(<$inif>) {
-    chomp;
-    next if(/^\s*(?:;|#)/);
-    next if(/^$/);
-    if(/^\s*\[(\w+)\]/) {
-      $cfg{$1} = ();
-      $cur_sec = $1;
-    }
-    else {
-      my ($k, $v) = split(/=/, $_, 2);
-      $k =~ s/\s+$//;
-      $v =~ s/^\s+//;
-      chomp($k); chomp($v);
-      $cfg{$cur_sec}{$k} = $v;
-    }
+  my %cfg = IniFile::read_config($file);
+  unless(%cfg) {
+    $pl->e("Unable to open defaults file: $file. Error: $!");
   }
   return %cfg;
 }
