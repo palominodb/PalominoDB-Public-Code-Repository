@@ -111,12 +111,12 @@ foreach my $r (@results) {
   if(in_range($v, $o{'critical'}) == 1) {
     $error_count++;
     $crit_count++;
-    $result = CRITICAL;# if($o{'alert-on'} eq "any");
+    $result = CRITICAL;
   }
   elsif(in_range($v, $o{'warning'}) == 1) {
     $error_count++;
     $warn_count++;
-    $result = WARNING if($result != CRITICAL);# if($o{'alert-on'} eq "any" and $result != CRITICAL);
+    $result = WARNING if($result != CRITICAL);
   }
 }
 
