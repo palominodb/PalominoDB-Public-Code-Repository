@@ -370,6 +370,10 @@ def collect_cacti(ccfg, args)
         req.basic_auth g.cacti_username, g.cacti_password
       end
       res = http.request(req)
+      if res['Set-Cookie']
+        puts "Got cookie from server page. Cookie #{res['Set-Cookie']}"
+        g.cacti_cookie = res['Set-Cookie']
+      end
       ng = Nokogiri::HTML(res.body)
       FileUtils.mkdir_p(g.groupname + '_cacti')
       ng.xpath('//img[@class="graphimage"]').each do |gi|
