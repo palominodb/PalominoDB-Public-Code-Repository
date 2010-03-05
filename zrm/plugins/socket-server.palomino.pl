@@ -68,6 +68,7 @@ my $nsca_client = "/usr/sbin/send_nsca";
 my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
 my $wait_timeout = 8*3600; # 8 Hours
 my $mycnf_path = "/etc/my.cnf";
+my $mysql_socket_path = undef;
 
 my ($mysql_user, $mysql_pass);
 
@@ -112,6 +113,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     }
     elsif($var eq "perl_dbi_path") {
       eval "use lib '$val'";
+    }
+    elsif($var eq "mysql_socket") {
+      $mysql_socket_path = $val;
     }
   }
 }
@@ -217,7 +221,7 @@ sub doRealHotCopy()
   my $prev_wait = undef;
   eval {
     require "DBI";
-    $dbh = DBI->connect("DBI:mysql:host=localhost", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
+    $dbh = DBI->connect("DBI:mysql:host=localhost". $mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : "", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
   };
   if( $@ ) {
     &printLog("Unable to open DBI handle. Error: $@\n");
