@@ -332,26 +332,32 @@ def collect_cacti(ccfg, args)
   end
   cactihttp.start do |http|
     puts "Logging into cacti..." if verbose
-    loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
-    unless g.cacti_basic_auth
-      loginPost.set_form_data({
-        'action' => 'login',
-        'login_username' => g.cacti_username,
-        'login_password' => g.cacti_password
-      })
-    else
-      puts "Using basic authentication.." if verbose
-      loginPost.basic_auth g.cacti_username, g.cacti_password
-    end
-    res = http.request(loginPost)
-    if res.code == '200'
-      puts "Cookie still valid.."
-    elsif res.code == '302'
-      puts "Got a new cookie."
-      g.cacti_cookie = res['Set-Cookie']
-    else
-      puts res.to_yaml
-      raise RuntimeError, "Login to cacti failed?"
+    (1..3).each do
+      loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
+      unless g.cacti_basic_auth
+        loginPost.set_form_data({
+          'action' => 'login',
+          'login_username' => g.cacti_username,
+          'login_password' => g.cacti_password
+        })
+      else
+        puts "Using basic authentication.." if verbose
+        loginPost.basic_auth g.cacti_username, g.cacti_password
+      end
+      res = http.request(loginPost)
+      if res.code == '200'
+        puts "Cookie still valid.."
+        break
+      elsif res.code == '302'
+        puts "Got a new cookie."
+        g.cacti_cookie = res['Set-Cookie']
+        unless g.cacti_cookie.nil?
+          break
+        end
+      else
+        puts res.to_yaml
+        raise RuntimeError, "Login to cacti failed?"
+      end
     end
 
     puts "Using cookie: #{g.cacti_cookie}" if verbose
