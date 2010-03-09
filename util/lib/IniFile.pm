@@ -24,7 +24,12 @@ sub read_config {
     else {
       my ($k, $v) = split(/=/, $_, 2);
       $k =~ s/\s+$//;
-      $v =~ s/^\s+//;
+      if(defined($v)) {
+        $v =~ s/^\s+//;
+      }
+      else {
+        $v = 1;
+      }
       chomp($k); chomp($v);
       $cfg{$cur_sec}{$k} = $v;
     }
