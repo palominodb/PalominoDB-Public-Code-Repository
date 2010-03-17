@@ -46,7 +46,7 @@ my (
 );
 
 GetOptions(
-  "help" => sub { pod2usage(); },
+  "help" => sub { pod2usage(-verbose => 2, -noperldoc => 1); },
   "host|h=s" => \$db_host,
   "user|u=s" => \$db_user,
   "pass|p=s" => \$db_pass,
@@ -57,13 +57,13 @@ GetOptions(
 );
 
 unless($db_host and $db_user and $db_pass and $db_schema and $db_table and $range and $verify) {
-  pod2usage(-message => "All parameters are required.");
+  pod2usage(-message => "All parameters are required.", -verbose => 1);
 }
 
 $range = lc($range);
 
 unless($range =~ /^(?:days|weeks|months)$/) {
-  pod2usage(-message => "Range must be one of: days, weeks, or months.");
+  pod2usage(-message => "Range must be one of: days, weeks, or months.", -verboes => 1);
 }
 
 my $dbh =  DBI->connect("DBI:mysql:$db_schema;host=$db_host", $db_user, $db_pass, { RaiseError => 1, PrintError => 0, AutoCommit => 0});
@@ -110,24 +110,56 @@ sub to_date {
 
 =head1 NAME
 
-table_partitions.pl - Ensure partitions exist for N days/weeks/months.
+table_partitions - Ensure partitions exist for N days/weeks/months.
 
 =head1 SYNOPSIS
 
-table_partitions.pl -h <host> -d <schema> -t <table> -r <range> -n <num>
+table_partitions -h <host> -d <schema> -t <table> -r <range> -n <num>
 
-options:
+=head1 OPTIONS
 
-  --help         This help.
-  --host,-h      DB host.
-  --user,-u      DB user.
-  --pass,-p      DB pass.
-  --database,-d  DB database(schema).
-  --table,-t     DB table.
-  --range,-r     One of: days, weeks, or months.
-  --verify,-n    How many -r to ensure exist.
+=over 8
+
+=item --help
+
+This help.
+
+=item --host,-h
+
+DB host.
+
+=item --user,-u
+
+DB user.
+
+=item --pass,-p
+
+DB password.
+
+=item --database,-d
+
+DB database(schema).
+
+=item --table,-t
+
+DB table.
+
+=item --range,-r
+
+One of: days, weeks, or months.
+
+See L<pdb-parted> for details on the meaning.
+
+=item --verify,-n
+
+How many L<-r>, i.e., days, weeks. or months to ensure exist from the current date.
+
+=back
 
 =head1 VERSION
+
+This is the version of the script as it exists in the PalominoDB git repository.
+It's placed for diagnostic purposes.
 
 SCRIPT_GIT_VERSION
 
