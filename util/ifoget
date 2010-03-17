@@ -390,10 +390,22 @@ def collect_cacti(ccfg, args)
           graphReq.basic_auth g.cacti_username, g.cacti_password
         end
 
-        gi_res=http.request(graphReq)
-        f=File.new(g.groupname + '_cacti/' + gi['alt'].gsub(' ','_').gsub('/','') + '.png', 'w')
-        f.write(gi_res.body)
-        f.close
+        graph_retries = 0
+        begin
+          gi_res=http.request(graphReq)
+          f=File.new(g.groupname + '_cacti/' + gi['alt'].gsub(' ','_').gsub('/','') + '.png', 'w')
+          f.write(gi_res.body)
+          f.close
+        rescue EOFError, NoMethodError => e
+          graph_retries += 1
+          retry if graph_retries < 4
+          if graph_retries >= 4
+            puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+          end
+        rescue Errno::EPIPE => e
+            puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+        end
+
       end
     end
   end
