@@ -1,0 +1,43 @@
+mysqlctl - A better mysql init script.
+--------------------------------------
+
+This script starts and stops mysql in much the same
+way as distro-specific init scripts, while also providing
+provisions for flushing logs a configurable number of times
+before stopping mysql.
+It also stops slave before flushing logs so that binary log
+corruption doesn't happen as easily.
+
+Usage
+------------
+
+If run without options, the script will print
+a small usage message detailing how to use it,
+and what it's error codes are.
+
+If the tool is invoked as 'mysql.start', 'mysql.stop',
+or 'mysql.status', then the corresponding action (start,
+stop, status), respectively, is invoked.
+
+It has configurable timeouts for starting and stopping
+so that it doesn't hang indefinitely.
+The default is 30 seconds, but, that should be bumped
+to 900 seconds or more for large installations.
+
+
+Installation
+---------------
+
+The script is location indifferent, so, it can be simply
+copied anywhere on the filesystem and it will work.
+However, it does *require* that /etc/myctl.cnf be
+present, otherwise it will refuse to run.
+
+You can copy the sample myctl.cnf from this distribution
+to start one.
+The myctl.cnf is a mysql cnf file, so, all of the usual
+rules for that apply.
+For mysqlctl, there must be two sections present,
+client and mysqlctl. These are used for startting, stopping,
+and flushing logs, and configuration parameters for the
+script itself, respectively.

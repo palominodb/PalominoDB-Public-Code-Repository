@@ -1,4 +1,32 @@
 #!/usr/bin/env perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 use strict;
 use warnings;
 # ###########################################################################
@@ -142,6 +170,11 @@ sub main {
     return 1;
   }
 
+  unless( -w $datadir ) {
+    $pl->e("Cannot write to the datadir. Are you the right user?");
+    return 1;
+  }
+
   # Prepare an estimate and wait for enter
   # if we're not doing a dry run and --estimate was given.
   if(!$o{'dry-run'} && $o{'estimate'}) {
@@ -162,25 +195,45 @@ sub main {
     return 1;
   }
 
-  $pl->m("Applying xtrabackup log.");
-  unless($o{'dry-run'}) {
-    my %r = %{$pl->x(sub { system(@_) }, "pushd $datadir ; innobackupex-1.5.1 --apply-log $datadir ; popd")};
-    if($r{rcode} != 0) {
-      $pl->e("Error applying xtrabackup log:");
-      $_ = $r{fh};
-      while (<$_>) { $pl->e($_); }
-      $pl->e("Bailing out.");
-      return 1;
+  if( -f "$datadir/xtrabackup_logfile" ) {
+    $pl->m("Applying xtrabackup log.");
+    unless($o{'dry-run'}) {
+      my %r = %{$pl->x(sub { system(@_) }, "pushd $datadir ; innobackupex-1.5.1 --apply-log $datadir ; popd")};
+      if($r{rcode} != 0) {
+        $pl->e("Error applying xtrabackup log:");
+        $_ = $r{fh};
+        while (<$_>) { $pl->e($_); }
+        $pl->e("Bailing out.");
+        return 1;
+      }
     }
+  }
+  else {
+    $pl->m("Target doesn't look like an xtrabackup, not attempting log apply.");
+  }
+
+  $iblog_size = $cfg{'mysqld'}{'innodb_log_file_size'};
+  # Convert to size in bytes
+  if($iblog_size =~ /(\d+)[Mm]$/) {
+    $iblog_size = $1*1024*1024;
+  }
+  elsif($iblog_size =~ /(\d+)[Gg]$/) {
+    $iblog_size = $1*1024*1024*1024;
+  }
+  if(-s "$datadir/ib_logfile0" < $iblog_size) {
+    $pl->i("ib_logfiles are smaller than what $o{'defaults-file'} says they should be.");
+    $pl->i("Removing the ib_logfiles.");
+    unlink(<$datadir/ib_logfile*>);
   }
 
   if($backups[-1]->backup_level == 1) {
     start_mysqld(\%o, \%cfg);
 
     # XXX Get binlog positions, and pipe into mysql command
+    # XXX This trusts shell sorting.
     $pl->m("Applying binlogs.");
     unless($o{'dry-run'}) {
-      system("mysqlbinlog5 $datadir/*-bin.[0-9]* | mysql --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
+      system("$mysqlbinlog_path $datadir/*-bin.[0-9]* | $mysql_path --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
     }
     stop_mysqld(\%o, \%cfg);
     wait;

@@ -1,6 +1,6 @@
 Name: pdb-data-management
 Summary: PalominoDB tools for data management
-Version: 0.05
+Version: 0.06
 Vendor: PalominoDB
 Release: 1
 License: Private
@@ -13,6 +13,16 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 %description
 A growing collection of tools for managing growing datasets in MySQL.
 Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+%package packer
+Summary: Just the table packing and rotating tool.
+Group: Application/System
+
+%description packer
+A growing collection of tools for managing growing datasets in MySQL.
+Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+Just the table packing and rotating tool.
 
 %package parted
 Summary: Just the partition management tool.
@@ -48,6 +58,7 @@ make
 %{__rm} -rf %{buildroot}
 %{__mkdir} -p %{buildroot}
 %{__install} -D -m 0755 tools/data_mgmt/bin/pdb-parted %{buildroot}/%{_bindir}/pdb-parted
+%{__install} -D -m 0755 tools/data_mgmt/bin/pdb-packer %{buildroot}/%{_bindir}/pdb-packer
 %{__install} -D -m 0755 tools/data_mgmt/bin/pdb-archiver %{buildroot}/%{_bindir}/pdb-archiver
 
 %clean
@@ -58,6 +69,11 @@ make
 %defattr(0755,root,root)
 %{_bindir}/pdb-parted
 %{_bindir}/pdb-archiver
+%{_bindir}/pdb-packer
+
+%files packer
+%defattr(0755,root,root)
+%{_bindir}/pdb-packer
 
 %files parted
 %defattr(0755,root,root)

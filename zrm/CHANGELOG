@@ -1,4 +1,9 @@
 So uh, this is a rather informal changelog.
+0.75:
+ - Start to modularize code, use our ProcessLog framework
+ - new config options: mysql_socket, perl_dbi_path, mysql_install_path,
+                       my.cnf_path
+
 From beta6:
  - Config file for socket-server.palomino.pl to support upgrades.
 

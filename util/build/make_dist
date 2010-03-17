@@ -1,14 +1,53 @@
 #!/usr/bin/env perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Getopt::Long qw(:config no_ignore_case);
 require 'insert_module';
 
 my $input = "";
-my $module_path = shift @ARGV;
+my @module_paths;
+my @modules;
+
+GetOptions(
+  'lib|L=s@' => \@module_paths
+);
+
+# Legacy behavior
+if(!@module_paths) {
+  push @module_paths, shift @ARGV;
+}
+
 my $infile = shift @ARGV;
 my $outfile = shift @ARGV;
-my @modules;
 
 {
   open my $file, "<$infile";
@@ -16,15 +55,23 @@ my @modules;
   $input = <$file>;
   close $file;
 }
-
 my $script_ver = qx@../../util/gitver.sh $infile@;
+chop($script_ver);
 
 $input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
+$input =~ s/\bGIT_SCRIPT_VERSION\b/$script_ver/g;
 
-(@modules) = $input =~ /^# (\w+) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
+(@modules) = $input =~ /^# ([A-Z0-9a-z_]+(?:::[A-Z0-9a-z_]+)*) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
 
 foreach my $m (@modules) {
-  $input = SrcUtils::insert_module($module_path, $m, $input);
+  SEARCH_PATH: foreach my $mpath (@module_paths) {
+    eval {
+      $input = SrcUtils::insert_module($mpath, $m, $input);
+    };
+    unless($@) {
+      last;
+    }
+  }
 }
 
 open my $output, ">$outfile";

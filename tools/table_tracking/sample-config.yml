@@ -31,6 +31,12 @@ report_ignore:
   - mysql\..*
 
 
+## If, for some reason, you don't want PalominoDB to be
+## emailed with crashreports for TTT, then change this
+## to false. The default is true, so commenting it out
+## won't do what you want.
+send_crashreports: true
+
 # display_width will force a pre-defined display width,
 # instead of relying on the automatic detection which can be wrong
 # occassionally. But, only when Curses would get it wrong.
@@ -40,6 +46,17 @@ report_ignore:
 #report_options:
 #  display_width: 135
 #  full: true
+
+# These options require a restart/reload of the
+# webserver to take effect, currently.
+#gui_options:
+#  have_slow_query: true
+#  slow_query_host: localhost
+#  slow_query_schema: prof
+#  slow_query_user: root
+#  slow_query_pass: ""
+#  slow_query_socket: /tmp/mysql.sock
+#  graphviz_enabled: true
 
 formatter_options:
   # This formatter exports to RRD.

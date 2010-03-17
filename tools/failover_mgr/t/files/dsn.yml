@@ -1,0 +1,36 @@
+---
+config:
+  username: msandbox
+  password: msandbox
+servers:
+  primary_s:
+    version: ~
+    active: y
+    writefor: test
+    readfor: test
+  failover_s:
+    version: ~
+    active: y
+    writefor: ~
+    readfor: test
+  slave_s1: 
+    version: ~
+    active: y
+    writefor: ~
+    readfor: test
+  slave_s2: 
+    version: ~
+    active: y
+    writefor: ~
+    readfor: test
+clusters:
+  test:
+    active: y
+    schemas: ~
+    servers:
+    - primary_s
+    - failover_s
+    - slave_s1
+    - slave_s2
+    primary: primary_s
+    failover: failover_s

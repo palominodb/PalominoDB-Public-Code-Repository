@@ -4,5 +4,6 @@ class mysql {
     "centos"  => "/etc/my.cnf",
     "redhat"  => "/etc/my.cnf",
     "debian"  => "/etc/mysql/my.cnf",
+    "ubuntu"  => "/etc/mysql/my.cnf",
   }
 }

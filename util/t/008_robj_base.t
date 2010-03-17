@@ -2,6 +2,7 @@ use strict;
 use warnings FATAL => 'all';
 use Test::More tests => 5;
 use Data::Dumper;
+use TestUtil;
 BEGIN {
   use_ok('RObj::Base');
 }

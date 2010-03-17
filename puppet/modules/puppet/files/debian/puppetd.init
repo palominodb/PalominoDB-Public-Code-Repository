@@ -9,10 +9,11 @@
 ### END INIT INFO                                                                                                                                          
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-DAEMON=/usr/sbin/puppetd
+DAEMON=/usr/bin/puppetd
 DAEMON_OPTS=""
 NAME=puppetd
 DESC="puppet configuration management tool"
+PIDPATH=/var/puppet/run/$NAME.pid
 
 test -x $DAEMON || exit 0
 
@@ -29,12 +30,12 @@ is_true() {
 }
 
 reload_puppet() {
-	start-stop-daemon --stop --quiet --signal HUP --pidfile /var/run/puppet/$NAME.pid
+	start-stop-daemon --stop --quiet --signal HUP --pidfile $PIDPATH
 }
 
 start_puppet() {
     if is_true "$START" ; then
-	start-stop-daemon --start --quiet --pidfile /var/run/puppet/$NAME.pid \
+	start-stop-daemon --start --quiet --pidfile $PIDPATH \
 	    --startas $DAEMON -- $DAEMON_OPTS
     else
 	echo ""
@@ -43,15 +44,14 @@ start_puppet() {
 }
 
 stop_puppet() {
-	start-stop-daemon --stop --quiet --pidfile /var/run/puppet/$NAME.pid
+	start-stop-daemon --stop --quiet --pidfile $PIDPATH
 }
 
-if [ ! -d /var/run/puppet ]; then
-	rm -rf /var/run/puppet
-	mkdir -p /var/run/puppet
+if [ ! -d $(dirname $PIDPATH) ]; then
+	mkdir -p $(dirname $PIDPATH)
 fi
 
-chown puppet:puppet /var/run/puppet
+chown puppet:puppet $(dirname $PIDPATH)
 
 case "$1" in
     start)

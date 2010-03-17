@@ -1,0 +1,25 @@
+[client]
+; User/pw used for starting/stoping slave and flushing logs
+user = root
+password = secret
+
+[mysqlctl]
+; How long mysqlctl will wait before assuming the stop has failed.
+; This doesn't mean the stop HAS failed, just that mysqlctl gave
+; up waiting.
+stop_timeout = 1800
+
+; Same as above, but for starting mysql
+start_timeout = 1800
+
+; How many log flushes to do.
+flushes = 3
+; How long to sleep between log flushes
+flush_sleep = 5
+
+;; These are only for unusual configurations.
+;; They set the path to the required utilities,
+;; should they not be in $PATH
+;; To use, uncomment and set to the correct path.
+; mysqld_safebin = /opt/mysql-custom/bin/mysqld_safe
+; mysqladminbin = /opt/mysql-custom/bin/mysqladmin

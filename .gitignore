@@ -3,3 +3,5 @@
 *.bak
 *.sqlite3
 *.log
+*.swp
+*.swo

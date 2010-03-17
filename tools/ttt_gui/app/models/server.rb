@@ -1,26 +1,21 @@
 require 'ttt'
 require 'ttt/collector'
 require 'ttt/server'
+class ServerNotFound < ActiveRecord::RecordNotFound ; end
 class Server 
   attr_reader :stats
   attr_reader :name
   def self.find(name)
     srv=TTT::Server.find_by_name(name)
+    if srv.nil?
+      raise ServerNotFound, "No such server: #{name}"
+    end
     stats={}
     TTT::TrackingTable.tables.each do |s,k|
       stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', srv.name]}, :latest)
-      #stats[s]=k.find(:all, :conditions => ["server = ? and run_time = ?", name, TTT::Collector.get_last_run(s)])
     end
     self.new(name, stats)
   end
-  #def self.servers
-  #  servers=[]
-  #  TTT::TrackingTable.tables.each do |s,tt|
-  #    servers << tt.find_most_recent_versions( :select => "server", :group => :server ).map { |s| s.server }
-  #    #servers << tt.find(:all, :select => "server", :group => [:server], :conditions => ["run_time = ?", TTT::Collector.get_last_run(s)]).map { |s| s.server }
-  #  end
-  #  servers.flatten.uniq
-  #end
   def self.all
     TTT::Server.all.map { |s| s.name }
   end
@@ -29,7 +24,6 @@ class Server
     stats={}
     TTT::TrackingTable.tables.each do |s,k|
       stats[s]=k.find_most_recent_versions({:conditions => ['server = ?', name]}, :latest)
-      #stats[s]=k.find(:all, :conditions => ["server = ? and run_time = ?", name, TTT::Collector.get_last_run(s)])
     end
   end
 

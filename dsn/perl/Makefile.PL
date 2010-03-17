@@ -2,7 +2,7 @@ use inc::Module::Install;
 
 name "Pdb-DSN";
 author q{Brian Smith <brian@palominodb.com>};
-license 'perl';
+license 'bsd';
 version 0.01;
 all_from "lib/Pdb/DSN.pm";
 

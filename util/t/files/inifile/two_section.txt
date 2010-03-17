@@ -1,0 +1,5 @@
+[section1]
+option_a = valuea
+
+[section2]
+option_b = valueb

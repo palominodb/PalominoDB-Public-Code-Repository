@@ -15,6 +15,7 @@ class puppet {
     "centos"  => "/etc/init.d/puppet",
     "redhat"  => "/etc/init.d/puppet",
     "debian"  => "/etc/init.d/puppet",
+    "ubuntu"  => "/etc/init.d/puppet",
   }
 
   $conf_path = $operatingsystem ? {
@@ -22,5 +23,6 @@ class puppet {
     "centos"  => "/etc/puppet/puppet.conf",
     "redhat"  => "/etc/puppet/puppet.conf",
     "debian"  => "/etc/puppet/puppet.conf",
+    "ubuntu"  => "/etc/puppet/puppet.conf",
   }
 }

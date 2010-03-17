@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 require 'rubygems'
 require 'net/ssh'
+require 'net/sftp'
 require 'yaml'
 require 'keybox'
 require 'set'
@@ -12,6 +13,8 @@ require 'ruby-debug'
 require 'net/http'
 require 'net/https'
 require 'nokogiri'
+require 'ifo_get/plugin'
+require 'SarLogs'
 
 Net::HTTP.version_1_2
 
@@ -331,7 +334,7 @@ def collect_cacti(ccfg, args)
     cactihttp.use_ssl = true
   end
   cactihttp.start do |http|
-    puts "Logging into cacti..." if verbose
+    $stderr.puts "Logging into cacti..." if verbose
     (1..3).each do
       loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
       unless g.cacti_basic_auth
@@ -346,27 +349,27 @@ def collect_cacti(ccfg, args)
       end
       res = http.request(loginPost)
       if res.code == '200'
-        puts "Cookie still valid.."
+        $stderr.puts "Cookie still valid.."
         break
       elsif res.code == '302'
-        puts "Got a new cookie."
+        $stderr.puts "Got a new cookie."
         g.cacti_cookie = res['Set-Cookie']
         unless g.cacti_cookie.nil?
           break
         end
       else
-        puts res.to_yaml
+        $stderr.puts res.to_yaml
         raise RuntimeError, "Login to cacti failed?"
       end
     end
 
-    puts "Using cookie: #{g.cacti_cookie}" if verbose
+    $stderr.puts "Using cookie: #{g.cacti_cookie}" if verbose
     cookieHash = g.cacti_cookie ? { 'Cookie' => g.cacti_cookie } : {}
 
     g.all.each do |srv|
       next unless srv.cacti_page
 
-      puts "Fetching server page: #{g.cacti_path}/#{srv.cacti_page}#{range_to_option((srv.cacti_graph_range || g.cacti_graph_range))}&graphs=100" if verbose
+      $stderr.puts "Fetching server page: #{g.cacti_path}/#{srv.cacti_page}#{range_to_option((srv.cacti_graph_range || g.cacti_graph_range))}&graphs=100" if verbose
 
       req = Net::HTTP::Get.new(g.cacti_path + '/' + srv.cacti_page +
         range_to_option((srv.cacti_graph_range || g.cacti_graph_range)) +
@@ -377,13 +380,13 @@ def collect_cacti(ccfg, args)
       end
       res = http.request(req)
       if res['Set-Cookie']
-        puts "Got cookie from server page. Cookie #{res['Set-Cookie']}"
+        $stderr.puts "Got cookie from server page. Cookie #{res['Set-Cookie']}"
         g.cacti_cookie = res['Set-Cookie']
       end
       ng = Nokogiri::HTML(res.body)
       FileUtils.mkdir_p(g.groupname + '_cacti')
       ng.xpath('//img[@class="graphimage"]').each do |gi|
-        puts "Fetching #{g.cacti_path}/#{gi['src']}" if verbose
+        $stderr.puts "Fetching #{g.cacti_path}/#{gi['src']}" if verbose
         graphReq = Net::HTTP::Get.new("#{g.cacti_path}/#{gi['src']}",
                                       cookieHash)
         if g.cacti_basic_auth
@@ -400,14 +403,46 @@ def collect_cacti(ccfg, args)
           graph_retries += 1
           retry if graph_retries < 4
           if graph_retries >= 4
-            puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+            $stderr.puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
           end
         rescue Errno::EPIPE => e
-            puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+            $stderr.puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
         end
 
       end
     end
+  end
+end
+
+class FileDownloadHandler
+
+  def initialize(prfx,srv,verbose=false)
+    @prfx = prfx
+    @srv = srv
+    @verbose = verbose
+    @downloader = nil
+  end
+
+  def on_get(downloader, file, offset, data)
+  end
+
+  def on_open(downloader, file)
+    unless @downloader
+      @downloader = downloader
+      $stderr.puts "#{@prfx} DEBUG: Started downloader: #{downloader}" if @verbose
+    end
+    $stderr.puts "#{@prfx} DEBUG: Starting download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_close(downloader, file)
+    $stderr.puts "#{@prfx} DEBUG: Finished download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_mkdir(downloader, path)
+  end
+
+  def on_finish(downloader)
+    $stderr.puts "#{@prfx} DEBUG: Finished downloader: #{downloader}" if @verbose
   end
 end
 
@@ -441,6 +476,9 @@ def collect_logs(ccfg, args)
     end
     jumpssh=Net::SSH.start(g.jumpbox, (g.jump_username || g.username), keys)
   end
+
+  plugin=SarLogs.new(ccfg.config)
+
   g.all.each do |srv|
     ssh_args = {}
     hostname = srv.hostname
@@ -491,7 +529,7 @@ def collect_logs(ccfg, args)
       outs={}
       if srv.cmds
         srv.cmds.to_a.each do |c|
-          puts "DEBUG: cmd: #{c}" if verbose
+          $stderr.puts "DEBUG: cmd: #{c}" if verbose
           if use_sudo
             sudo_exec(ssh, password, c) do |ch, data|
               outs[c] ||= ""
@@ -507,15 +545,53 @@ def collect_logs(ccfg, args)
       end # if srv has commands
 
       ssh.loop(0.1)
+
+      if srv.files
+        begin
+          File.stat("#{group}_files/#{srv.hostname}/")
+        rescue Errno::ENOENT
+          FileUtils.mkdir_p "#{group}_files/#{srv.hostname}/"
+        end
+        sftp = ssh.sftp
+        srv.files.to_a.each do |f|
+          sftp.stat(f) do |res|
+            if res[:attrs] and res[:attrs].directory?
+              $stderr.puts "DEBUG: downloading dir: #{f}" if verbose
+              sftp.download(f, "#{group}_files/#{srv.hostname}/", :recursive => true,
+                                :progress => FileDownloadHandler.new('Core',srv, verbose))
+            elsif res[:attrs] and res[:attrs].file?
+              sftp.download(f, "#{group}_files/#{srv.hostname}/" + File.basename(f),
+                                :progress => FileDownloadHandler.new('Core',srv, verbose))
+            else
+              $stderr.puts "ERROR: File does not exist on remote end: #{res.to_s}"
+            end
+          end
+        end
+        begin
+          sftp.loop
+        rescue RuntimeError => e
+          $stderr.puts "Caught error downloading files: '#{e}'"
+          retry
+        end
+      end
+
+      plugin.process(ssh, group, srv.hostname, g, srv)
+
       outs.each_value do |v|
         v.gsub!(/^/m, '   ')
         puts v
         puts ""
       end
     rescue Errno::ETIMEDOUT => e
-      puts "============= ERROR: Timed out while trying to contact #{srv.hostname} ================"
+      $stderr.puts "============= ERROR: Timed out while trying to contact #{srv.hostname} ================"
+    rescue Net::SSH::AuthenticationFailed
+      $stderr.puts "============= ERROR: Login to #{srv.hostname} failed ============="
+    rescue Net::SSH::Disconnect
+      $stderr.puts "============= ERROR: Got disconnect while trying #{srv.hostname} ============= "
+
     end
   end
+  plugin.finalize()
 end
 
 def edit_config(ccfg, args)
@@ -648,7 +724,7 @@ def del_server(ccfg, args)
   hostname = args.shift
   raise ArgumentError, "Group name mandatory." if group.nil?
   raise ArgumentError, "Host name mandatory." if hostname.nil?
-  puts "Deleting server #{group}.#{servername}"
+  puts "Deleting server #{group}.#{hostname}"
   g=ccfg.find(group, 'groupname')[0]
   if g.nil?
     raise ArgumentError, "Invalid group."
@@ -703,6 +779,8 @@ begin
 rescue RuntimeError
   pw=$stdin.gets.chomp
 end
+
+# TODO: Load plugins from ifo_get/plugins/*.rb
 
 ccfg=AppStorage.new(pw, 'ccollect.yml')
 

@@ -1,3 +1,31 @@
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 package Pdb::DSN;
 =pod
 
@@ -77,7 +105,7 @@ our $AUTOLOAD;
 
 =pod
 
-=item new($uri)
+=head3 new($uri)
 
     uri: Location of the DSN file. May be local, or remote over HTTP.
     
@@ -103,7 +131,7 @@ sub new {
 
 =pod
 
-=item open($uri)
+=head3 open($uri)
 
     uri: Location of DSN file. May be local, or remote over HTTP.
 
@@ -143,7 +171,7 @@ sub _open_local {
 
 =pod
 
-=item from_hash($hashref)
+=head3 from_hash($hashref)
 
     hashref: Reference to a hash conforming to the DSN specification.
 
@@ -159,7 +187,7 @@ sub from_hash {
 
 =pod
 
-=item validate()
+=head3 validate()
 
     This method, B<when implemented>, will validate that the DSN conforms to all
     requirements.
@@ -173,7 +201,7 @@ sub validate {
 
 =pod
 
-=item get_write_hosts($cluster)
+=head3 get_write_hosts($cluster)
 
     Retrieve destinations for writes for C<$cluster>.
 
@@ -181,20 +209,30 @@ sub validate {
     The way in which writes are load-balaned is application dependent. In general,
     only one database should take writes at any given time.
 
-    See also: L<get_primary($cluster)>.
+    See also: L<cluster_primary($cluster)>.
 
 =cut
 
 sub get_write_hosts {
   my ($self, $cluster) = @_;
   my @write_hosts = ();
-  foreach my $srv (keys %{$self->{raw}->{'servers'}}) {
+  foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
+    if(exists $self->{raw}->{'servers'}->{$srv}) {
+      my $writefor = $self->{raw}->{'servers'}->{$srv}->{'writefor'};
+      if(ref($writefor) eq 'ARRAY' and grep /$cluster/, @$writefor) {
+        push @write_hosts, $srv;
+      }
+      elsif(!ref($writefor) and $writefor eq $cluster) {
+        push @write_hosts, $srv;
+      }
+    }
   }
+  return @write_hosts;
 }
 
 =pod
 
-=item get_read_hosts($cluster)
+=head3 get_read_hosts($cluster)
 
     Retrieve destinations for reads for C<$cluster>.
 
@@ -203,20 +241,31 @@ sub get_write_hosts {
     it's safe to do reads from any number of slaves, provided that there isn't replication
     lag.
 
-    See also: L<get_failover($cluster)>.
+    See also: L<cluster_failover($cluster)>.
 
 =cut
 
 sub get_read_hosts {
   my ($self, $cluster) = @_;
   my @read_hosts = ();
-  foreach my $srv (keys %{$self->{raw}->{'servers'}}) {
+  foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
+    if(exists $self->{raw}->{'servers'}->{$srv}) {
+      my $readfor = $self->{raw}->{'servers'}->{$srv}->{'readfor'};
+      if(ref($readfor) eq 'ARRAY' and grep /$cluster/, @$readfor) {
+        push @read_hosts, $srv;
+      }
+      elsif(!ref($readfor) and $readfor eq $cluster) {
+        push @read_hosts, $srv;
+      }
+    }
   }
+  return @read_hosts;
 }
+
 
 =pod
 
-=item get_all_hosts()
+=head3 get_all_hosts()
 
     Retrieve all hostnames defined.
 
@@ -229,7 +278,7 @@ sub get_all_hosts {
 
 =pod
 
-=item get_all_clusters()
+=head3 get_all_clusters()
 
     Retrieve all clusters defined.
 
@@ -240,11 +289,27 @@ sub get_all_clusters {
   return keys %{$self->{raw}->{'clusters'}};
 }
 
+=pod
+
+=head3 host_active()
+
+Returns 1 if the given host is active, returns 0 otherwise.
+
+=cut
+
 sub host_active {
   my ($self, $host) = @_;
   return 1 if(exists $self->{raw}->{'servers'}->{$host} and _truth($self->{raw}->{'servers'}->{$host}->{'active'}));
   return 0;
 }
+
+=pod
+
+=head3 cluster_active()
+
+Returns 1 if the given cluster is active, returns 0 otherwise.
+
+=cut
 
 sub cluster_active {
   my ($self, $cluster) = @_;
@@ -260,8 +325,11 @@ sub AUTOLOAD {
   if($name =~/^server_(.+)$/) {
     return $self->{raw}->{'servers'}->{$host}->{$1};
   }
-  if($name =~/^cluster_(.+)$/) {
+  elsif($name =~/^cluster_(.+)$/) {
     return $self->{raw}->{'clusters'}->{$host}->{$1};
+  }
+  elsif($name =~ /^config_(.+)$/) {
+    return $self->{raw}->{'config'}->{$1};
   }
   return undef;
 }

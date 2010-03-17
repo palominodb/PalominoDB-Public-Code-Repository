@@ -1,6 +1,6 @@
 Name: zrm-innobackupex
 Summary: innobackupex copy plugin for ZRM
-Version: 0.73
+Version: 0.75
 Vendor: PalominoDB
 Release: 1
 License: Private

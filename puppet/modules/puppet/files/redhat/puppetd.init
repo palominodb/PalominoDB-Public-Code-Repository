@@ -15,8 +15,8 @@ export PATH
 
 [ -f /etc/sysconfig/puppet ] && . /etc/sysconfig/puppet
 lockfile=${LOCKFILE-/var/lock/subsys/puppet}
-pidfile=${PIDFILE-/var/run/puppet/puppetd.pid}
-puppetd=${PUPPETD-/usr/sbin/puppetd}
+pidfile=${PIDFILE-/var/puppet/run/puppetd.pid}
+puppetd=${PUPPETD-/usr/bin/puppetd}
 RETVAL=0
 
 # Source function library.

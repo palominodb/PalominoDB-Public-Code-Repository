@@ -1,4 +1,4 @@
-use Test::Moretests => 2;
+use Test::More tests => 2;
 use DBI;
 use ProcessLog;
 use TableDumper;

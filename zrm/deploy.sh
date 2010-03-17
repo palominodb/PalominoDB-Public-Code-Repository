@@ -28,6 +28,7 @@ then
   cp README CHANGELOG $tar_dir/
   cp $do_tarball.spec $tar_dir/
   cp -r freebsd $tar_dir
+  cp -r debian $tar_dir
   tar czvf $tar_dir.tgz  $tar_dir/
   rm -rf $tar_dir/
   git stash pop

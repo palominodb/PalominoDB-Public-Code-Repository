@@ -1,0 +1,6 @@
+{
+  'section' => {
+    'option' => 'value',
+    'option2' => 'BETTER VALUE'
+  }
+};

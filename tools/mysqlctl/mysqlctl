@@ -1,0 +1,283 @@
+#!/bin/bash
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# PalominoDB mysqlctl - safe(r) mysql init scripts
+#
+# exit codes:
+#   7 - could not open defaults file
+#   6 - start/stop out of sync (e.g., start when already started)
+#   5 - slave ctl failed
+#   4 - flushes failed
+#   3 - missing configuration
+#   2 - stale pid-file
+#   1 - timeout
+#   0 - ok
+#
+
+# The following blocks are to allow this tool to be symlinked
+# or hard-linked into /etc/init.d and /etc/rcX.d/
+
+# Comments to support chkconfig on RedHat Linux
+# chkconfig: 2345 64 18
+# description: A very fast and reliable SQL database engine.
+
+# Comments to support LSB init script conventions
+### BEGIN INIT INFO
+# Provides: mysql
+# Required-Start: $local_fs $network $remote_fs sshd
+# Should-Start: ypbind nscd ldap ntpd xntpd
+# Required-Stop: $local_fs $network $remote_fs sshd
+# Default-Start:  2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop MySQL
+# Description: MySQL is a very fast and reliable SQL database engine.
+### END INIT INFO
+
+#############################################################################
+# This script is designed to have all tunables changed in the below config
+# file. Whenever possible, sensible defaults are pre-selected or taken from
+# the system my.cnf. That means /etc/my.cnf on redhat, and /etc/mysql/my.cnf
+# on debian derived boxes.
+# If you can avoid it for any reason, don't change the path to the config
+# file, even. Since, upgrades to the rpm or debian package this script
+# came with will overwrite your changes.
+#############################################################################
+MYCTL_CNF=/etc/myctl.cnf
+#############################################################################
+# Unless you ABSOLUTELY need to, do not modify this script.
+#############################################################################
+
+pid_file=
+datadir=
+mysqld_safebin=$(which mysqld_safe)
+mysqladminbin=$(which mysqladmin)
+user=mysql
+socket=
+
+# mysqlctl vars
+start_timeout=1800
+stop_timeout=1800
+flushes=3
+flush_sleep=5
+
+if [[ ! -f $MYCTL_CNF ]] ; then
+  echo Unable to find $MYCTL_CNF
+  exit 7
+fi
+
+for l in `my_print_defaults mysqld`; do
+  case $l in
+    --pid-file=*)
+      pid_file=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
+    --datadir=*)
+      datadir=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
+    --user=*)
+      user=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
+    --socket=*)
+      socket=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
+  esac
+done
+
+if [[ -z $pid_file ]] ; then
+  echo Missing --pid-file in defaults.
+  exit 3
+fi
+
+if [[ -z $socket ]] ; then
+  echo Missing --socket in defaults.
+  exit 3
+fi
+
+if [[ -z $datadir ]] ; then
+  echo Missing --datadir in defaults.
+  exit 3
+fi
+
+# collect defaults from $MYCTL_CNF
+for l in `my_print_defaults --defaults-file=$MYCTL_CNF mysqlctl`; do
+  case $l in
+    --*=*)
+      var=$(echo $l | sed -e 's/^--\(.*\)=.*$/\1/')
+      val=$(echo $l | sed -e 's/^[^=]*=//')
+      eval "$var=$val"
+      ;;
+  esac
+done
+
+start_mysql() {
+  if [[ -f $pid_file ]] ; then
+    pid=$(cat $pid_file)
+    if [[ -d "/proc/$pid" ]] ; then
+      echo MySQL Running.
+      exit 6
+    fi
+    echo Stale pid-file. Did MySQL crash?
+    echo Remove $pid_file if ok
+    exit 2
+  fi
+
+  $mysqld_safebin --pid-file=$pid_file --socket=$socket &>/dev/null &
+  disown
+  i=0
+  while [[ $i -lt $start_timeout ]]; do
+    sleep 1 # Always sleep at least one second.
+    if [[ -f $pid_file ]] ; then
+      echo MySQL Started.
+      exit 0
+    fi
+    i=$(( $i + 1 ))
+  done
+  echo MySQL start timed out.
+  exit 1
+}
+
+stop_mysql() {
+  if [[ -f $pid_file ]] ; then
+    pid=$(cat $pid_file)
+    if [[ ! -d "/proc/$pid" ]] ; then
+      echo Stale pid-file. Did MySQL crash?
+      echo Remove $pid_file if ok
+      exit 2
+    fi
+  elif [[ -f $socket ]] ; then
+    echo Socket present, but pid-file missing.
+    echo Need pid-file.
+    exit 2
+  else
+    echo MySQL not running.
+    exit 6
+  fi
+
+  $mysqladminbin --defaults-file=$MYCTL_CNF stop-slave
+  while [[ $flushes -gt 0 ]] ; do
+    $mysqladminbin --defaults-file=$MYCTL_CNF flush-logs
+    if [[ ! $? ]] ; then
+      $mysqladminbin --defaults-file=$MYCTL_CNF start-slave
+      echo MySQL flush logs failed.
+      exit 4
+    fi
+    sleep $flush_sleep
+    echo Flushed logs $flushes
+    flushes=$(( $flushes - 1 ))
+  done
+
+  kill $(cat $pid_file)
+  i=0
+  while [[ $i -lt $stop_timeout ]]; do
+    sleep 1 # Always sleep at least one second.
+    if [[ ! -f $pid_file ]] ; then
+      echo MySQL Stopped.
+      exit 0
+    fi
+    i=$(( $i + 1 ))
+  done
+  echo MySQL stop timed out.
+  exit 1
+}
+
+ACTION=$1
+
+case $0 in
+  *mysql.start)
+    ACTION=start
+  ;;
+  *mysql.stop)
+    ACTION=stop
+  ;;
+  *mysql.status)
+    ACTION=status
+  ;;
+esac
+
+case $ACTION in
+  start)
+    start_mysql
+  ;;
+  stop)
+    stop_mysql
+  ;;
+  status)
+    if $mysqladminbin --defaults-file=$MYCTL_CNF ping &>/dev/null
+    then
+      echo "MySQL Running."
+      exit 0
+    else
+      echo "MySQL Not Running."
+      exit 1
+    fi
+  ;;
+  *)
+  cat <<EOF
+Usage:
+  mysqlctl <start|stop|status>
+
+If invoked as any of: mysql.start, mysql.stop, mysql.status
+Then the corresponding action above is run.
+
+Exit codes:
+  7 - could not open defaults file
+  6 - start/stop out of sync (e.g., start when already started)
+  5 - slave ctl failed (could not stop slave)
+  4 - flushes failed (could not flush logs)
+  3 - missing configuration ( cnf does not contain required parameter )
+  2 - stale pid-file ( pid file points to dead proc )
+  1 - timeout/not running
+      ( mysql did not start/stop by $timeout seconds, or
+        mysql is not running when 'status' is the action )
+  0 - ok ( control successful )
+
+Configuration:
+
+Editing $MYCTL_CNF configures this script.
+It's a regular my.cnf file, so, configuration for this
+script should be placed under a [mysqlctl] section.
+
+Currently supported tunables are:
+  - start_timeout   How long to wait for mysql to start.
+                    Currently set: $start_timeout
+
+  - stop_timeout    How long to wait for mysql to stop
+                    mysql May still stop After this time,
+                    but this script will not wait indefinitely.
+                    Currently set: $stop_timeout
+
+  - flushes         How many times to execute FLUSH LOGS
+                    Currently set: $flushes
+
+  - flush_sleep     How long to sleep between flushing.
+                    Currently set: $flush_sleep
+
+EOF
+  ;;
+esac
