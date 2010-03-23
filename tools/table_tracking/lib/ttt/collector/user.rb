@@ -126,6 +126,8 @@ TTT::Collector.new(TTT::TableUser, "user privilige tracking") do |rd|
         mysqlcolumns.find(:first, :conditions => ['Host = ? AND Db = ? AND User = ? AND Table_name = ? AND Column_name = ?', u.Host, u.schema, u.User, u.Table_name, u.Column_name])
       when TTT::TableUser::PROC_PERMISSION
         mysqlprocs.find(:first, :conditions => ['Host = ? AND Db = ? AND User = ? AND Routine_name = ? AND Routine_type = ?', u.Host, u.schema, u.User, u.Routine_name, u.Routine_type])
+      when TTT::TableUser::UNREACHABLE_ENTRY
+        next
       else
         raise RuntimeError, "Invalid, Corrupt, or hand modified data found. Found user was not of any known type."
         nil
