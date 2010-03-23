@@ -1,6 +1,6 @@
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 6;
+use Test::More tests => 7;
 
 BEGIN {
   require_ok('src/pdb-master.in.pl');
