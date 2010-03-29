@@ -142,6 +142,11 @@ sub main {
     return 1;
   }
 
+  unless( -w $datadir ) {
+    $pl->e("Cannot write to the datadir. Are you the right user?");
+    return 1;
+  }
+
   # Prepare an estimate and wait for enter
   # if we're not doing a dry run and --estimate was given.
   if(!$o{'dry-run'} && $o{'estimate'}) {
@@ -179,6 +184,20 @@ sub main {
     $pl->m("Target doesn't look like an xtrabackup, not attempting log apply.");
   }
 
+  $iblog_size = $cfg{'mysqld'}{'innodb_log_file_size'};
+  # Convert to size in bytes
+  if($iblog_size =~ /(\d+)[Mm]$/) {
+    $iblog_size = $1*1024*1024;
+  }
+  elsif($iblog_size =~ /(\d+)[Gg]$/) {
+    $iblog_size = $1*1024*1024*1024;
+  }
+  if(-s "$datadir/ib_logfile0" < $iblog_size) {
+    $pl->i("ib_logfiles are smaller than what $o{'defaults-file'} says they should be.");
+    $pl->i("Removing the ib_logfiles.");
+    unlink(<$datadir/ib_logfile*>);
+  }
+
   if($backups[-1]->backup_level == 1) {
     start_mysqld(\%o, \%cfg);
 
@@ -186,7 +205,7 @@ sub main {
     # XXX This trusts shell sorting.
     $pl->m("Applying binlogs.");
     unless($o{'dry-run'}) {
-      system("mysqlbinlog5 $datadir/*-bin.[0-9]* | mysql --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
+      system("$mysqlbinlog_path $datadir/*-bin.[0-9]* | $mysql_path --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
     }
     stop_mysqld(\%o, \%cfg);
     wait;
