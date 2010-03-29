@@ -162,22 +162,28 @@ sub main {
     return 1;
   }
 
-  $pl->m("Applying xtrabackup log.");
-  unless($o{'dry-run'}) {
-    my %r = %{$pl->x(sub { system(@_) }, "pushd $datadir ; innobackupex-1.5.1 --apply-log $datadir ; popd")};
-    if($r{rcode} != 0) {
-      $pl->e("Error applying xtrabackup log:");
-      $_ = $r{fh};
-      while (<$_>) { $pl->e($_); }
-      $pl->e("Bailing out.");
-      return 1;
+  if( -f "$datadir/xtrabackup_logfile" ) {
+    $pl->m("Applying xtrabackup log.");
+    unless($o{'dry-run'}) {
+      my %r = %{$pl->x(sub { system(@_) }, "pushd $datadir ; innobackupex-1.5.1 --apply-log $datadir ; popd")};
+      if($r{rcode} != 0) {
+        $pl->e("Error applying xtrabackup log:");
+        $_ = $r{fh};
+        while (<$_>) { $pl->e($_); }
+        $pl->e("Bailing out.");
+        return 1;
+      }
     }
+  }
+  else {
+    $pl->m("Target doesn't look like an xtrabackup, not attempting log apply.");
   }
 
   if($backups[-1]->backup_level == 1) {
     start_mysqld(\%o, \%cfg);
 
     # XXX Get binlog positions, and pipe into mysql command
+    # XXX This trusts shell sorting.
     $pl->m("Applying binlogs.");
     unless($o{'dry-run'}) {
       system("mysqlbinlog5 $datadir/*-bin.[0-9]* | mysql --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
