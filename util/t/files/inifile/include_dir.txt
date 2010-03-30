@@ -1,0 +1,5 @@
+[section]
+option1 = value1
+flag
+
+!includedir t/files/inifile/conf.d/

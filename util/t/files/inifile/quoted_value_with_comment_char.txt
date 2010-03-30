@@ -1,0 +1,3 @@
+[section]
+option = "value # embedded comment char"
+option2 = 'value # ebd c char'

@@ -1,22 +1,50 @@
 package TablePacker;
-use DBI;
-use ProcessLog;
-use Net::SSH::Perl;
 use Sys::Hostname;
+use English qw(-no_match_vars);
+use Which;
+use Carp;
+use DSN;
+use DBI;
 
 sub new {
   my $class = shift;
-  my ($dbh, $plog, $host, $user, $id) = @_;
+  my ($dsn, $datadir, $dbh) = @_;
+  croak("dsn must be a reference to a DSN") unless(ref($dsn));
   $self = {};
-  $self->{dbh} = $dbh;
-  $self->{plog} = $plog;
-  $self->{host} = $host;
-  $self->{user} = $user;
-  $self->{myisampack} = "/usr/bin/myisampack";
-  $self->{myisamchk} = "/usr/bin/myisamchk";
-  $self->{id} = $id;
-  bless $self, $class;
-  return $self;
+  $self->{datadir} = $datadir;
+  $self->{dsn} = $dsn;
+  if($dbh) {
+    $self->{dbh} = $dbh;
+  }
+  else {
+    $self->{own_dbh} = 1;
+    $self->{dbh} = $dsn->get_dbh();
+  }
+  $self->{schema} = $dsn->get('D');
+  $self->{table}  = $dsn->get('t');
+  return bless $self, $class;
+}
+
+sub DESTROY {
+  my ($self) = @_;
+  if($self->{owndbh}) {
+    $self->{dbh}->disconnect();
+  }
+}
+
+sub _reconnect {
+  my ($self) = @_;
+  eval {
+    die('Default ping') if($self->{dbh}->ping == 0E0);
+  };
+  if($EVAL_ERROR =~ /^Default ping/) {}
+  elsif($EVAL_ERROR) {
+    eval {
+      $self->{dbh}->get_dbh();
+    };
+    return 1;
+  }
+  return 0E0;
 }
 
 sub myisampack_path {
@@ -34,83 +62,90 @@ sub myisamchk_path {
 }
 
 sub mk_myisam {
-  my ($self, $schema, $table) = @_;
-  $self->{plog}->d("Converting `$schema`.`$table` to MyISAM, if not already.");
-  my $eng = $self->_getengine($schema, $table);
-  if(lc($eng) ne "myisam") {
-    $self->{plog}->d("`$schema`.`$table` is not myisam -- converting.");
-    $self->{dbh}->do("/*". $self->{plog}->name ." on ". hostname() . " */ ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or $self->{plog}->e("`$schema`.`$table` failed to convert.", DBI->errstr) and die("Error converting table.");
-    $self->{plog}->d("`$schema`.`$table` converted to myisam.");
-    return 1;
-  }
-  else {
-    $self->{plog}->d("`$schema`.`$table` is already myisam -- not converting.");
+  my ($self) = @_;
+  $self->_reconnect();
+  my ($schema, $table) = ($self->{schema}, $self->{table});
+  my $eng = $self->engine();
+  my $typ = $self->format();
+  if($eng ne "myisam" and $typ ne 'compressed') {
+    $self->{dbh}->do("/*". $0 ." on ". hostname() . " */ ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or croak("Could not make table myisam");
     return 1;
   }
   return 1;
+}
+
+sub check {
+  my ($self, $datadir) = @_;
+  my ($datadir, $schema, $table) =
+  ($self->{datadir}, $self->{schema}, $self->{table});
+  my $myisamchk = ($self->{myisamchk} ||= Which::which('myisamchk'));
+  $out = qx|$myisamchk -rq "${datadir}/${schema}/${table}" 2>&1|;
+  $res = ($? >> 8);
+
+  if($res) {
+    $self->{errstr} = $out;
+    $self->{errval} = $res;
+    croak("Error checking table `$schema`.`$table`");
+  }
+
+  return 0;
+}
+
+sub flush {
+  my ($self) = @_;
+  my ($schema, $table) = ($self->{schema}, $self->{table});
+  $self->_reconnect();
+  $self->{dbh}->do("FLUSH TABLES `$schema`.`$table`");
 }
 
 sub pack {
-  my ($self, $datadir, $schema, $table) = @_;
-  if($self->_getengine($schema, $table) ne "myisam") {
-    $self->{plog}->e("Cannot pack non-myisam table. Found '". $self->_getengine($schema, $table) ."' table.");
-    return undef;
-  }
-  $self->{ssh} = Net::SSH::Perl->new($host, { 'identity_files' => $id, 'debug' => ProcessLog::_PdbDEBUG >= ProcessLog::Level2 });
-  eval {
-    $self->{plog}->d("Logging into $self->{user}\@$self->{host}");
-    $self->{ssh}->login($user);
-  };
+  my ($self) = @_;
+  my ($datadir, $schema, $table) =
+  ($self->{datadir}, $self->{schema}, $self->{table});
+  my $myisampack = ($self->{myisampack} ||= Which::which('myisampack'));
+  my ($out, $res);
 
-  if($@) {
-    $self->{plog}->e("Unable to login. $@");
-    return undef;
+  $out = qx|$myisampack "${datadir}/${schema}/${table}" 2>&1|;
+  $res = ($? >> 8);
+
+  if($res) {
+    $self->{errstr} = $out;
+    $self->{errval} = $res;
+    croak("Error packing table `$schema`.`$table`");
   }
 
-  $self->{plog}->d("starting pack of: `$schema`.`$table`");
-  $self->{plog}->d("  cmd: $self->{myisampack} ${datadir}/${schema}/${table}");
-  eval {
-    local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
-    local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
-    my ($stdout, $stderr, $exit) = $ssh->cmd("$self->{myisampack} ${datadir}/${schema}/${table}");
-    if($exit != 0) {
-      $self->{plog}->e("Non-zero exit status from '$self->{myisampack}'.");
-      $self->{plog}->e("remote stderr: $stderr");
-      die("Packing failed");
-    }
-  };
-  if($@) {
-    chomp($@);
-    $self->{plog}->es("Issues with remote command execution:", $@);
-    die("Failed to pack");
-  }
-  $self->{plog}->d("completed pack of: `$schema`.`$table` exit: $exit");
-
-  $self->{plog}->d("starting check of: `$schema`.`$table`");
-  $self->{plog}->d("  cmd: $self->{myisamchk} -rq ${datadir}/${schema}/${table}");
-  eval {
-    local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
-    local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
-    my ($stdout, $stderr, $exit) = $ssh->cmd("$self->{myisamchk} ${datadir}/${schema}/${table}");
-    if($exit != 0) {
-      $self->{plog}->e("Non-zero exit status from '$self->{myisamchk}'.");
-      $self->{plog}->e("remote stderr: $stderr");
-      die("Check failed");
-    }
-  };
-  if($@) {
-    chomp($@);
-    $self->{plog}->es("Issues with remote command execution:", $@);
-    die("Failed to check");
-  }
-  $self->{plog}->d("completed check of: `$schema`.`$table` exit: $exit");
-  return 1;
+  return 0;
 }
 
-sub _getengine {
-  my ($self, $schema, $table) = @_;
-  $self->{plog}->d("Determining `$schema`.`$table` engine.");
+sub unpack {
+  my ($self) = @_;
+  my ($datadir, $schema, $table) =
+  ($self->{datadir}, $self->{schema}, $self->{table});
+  my $myisamchk = ($self->{myisamchk} ||= Which::which('myisamchk'));
+  $out = qx|$myisamchk --unpack "${datadir}/${schema}/${table}" 2>&1|;
+  $res = ($? >> 8);
+
+  if($res) {
+    $self->{errstr} = $out;
+    $self->{errval} = $res;
+    croak("Error checking table `$schema`.`$table`");
+  }
+
+  return 0;
+}
+
+sub engine {
+  my ($self) = @_;
+  my ($schema, $table) = ($self->{schema}, $self->{table});
   my $eng = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Engine'};
-  lc($eng);
+  return lc($eng);
 }
+
+sub format {
+  my ($self) = @_;
+  my ($schema, $table) = ($self->{schema}, $self->{table});
+  my $typ = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Row_format'};
+  return lc($typ);
+}
+
 1;

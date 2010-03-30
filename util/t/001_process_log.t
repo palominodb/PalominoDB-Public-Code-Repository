@@ -13,7 +13,7 @@ sub time() {
 package main;
 use strict;
 use warnings;
-use Test::More tests => 15;
+use Test::More tests => 13;
 use Fcntl;
 use ProcessLog;
 
@@ -57,17 +57,17 @@ $pl->e('error message 1');
 $pl->i('info message 1');
 $pl->_flush;
 
-ok(get_line(1) eq 'msg 0: BEGIN '. $pl->runid, 'start match');
-ok(get_line(2) eq 'msg 0: END '. $pl->runid, 'end match');
-ok(get_line(3) eq 'msg 0: test message 1', 'message 1');
-ok(get_line(4) eq 'msg 0: test stack message 1', 'message 2');
-ok(get_line(5) eq 'msg 0: No stack data available.', 'message 2s');
+is(get_line(1), 'msg 0.000: BEGIN '. $pl->runid, 'start match');
+is(get_line(2), 'msg 0.000: END '. $pl->runid, 'end match');
+is(get_line(3), 'msg 0.000: test message 1', 'message 1');
+is(get_line(4), 'msg 0.000: test stack message 1', 'message 2');
+is(get_line(5), 'msg 0.000: No stack data available.', 'message 2s');
 
-ok(get_line(6) eq 'msg 0: test stack message 2', 'message 3');
-ok(get_line(7) eq 'msg 0: Stack trace:', 'message 3.1s');
-ok(get_line(8) eq 'msg 0:  main  t/001_process_log.t:53  (eval)', 'message 3.2s');
+is(get_line(6), 'msg 0.000: test stack message 2', 'message 3');
+is(get_line(7), 'msg 0.000: Stack trace:', 'message 3.1s');
+is(get_line(8), 'msg 0.000:  main  t/001_process_log.t:53  (eval)', 'message 3.2s');
 
-ok(get_line(9) eq 'err main:56 0: error message 1', 'error 1');
-ok(get_line(10) eq 'ifo 0: info message 1', 'info 1');
+is(get_line(9), 'err main:56 0.000: error message 1', 'error 1');
+is(get_line(10), 'ifo 0.000: info message 1', 'info 1');
 
 1;

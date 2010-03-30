@@ -6,6 +6,7 @@ use English qw(-no_match_vars);
 use Storable qw(thaw freeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
+use Carp;
 
 use Data::Dumper;
 
@@ -93,7 +94,13 @@ sub read_message {
 # Freezes objects and sends them over the wire.
 sub write_message {
   my ($self, $fh, @objs) = @_;
-  my $buf = encode_base64(freeze(\@objs));
+  my $buf;
+  eval {
+    $buf = encode_base64(freeze(\@objs));
+  };
+  if($EVAL_ERROR) {
+    croak $EVAL_ERROR;
+  }
   $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
   ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";

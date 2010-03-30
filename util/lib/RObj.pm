@@ -1,5 +1,5 @@
 # ###########################################################################
-# RObj::Base package f4c85adff1164b4360db91361e47429f47deabfc
+# RObj::Base package 380e053530490cd18b172919f66e5bbce6494b36
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -9,6 +9,7 @@ use English qw(-no_match_vars);
 use Storable qw(thaw freeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
+use Carp;
 
 use Data::Dumper;
 
@@ -86,7 +87,13 @@ sub read_message {
 
 sub write_message {
   my ($self, $fh, @objs) = @_;
-  my $buf = encode_base64(freeze(\@objs));
+  my $buf;
+  eval {
+    $buf = encode_base64(freeze(\@objs));
+  };
+  if($EVAL_ERROR) {
+    croak $EVAL_ERROR;
+  }
   $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
   ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
@@ -142,6 +149,17 @@ sub new {
   return $s;
 }
 
+sub copy {
+  my ($self) = @_;
+  my $s = RObj::Base->new;
+  bless $s, ref($self);
+  $s->{host} = $self->{host};
+  $s->{user} = $self->{user};
+  $s->{ssh_key} = $self->{ssh_key};
+  $s->{code} = ();
+  return $s;
+}
+
 # This is the subroutine that will
 # Be called as the entry point for your RObj.
 sub add_main {
@@ -158,12 +176,25 @@ sub add_sub {
   push @{$self->{code}}, [$name, $coderef];
 }
 
+# Call this with the string name of a package
+# to bundle. There are a few requirements detailed in pod.
+sub add_package {
+  my ($self, $pkg_name) = @_;
+  no strict 'refs';
+  die('Package '. $pkg_name .' empty - did you load it?') if(!%{"${pkg_name}::"});
+  foreach my $s (sort keys %{"${pkg_name}::"}) {
+    # They aren't REAL packages on the other side, since these bork stuff.
+    next if $s eq 'BEGIN';
+    $self->add_sub($pkg_name . '::' . $s,\&{${"${pkg_name}::"}{$s}} );
+  }
+  return 0;
+}
+
 # Blocks until at least one message completely received
 sub read {
   my ($self) = @_;
   my @recv;
   1 while( !(@recv = $self->read_message($self->{ssh_ofh})) and $self->sys_error() == 0 );
-  #$self->write('ACK');
   return @recv;
 }
 
@@ -200,11 +231,14 @@ sub debug {
 
 sub start {
   my ($self, @rparams) = @_;
+  if(!@rparams) {
+    @rparams = (undef);
+  }
   my $code = $self->_wrap;
   my ($ssh_out, $ssh_err, $ssh_in, $exitv, $out, $err);
   $self->{ssh_pid} = open3($ssh_in, $ssh_out, $ssh_err,
     'ssh', $self->{ssh_key} ? ('-i', $self->{ssh_key}) : (),
-    '-l', $self->{user}, $self->{host},
+    '-l', $self->{user}, $self->{host}, '-o', 'BatchMode=yes',
     $self->{debug} ?
       qq(PERLDB_OPTS="RemotePort=$self->{debug}" perl -d)
       : 'perl');
@@ -220,8 +254,8 @@ sub start {
   $self->{ssh_ofh} = $ssh_out;
   # Wait for remote end to come up.
   my @r = $self->read();
-  if($r[0] ne 'READY') {
-    croak "Remote end did not come up properly. Expected: 'READY'; Got: @r";
+  if(not $r[0] or $r[0] ne 'READY') {
+    croak "Remote end did not come up properly. Expected: 'READY'; Got: ". (!$r[0] ? 'undef': join(' ',@r));
   }
   else {
     unless($self->write(@rparams)) {
@@ -242,11 +276,28 @@ sub start {
 
 sub _wrap {
   my ($self) = @_;
-  my $code = encode_base64(freeze($self->{code}));
+  my $code = ();
+  # Make sub prototypes more obvious with -P
+  my $dp = B::Deparse->new('-P');
+  # Inform deparse that everybody uses strict and fatal warnings.
+  $dp->ambient_pragmas(strict => 'all', warnings => [FATAL => 'all']);
+  foreach my $c(@{$self->{code}}) {
+    my $ctxt = $dp->coderef2text($c->[1]);
+    if($c->[0] !~ /::/) {
+      # Remove package declaration only if there are no colons in the name.
+      $ctxt =~ s/package.*;//m;
+    }
+    # Fixup empty subroutines to be empty blocks.
+    elsif($ctxt eq ';') {
+      $ctxt = '{ }';
+    }
+    push @$code, [$c->[0], $ctxt];
+  }
+  $code = encode_base64(freeze($code));
   my $code_sha = sha1_hex($code);
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 70c7ced464c72997219fdce492f818f955f429d4
+# RObj::E package aaf1db0a126877418ab8206ab9e88e41b78e3cd7
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -256,6 +307,7 @@ use English qw(-no_match_vars);
 use Storable qw(thaw freeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
+use Carp;
 
 use Data::Dumper;
 
@@ -333,7 +385,13 @@ sub read_message {
 
 sub write_message {
   my ($self, $fh, @objs) = @_;
-  my $buf = encode_base64(freeze(\@objs));
+  my $buf;
+  eval {
+    $buf = encode_base64(freeze(\@objs));
+  };
+  if($EVAL_ERROR) {
+    croak $EVAL_ERROR;
+  }
   $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
   ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
@@ -393,21 +451,22 @@ $0 = "Remote perl object from ". ($ENV{'SSH_CLIENT'} || 'localhost');
 
 R_die(TRANSPORT_FAILURE, "Code digest does not match") unless(sha1_hex(CODE) eq CODE_DIGEST);
 
-no warnings 'once';
-local $Storable::Eval = sub {
-  $_[0] =~ s/package.*;$//m;
-  if($ENV{'ROBJ_LOCAL_DEBUG'}) { print $_[0]; }
-  my $r = eval "$_[0]";
-  R_die(COMPILE_FAILURE, "Unable to compile transported subroutine eval: $@") if($@);
-  return $r;
-};
 my $code = thaw(decode_base64(CODE));
-use warnings FATAL => 'all';
 
 no strict 'refs';
 foreach my $cr (@{$code}) {
   my $name = $cr->[0];
-  my $subref = $cr->[1];
+  if($name =~ /::BEGIN/) {
+    eval "$name $cr->[1]";
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+    }
+    next;
+  }
+  my $subref = eval "sub $cr->[1];";
+  if($@) {
+    R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
+  }
   *{$name} = $subref;
 }
 use strict;
@@ -444,6 +503,9 @@ sub R_write {
 
 sub R_die {
   die @_;
+}
+
+sub R_print {
 }
 
 sub R_exit {
@@ -492,6 +554,105 @@ correctly, subs can even be used locally which simplifies testing.
 
 =head1 METHODS
 
+=over 8
 
+=item C<new($host, $user, [$ssh_key])>
+
+Create a new RObj which will connect to C<$user@$host> with C<$ssh_key>.
+
+=item C<copy()>
+
+Returns a new RObj sharing the host, user, and ssh_key of the old RObj
+and none of the code. This is for when you need to perform unrelated
+tasks remotely on the same host.
+
+=item C<add_main($coderef)>
+
+Every RObj MUST have a main method. This is what is first executed on the remote
+end when C<start()> is called. Technically, this is just a sub who's
+remote name is 'R_main', but, that could change so don't rely on that behavior.
+
+=item C<add_sub($name, $coderef)>
+
+In addition to your main method, you must also pass any other methods your
+main method calls. The C<$name> may include a package name to serialize object
+methods.
+
+=item C<add_package($pkg_name)>
+
+In lieu of manually adding all the subroutines from a package, you can just
+use this method which will walk the symbol table for a given package and add
+all methods.
+
+There are a few restrictions on what kind of packages will work with this.
+Namely the package must not do any of the following:
+
+=over 8
+
+=item BEGIN blocks
+
+C<B::Deparse> can't really handle these well to begin with, and,
+since we're evaling this code on the other side, these won't do what you expect.
+Don't use them. In fact, they gum up the works enough that any BEGIN blocks
+you DO have simply won't be sent over the wire.
+
+=item import sub
+
+This one usually amounts to an invalid subroutine after C<B::Deparse> is done
+with it. I suspect it has something to do with the fact that it's empty in
+most cases. At any rate, the current implementation skips subroutines with this
+name, so, don't depend on doing special things in C<import>.
+
+=item Package-level variables
+
+All variables must be inside the blessed reference to that package.
+
+=item Do any operations with the standard filehandles: STDIN/OUT/ERR.
+
+Such text will be recieved and thrown away and any reading will cause
+the RObj to block.
+
+=back
+
+Also, if you are looking for a way to call specific subroutines remotely,
+RObjs do not currently support that. If you need to perform actions like that,
+create a main method which takes a subroutine name as the first argument and
+calls the subroutine you want accordingly.
+
+=item C<read()>
+
+This method is for implementing more complex communications with a RObj.
+It implements blocking reads from the remote end.
+
+=item C<read_err()>
+
+This method reads from STDERR on the remote end.
+
+=item C<write(@objs)>
+
+This method is for implementing more complex communications with a RObj.
+It sends C<@objs> over to the remote end.
+
+=item C<do(@params)>
+
+This method is just a wrapper around C<start()> and C<wait()> for when you're
+only interested in getting results from the remote side without any interaction.
+
+=item C<wait()>
+
+Waits for the remote end to finish and returns the last message received.
+
+=item C<debug($to)>
+
+Enable the perl debugger on the remote side. C<$to> is a C<host:port> destination.
+
+=item C<start(@params)>
+
+Starts SSH, sends the code over, and does a handshake with the remote side
+to ensure that communications are up and running. Will die if the remote
+end does not respond within 5 seconds. On high-latency links that may not
+be enough, however, there is not currently a way to tune that timeout.
+
+=back
 
 =cut
