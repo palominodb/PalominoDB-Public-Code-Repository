@@ -165,8 +165,8 @@ sub new {
 
 sub from_dsn {
   my ($class, $dsn) = @_;
-  die("Need sU and sK DSN items") unless($dsn->{sU} and $dsn->{sK});
-  return $class->new($dsn->{h}, $dsn->{sU}, $dsn->{F}, $dsn->{sK});
+  die("Need sU and sK DSN items") unless($dsn->get('sU') and $dsn->get('sK'));
+  return $class->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('rF'), $dsn->get('sK'));
 }
 
 sub stop {
