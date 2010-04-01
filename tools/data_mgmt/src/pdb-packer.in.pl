@@ -86,7 +86,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.01;
+our $VERSION = 0.02;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -168,6 +168,10 @@ sub main {
       $pl->e('DSN:', $_->str(), 'is missing one of the required keys: t or r');
       return 1;
     }
+    if($_->has('t') and $_->has('r')) {
+      $pl->e('DSN:', $_->str(), 'has both t and r. You must use only one.');
+      return 1;
+    }
   }
 
   foreach my $d (@DSNs) {
@@ -197,7 +201,7 @@ sub main {
           $dbh
         );
         my $ta = TableAge->new($d->get_dbh(1),
-          $d->get('r') . ($rotate_format || DEFAULT_DATE_FORMAT));
+          ($d->get('t') || $d->get('r')) . ($rotate_format || DEFAULT_DATE_FORMAT));
         my $age = $ta->age_by_name($d->get('t'));
         if( $age ) {
           $pl->m('  Table looks already rotated for', $age);
@@ -256,6 +260,7 @@ sub main {
         eval {
           $r = pack_table($cfg->{'mysqld'}->{'datadir'}, $d, $t) unless($pretend);
         };
+        $pl->d('Pack result:', 'Out:', $r->[0], 'Code:', $r->[1]);
         if($r and $r->[0] and $r->[0] =~ /already/) {
           $pl->m('  ..table already compressed.');
         }
@@ -313,30 +318,35 @@ sub rotate_table {
 
 sub pack_table {
   my ($datadir, $dsn) = @_;
-  my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
-  # Make sure the RObj has the needed modules
-  $ro->add_use('TablePacker', 'DBI');
-  $ro->add_package('DSN');
-  $ro->add_package('Which');
-  $ro->add_package('TablePacker');
-  $ro->add_main(sub {
-      # This packs and checks the table specified by $dsn
-      my ($self) = @_;
-      eval {
-        local $SIG{__DIE__};
-        $self->pack();
-        $self->check();
-      };
-      return $self;
-    });
-  my $tp = TablePacker->new($dsn, $datadir);
 
+  my $tp = TablePacker->new($dsn, $datadir);
   # If the table is not a myisam table - we convert it.
   if($tp->engine() ne 'myisam') {
     $tp->mk_myisam($0 . ' on ' . hostname());
   }
-
-  $tp = [$ro->do($tp)]->[1];
+  if($dsn->get('h') ne 'localhost') {
+    my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
+    # Make sure the RObj has the needed modules
+    $ro->add_use('TablePacker', 'DBI');
+    $ro->add_package('DSN');
+    $ro->add_package('Which');
+    $ro->add_package('TablePacker');
+    $ro->add_main(sub {
+        # This packs and checks the table specified by $dsn
+        my ($self) = @_;
+        eval {
+          local $SIG{__DIE__};
+          $self->pack();
+          $self->check();
+        };
+        return $self;
+      });
+    $tp = [$ro->do($tp)]->[1];
+  }
+  else {
+    $tp->pack();
+    $tp->check();
+  }
   # Flush the table so that mysql reloads the .FRM file.
   $tp->flush();
   chomp($tp->{errstr}) if($tp->{errstr});
