@@ -2,6 +2,7 @@ package DSN;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Storable;
 
 # DSN objects should only be created
 # by a DSNParser object.
@@ -10,6 +11,30 @@ sub _create {
   my $self = {};
   $self = _merge($self, $keys);
   return bless $self, $class;
+}
+
+sub STORABLE_freeze {
+  my ($self, $cloning) = @_;
+  return if $cloning;
+  my $f = {};
+  _merge($f, $self);
+  return (
+    Storable::freeze($f)
+  );
+}
+
+sub STORABLE_thaw {
+  my ($self, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $f = Storable::thaw($serialized);
+  return _merge($self, $f);
+}
+
+sub STORABLE_attach {
+  my ($class, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $f = Storable::thaw($serialized);
+  return $class->_create($f);
 }
 
 sub get {
