@@ -1,16 +1,17 @@
 package TablePacker;
-use Sys::Hostname;
-use English qw(-no_match_vars);
+use strict;
+use warnings FATAL => 'all';
 use Which;
 use Carp;
 use DSN;
 use DBI;
+use Storable;
 
 sub new {
   my $class = shift;
   my ($dsn, $datadir, $dbh) = @_;
   croak("dsn must be a reference to a DSN") unless(ref($dsn));
-  $self = {};
+  my $self = {};
   $self->{datadir} = $datadir;
   $self->{dsn} = $dsn;
   if($dbh) {
@@ -25,9 +26,65 @@ sub new {
   return bless $self, $class;
 }
 
+sub STORABLE_freeze {
+  my ($self, $cloning) = @_;
+  return if $cloning;
+  return (
+    Storable::freeze({
+        myisamchk => $self->{myisamchk},
+        myisampack => $self->{myisampack},
+        datadir => $self->{datadir},
+        dsn     => $self->{dsn},
+        schema  => $self->{schema},
+        table   => $self->{table},
+        errstr  => $self->{errstr},
+        errval  => $self->{errval}
+      })
+  );
+}
+
+sub STORABLE_thaw {
+  my ($self, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $frst = Storable::thaw($serialized);
+  $self->{datadir} = $frst->{datadir};
+  $self->{dsn} = $frst->{dsn};
+  $self->{schema} = $frst->{schema};
+  $self->{table} = $frst->{table};
+  $self->{myisamchk} = $frst->{myisamchk};
+  $self->{myisampack} = $frst->{myisampack};
+  $self->{errstr} = $frst->{errstr};
+  $self->{errval} = $frst->{errval};
+  return $self;
+}
+
+sub STORABLE_attach {
+  my ($class, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $frst = Storable::thaw($serialized);
+  my $self;
+  # We allow new() to try and auto-vivify a DBI connection,
+  # but, we only croak if it was not 'access denied'.
+  # This is to support being defrosted somewhere else.
+  eval {
+    $self = $class->new($frst->{dsn}, $frst->{datadir}, undef);
+  };
+  if($@ and $@ =~ /DBI connect.*failed: Access denied/i) {
+    $self = $class->new($frst->{dsn}, $frst->{datadir}, 'FakeDBH');
+  }
+  elsif($@) {
+    croak($@);
+  }
+  $self->{myisamchk} = $frst->{myisamchk};
+  $self->{myisampack} = $frst->{myisampack};
+  $self->{errstr} = $frst->{errstr};
+  $self->{errval} = $frst->{errval};
+  return $self;
+}
+
 sub DESTROY {
   my ($self) = @_;
-  if($self->{owndbh}) {
+  if($self->{own_dbh}) {
     $self->{dbh}->disconnect();
   }
 }
@@ -37,10 +94,11 @@ sub _reconnect {
   eval {
     die('Default ping') if($self->{dbh}->ping == 0E0);
   };
-  if($EVAL_ERROR =~ /^Default ping/) {}
-  elsif($EVAL_ERROR) {
+  if($@ =~ /^Default ping/) {}
+  elsif($@) {
     eval {
-      $self->{dbh}->get_dbh();
+      $self->{own_dbh} = 1;
+      $self->{dbh} = $self->{dsn}->get_dbh();
     };
     return 1;
   }
@@ -62,23 +120,31 @@ sub myisamchk_path {
 }
 
 sub mk_myisam {
-  my ($self) = @_;
+  my ($self, $note) = @_;
+  if($note) {
+    $note = "/* $note */ ";
+  }
+  else {
+    $note = '';
+  }
   $self->_reconnect();
   my ($schema, $table) = ($self->{schema}, $self->{table});
   my $eng = $self->engine();
   my $typ = $self->format();
   if($eng ne "myisam" and $typ ne 'compressed') {
-    $self->{dbh}->do("/*". $0 ." on ". hostname() . " */ ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or croak("Could not make table myisam");
+    $self->{dbh}->do($note ."ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or croak("Could not make table myisam");
     return 1;
   }
   return 1;
 }
 
 sub check {
-  my ($self, $datadir) = @_;
+  my ($self) = @_;
   my ($datadir, $schema, $table) =
   ($self->{datadir}, $self->{schema}, $self->{table});
   my $myisamchk = ($self->{myisamchk} ||= Which::which('myisamchk'));
+  my ($out, $res);
+
   $out = qx|$myisamchk -rq "${datadir}/${schema}/${table}" 2>&1|;
   $res = ($? >> 8);
 
@@ -122,6 +188,8 @@ sub unpack {
   my ($datadir, $schema, $table) =
   ($self->{datadir}, $self->{schema}, $self->{table});
   my $myisamchk = ($self->{myisamchk} ||= Which::which('myisamchk'));
+  my ($out, $res);
+
   $out = qx|$myisamchk --unpack "${datadir}/${schema}/${table}" 2>&1|;
   $res = ($? >> 8);
 
@@ -137,14 +205,26 @@ sub unpack {
 sub engine {
   my ($self) = @_;
   my ($schema, $table) = ($self->{schema}, $self->{table});
-  my $eng = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Engine'};
+  my $eng;
+  $self->_reconnect();
+  eval {
+    $eng = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Engine'};
+  };
+  if($@ =~ /undefined value as a HASH/i) { croak("Table `$schema`.`$table` does not exist") }
+  elsif($@) { croak($@); }
   return lc($eng);
 }
 
 sub format {
   my ($self) = @_;
   my ($schema, $table) = ($self->{schema}, $self->{table});
-  my $typ = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Row_format'};
+  my $typ;
+  $self->_reconnect();
+  eval {
+    $typ = $self->{dbh}->selectrow_hashref("SHOW TABLE STATUS FROM `$schema` LIKE '$table'")->{'Row_format'};
+  };
+  if($@ =~ /undefined value as a HASH/i) { croak("Table `$schema`.`$table` does not exist") }
+  elsif($@) { croak($@); }
   return lc($typ);
 }
 
