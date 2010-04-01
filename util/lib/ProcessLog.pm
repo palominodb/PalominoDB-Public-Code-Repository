@@ -117,7 +117,7 @@ sub quiet {
 sub m {
   my ($self,$m) = shift;
   my $fh = $self->{LOG};
-  my $t = time();
+  my $t = sprintf("%.3f", time());
   $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
 }
 
@@ -133,7 +133,7 @@ sub e {
   my ($self,$m) = shift;
   my ($package, undef, $line) = caller 0;
   my $fh = $self->{LOG};
-  my $t = time();
+  my $t = sprintf("%.3f", time());
   $self->{logsub}->($self, 'err', $package, $line, $t, @_);
 }
 
@@ -148,7 +148,7 @@ sub es {
 sub i {
   my $self = shift;
   my $fh = $self->{LOG};
-  my $t = time();
+  my $t = sprintf("%.3f", time());
   $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
 }
 
@@ -165,7 +165,7 @@ sub d {
   my ($package, undef, $line) = caller 0;
   my $fh = $self->{LOG};
   if(_PdbDEBUG) {
-    my $t = time();
+    my $t = sprintf("%.3f", time());
     $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
   }
 }

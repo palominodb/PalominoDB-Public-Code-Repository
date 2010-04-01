@@ -1,0 +1,2 @@
+[section]
+option = "quoted value"

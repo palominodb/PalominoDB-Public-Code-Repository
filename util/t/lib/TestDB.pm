@@ -1,29 +1,47 @@
 package TestDB;
 BEGIN {
-  die("Please set PDB_SANDBOX_PORT to the port.") unless defined $ENV{PDB_SANDBOX_PORT};
+  die("Please set PDB_SANDBOX_CNF to the my.cnf") unless($ENV{'PDB_SANDBOX_CNF'});
+  die("Please ensure PDB_SANDBOX_CNF is readable/exists") unless( -f $ENV{'PDB_SANDBOX_CNF'} )
 }
 use strict;
 use warnings FATAL => 'all';
 use DBI;
+use DSN;
+use IniFile;
 
-my $port = $ENV{PDB_SANDBOX_PORT};
+my $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
+my $port = $cnf->{'mysqld'}->{'port'};
+my $socket = $cnf->{'mysqld'}->{'socket'};
+our $dsnstr = "h=localhost,u=msandbox,p=msandbox,P=$port,S=$socket";
 
 sub new {
   my ($class, $args) = @_;
   $args ||= {};
   bless $args, $class;
 
-  $args->{dbh}  = DBI->connect("DBI:mysql:host=localhost;port=$port;mysql_socket=/tmp/mysql_sandbox${port}.sock", 'msandbox', 'msandbox', { PrintError => 0, RaiseError => 1 });
+  $args->{dsn} = DSNParser->default()->parse($dsnstr);
+  $args->{dbh}  = $args->{dsn}->get_dbh();
 
   return $args;
 }
 
+sub DESTROY {
+  my ($self) = @_;
+  $self->{dbh}->disconnect();
+}
+
+sub datadir {
+  return $cnf->{'mysqld'}->{'datadir'};
+}
+
 sub user {
-  return 'msandbox';
+  my ($self) = @_;
+  return $self->{dsn}->get('u');
 }
 
 sub password {
-  return 'msandbox';
+  my ($self) = @_;
+  return $self->{dsn}->get('p');
 }
 
 sub use {
@@ -40,6 +58,11 @@ sub use {
 sub create_schema {
   my ($self, $name) = @_;
   $self->{dbh}->do("CREATE DATABASE IF NOT EXISTS `$name`");
+}
+
+sub dsn {
+  my ($self) = @_;
+  $self->{dsn}->str();
 }
 
 sub dbh {

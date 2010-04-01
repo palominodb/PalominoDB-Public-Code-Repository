@@ -1,0 +1,11 @@
+{
+  'section' => {
+    'option1' => 'value2',
+    'flag' => 1,
+    'option2' => 'BETTER VALUE'
+  },
+  'section2' => {
+    'option2' => 'value1'
+  },
+  'section3' => { }
+};

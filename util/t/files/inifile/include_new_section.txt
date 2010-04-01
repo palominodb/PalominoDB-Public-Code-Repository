@@ -1,0 +1,4 @@
+[section]
+option1 = value2
+
+!include t/files/inifile/conf.d/extra1.cnf

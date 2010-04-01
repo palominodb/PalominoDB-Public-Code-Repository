@@ -1,5 +1,5 @@
 # ###########################################################################
-# RObj::Base package f4c85adff1164b4360db91361e47429f47deabfc
+# RObj::Base package 2052bc8fe38f08c660f2fc8d830f2491eda1b226
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -9,6 +9,7 @@ use English qw(-no_match_vars);
 use Storable qw(thaw freeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
+use Carp;
 
 use Data::Dumper;
 
@@ -57,7 +58,7 @@ sub read_message {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
         }
         $b64 = "";
         $sha1 = "";
@@ -86,7 +87,13 @@ sub read_message {
 
 sub write_message {
   my ($self, $fh, @objs) = @_;
-  my $buf = encode_base64(freeze(\@objs));
+  my $buf;
+  eval {
+    $buf = encode_base64(freeze(\@objs));
+  };
+  if($EVAL_ERROR) {
+    croak $EVAL_ERROR;
+  }
   $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
   ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
@@ -111,11 +118,13 @@ use Storable qw(freeze thaw);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use IO::Handle;
+use English qw(-no_match_vars);
 
 RObj::Base->import;
 
 use constant COMPILE_FAILURE => RObj::Base::COMPILE_FAILURE;
 use constant TRANSPORT_FAILURE => RObj::Base::TRANSPORT_FAILURE;
+use constant NATIVE_DEATH => -3;
 use constant OK => RObj::Base::OK;
 
 my $ro = RObj::Base->new;
@@ -150,21 +159,7 @@ $0 = "Remote perl object from ". ($ENV{'SSH_CLIENT'} || 'localhost');
 
 R_die(TRANSPORT_FAILURE, "Code digest does not match") unless(sha1_hex(CODE) eq CODE_DIGEST);
 
-no warnings 'once';
-# This is set to cause the eval to occur in our namespace.
-# This prevents autoloader errors originating in Storable.pm
-local $Storable::Eval = sub {
-  # Cheap hack to remove package inserted by B::Deparse
-  # This obviously will break any attempt to Actually
-  # Insert package specific subs.
-  $_[0] =~ s/package.*;$//m;
-  if($ENV{'ROBJ_LOCAL_DEBUG'}) { print $_[0]; }
-  my $r = eval "$_[0]";
-  R_die(COMPILE_FAILURE, "Unable to compile transported subroutine eval: $@") if($@);
-  return $r;
-};
 my $code = thaw(decode_base64(CODE));
-use warnings FATAL => 'all';
 
 # use strict normally prevents doing
 # tricky (and usually unintended) typeglob and symbol table
@@ -175,7 +170,24 @@ use warnings FATAL => 'all';
 no strict 'refs';
 foreach my $cr (@{$code}) {
   my $name = $cr->[0];
-  my $subref = $cr->[1];
+  if($name =~ /^_use_/ ) {
+    &{eval "sub $cr->[1]"}();
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+    }
+    next;
+  }
+  if($name =~ /::BEGIN/) {
+    eval "$name $cr->[1]";
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+    }
+    next;
+  }
+  my $subref = eval "sub $cr->[1];";
+  if($@) {
+    R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
+  }
   *{$name} = $subref;
 }
 use strict;
@@ -185,6 +197,7 @@ $| = 1;
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
+$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args
