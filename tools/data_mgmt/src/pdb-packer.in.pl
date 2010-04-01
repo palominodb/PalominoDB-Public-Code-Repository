@@ -344,8 +344,10 @@ sub pack_table {
     $tp = [$ro->do($tp)]->[1];
   }
   else {
-    $tp->pack();
-    $tp->check();
+    eval {
+      $tp->pack();
+      $tp->check();
+    };
   }
   # Flush the table so that mysql reloads the .FRM file.
   $tp->flush();
