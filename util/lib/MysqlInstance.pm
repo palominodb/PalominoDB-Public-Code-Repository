@@ -322,3 +322,5 @@ Obviously, this package won't be much use unless it can also find an init script
 
 This module uses a L<MysqlInstance::Methods> object to determine how to start and start mysqld. 
 
+=cut
+
