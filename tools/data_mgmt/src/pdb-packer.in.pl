@@ -70,7 +70,7 @@ use strict;
 use warnings FATAL => 'all';
 
 use DBI;
-use Getopt::Long qw(GetOptionsFromArray :config no_ignore_case);
+use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use DateTime;
 use Data::Dumper;
@@ -103,7 +103,10 @@ our $rotate_format = '';
 our $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
 
 sub main {
-  my @ARGV = @_;
+  # Overwrite ARGV with parameters passed here
+  # This means, you must save ARGV before calling this
+  # if you want to have ARGV later.
+  @ARGV = @_;
   my @DSNs = ();
   my $dsnp = DSNParser->default();
   my $pl;
@@ -112,7 +115,7 @@ sub main {
   $dsnp->mand_key('sU', 1);
   $dsnp->add_key('r', { 'mandatory' => 0, 'desc' => 'Table name prefix' });
   $dsnp->add_key('rF', { 'mandatory' => 0, 'desc' => 'Remote my.cnf' });
-  GetOptionsFromArray(\@ARGV,
+  GetOptions(
     "help" => sub {
       pod2usage( -verbose => 1 );
     },
