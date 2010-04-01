@@ -62,7 +62,7 @@ sub read_message {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
         }
         $b64 = "";
         $sha1 = "";

@@ -1,5 +1,5 @@
 # ###########################################################################
-# RObj::Base package 380e053530490cd18b172919f66e5bbce6494b36
+# RObj::Base package 2052bc8fe38f08c660f2fc8d830f2491eda1b226
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -58,7 +58,7 @@ sub read_message {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
         }
         $b64 = "";
         $sha1 = "";
@@ -118,11 +118,13 @@ use Storable qw(freeze thaw);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use IO::Handle;
+use English qw(-no_match_vars);
 
 RObj::Base->import;
 
 use constant COMPILE_FAILURE => RObj::Base::COMPILE_FAILURE;
 use constant TRANSPORT_FAILURE => RObj::Base::TRANSPORT_FAILURE;
+use constant NATIVE_DEATH => -3;
 use constant OK => RObj::Base::OK;
 
 my $ro = RObj::Base->new;
@@ -168,6 +170,13 @@ my $code = thaw(decode_base64(CODE));
 no strict 'refs';
 foreach my $cr (@{$code}) {
   my $name = $cr->[0];
+  if($name =~ /^_use_/ ) {
+    &{eval "sub $cr->[1]"}();
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+    }
+    next;
+  }
   if($name =~ /::BEGIN/) {
     eval "$name $cr->[1]";
     if($@) {
@@ -188,6 +197,7 @@ $| = 1;
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
+$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args
