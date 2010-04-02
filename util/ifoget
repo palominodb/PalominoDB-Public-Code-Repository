@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 require 'rubygems'
 require 'net/ssh'
+require 'net/sftp'
 require 'yaml'
 require 'keybox'
 require 'set'
@@ -411,6 +412,37 @@ def collect_cacti(ccfg, args)
   end
 end
 
+class FileDownloadHandler
+
+  def initialize(srv,verbose=false)
+    @srv = srv
+    @verbose = verbose
+    @downloader = nil
+  end
+
+  def on_get(downloader, file, offset, data)
+  end
+
+  def on_open(downloader, file)
+    unless @downloader
+      @downloader = downloader
+      puts "DEBUG: Started downloader: #{downloader}" if @verbose
+    end
+    puts "DEBUG: Starting download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_close(downloader, file)
+    puts "DEBUG: Finished download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_mkdir(downloader, path)
+  end
+
+  def on_finish(downloader)
+    puts "DEBUG: Finished downloader: #{downloader}" if @verbose
+  end
+end
+
 def collect_logs(ccfg, args)
   group=args.shift
   if group.nil?
@@ -507,6 +539,30 @@ def collect_logs(ccfg, args)
       end # if srv has commands
 
       ssh.loop(0.1)
+
+      if srv.files
+        begin
+          File.stat("#{group}_files/#{srv.hostname}/")
+        rescue Errno::ENOENT
+          FileUtils.mkdir_p "#{group}_files/#{srv.hostname}/"
+        end
+        sftp = ssh.sftp
+        srv.files.to_a.each do |f|
+          sftp.stat(f) do |res|
+            if res[:attrs].directory?
+              puts "DEBUG: downloading dir: #{f}" if verbose
+              sftp.download(f, "#{group}_files/#{srv.hostname}/", :recursive => true,
+                                :progress => FileDownloadHandler.new(srv, verbose))
+            else
+              sftp.download(f, "#{group}_files/#{srv.hostname}/" + File.basename(f),
+                                :progress => FileDownloadHandler.new(srv, verbose))
+            end
+          end
+        end
+        sftp.loop
+      end
+
+
       outs.each_value do |v|
         v.gsub!(/^/m, '   ')
         puts v

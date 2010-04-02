@@ -1,2 +1,4 @@
+HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 test:
-	perl -MTAP::Harness -MFile::Glob -e 'TAP::Harness->new({lib => [qw(lib t/lib)]})->runtests(glob("t/*.t"));'
+	prove -Ilib -It/lib -j4 t/*
+	cover

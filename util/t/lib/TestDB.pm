@@ -9,9 +9,9 @@ use DBI;
 use DSN;
 use IniFile;
 
-my $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
-my $port = $cnf->{'mysqld'}->{'port'};
-my $socket = $cnf->{'mysqld'}->{'socket'};
+our $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
+our $port = $cnf->{'mysqld'}->{'port'};
+our $socket = $cnf->{'mysqld'}->{'socket'};
 our $dsnstr = "h=localhost,u=msandbox,p=msandbox,P=$port,S=$socket";
 
 sub new {
