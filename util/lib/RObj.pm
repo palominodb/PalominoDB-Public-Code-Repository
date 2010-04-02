@@ -146,6 +146,7 @@ sub new {
   $s->{user} = $user;
   $s->{ssh_key} = $ssh_key;
   $s->{code} = ();
+  $s->{recvq} = ();
   return $s;
 }
 
@@ -157,6 +158,7 @@ sub copy {
   $s->{user} = $self->{user};
   $s->{ssh_key} = $self->{ssh_key};
   $s->{code} = ();
+  $s->{recvq} = ();
   return $s;
 }
 
@@ -196,11 +198,16 @@ sub add_package {
 }
 
 # Blocks until at least one message completely received
+# Only returns one message at a time.
 sub read {
   my ($self) = @_;
   my @recv;
+  if($self->{recvq} and scalar @{$self->{recvq}}) {
+    return shift @{$self->{recvq}};
+  }
   1 while( !(@recv = $self->read_message($self->{ssh_ofh})) and $self->sys_error() == 0 );
-  return @recv;
+  push @{$self->{recvq}}, @recv;
+  return shift @{$self->{recvq}};
 }
 
 sub read_err {
@@ -226,7 +233,12 @@ sub do {
 sub wait {
   my ($self) = @_;
   waitpid($self->{ssh_pid}, 0);
-  $self->read();
+  my @r;
+  push @r, $self->read();
+  while (scalar @{$self->{recvq}}) {
+    push @r, $self->read();
+  }
+  return @r;
 }
 
 sub debug {
