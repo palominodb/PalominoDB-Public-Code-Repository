@@ -7,7 +7,7 @@ BEGIN {
 }
 
 SKIP: {
-  skip 'Only relevant on debian', 2 unless( -f "/etc/debian_version" );
+  skip 'Only relevant on debian', 3 unless( -f "/etc/debian_version" );
   is(Which::which('dpkg'), '/usr/bin/dpkg', "finds dpkg");
   is(Which::which('not-real'), undef, "does not find not-real");
   is(Which::which('/bin/bash'), '/bin/bash', "finds /bin/bash from absolute path");

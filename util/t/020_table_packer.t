@@ -66,6 +66,7 @@ eval {
 ok(!$EVAL_ERROR, 'table packs');
 if($EVAL_ERROR) {
   diag('myisam out:', $tp_ibd1->{errstr});
+  diag('EVAL ERROR:', $EVAL_ERROR);
 }
 
 eval {
