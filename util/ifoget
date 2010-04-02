@@ -570,6 +570,8 @@ def collect_logs(ccfg, args)
       end
     rescue Errno::ETIMEDOUT => e
       puts "============= ERROR: Timed out while trying to contact #{srv.hostname} ================"
+    rescue Net::SSH::AuthenticationFailed
+      puts "============= ERROR: Login to #{srv.hostname} failed ============="
     end
   end
 end
