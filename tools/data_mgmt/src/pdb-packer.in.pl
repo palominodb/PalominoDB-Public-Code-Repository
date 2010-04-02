@@ -86,7 +86,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.02;
+our $VERSION = 0.03;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -188,7 +188,7 @@ sub main {
       # overwrite the key - saves space.
       $d->{'t'}->{'value'} = $t;
       my $r;
-      if($age and table_age($d) > $age ) {
+      if($age and table_age($d) and table_age($d) > $age ) {
         $pl->m('Skipping:', $t, 'because it is newer than', $age);
         next;
       }
@@ -201,7 +201,7 @@ sub main {
           $dbh
         );
         my $ta = TableAge->new($d->get_dbh(1),
-          ($d->get('t') || $d->get('r')) . ($rotate_format || DEFAULT_DATE_FORMAT));
+          ($d->get('r') || $d->get('t')) . ($rotate_format || DEFAULT_DATE_FORMAT));
         my $age = $ta->age_by_name($d->get('t'));
         if( $age ) {
           $pl->m('  Table looks already rotated for', $age);
@@ -221,10 +221,12 @@ sub main {
               $pl->m('  ..Table already rotated for', $cur_date);
               $d->{'t'}->{'value'} = $tr->date_rotate_name(
                 $d->get('t'), $cur_date);
+              $t = $d->get('t');
               die('Already rotated');
             }
             else {
               $d = rotate_table($tr, $d) unless($pretend);
+              $t = $d->get('t');
             }
           };
           if($@ and $@ =~ /^Unable to create new table (.*?) at/) {
@@ -245,12 +247,13 @@ sub main {
             $pl->e('Exception:', $@);
             return 1;
           }
-          elsif($@ and $@ =~ /^Already rotated/) { }
+          elsif($@ and $@ =~ /^Already rotated/) { $pl->d('Redoing age evaluation.'); redo; }
           elsif($@) {
             $pl->e('Unknown exception:', $@);
           }
           else {
             $pl->m('  ..Rotated successfully.') unless($pretend);
+            redo;
           }
         } # Else, table not rotated
       }
