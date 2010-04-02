@@ -3,8 +3,25 @@ use strict;
 use warnings FATAL => 'all';
 use File::Basename;
 use Exporter;
-use Test::More;
 use File::Glob;
+
+BEGIN {
+  require Test::More;
+  if($Test::More::VERSION < 0.94) {
+    print STDERR "# Installing new_ok for older Test::More\n";
+    Test::More->import();
+    sub new_ok {
+      my ($class, $args) = @_;
+      my $o = $class->new(@$args);
+      isa_ok($o, $class);
+      return $o;
+    }
+  }
+  else {
+    Test::More->import();
+  }
+
+}
 
 use vars qw($VERSION @ISA @EXPORT);
 $VERSION = 0.01;
@@ -38,11 +55,5 @@ sub slurp ($) {
   $content;
 }
 
-sub new_ok {
-  my ($class, $args) = @_;
-  my $o = $class->new(@$args);
-  isa_ok($o, $class);
-  return $o;
-}
 
 1;
