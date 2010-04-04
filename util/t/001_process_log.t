@@ -13,8 +13,14 @@ sub time() {
 package main;
 use strict;
 use warnings;
-use Test::More tests => 13;
+use Test::More tests => 14;
 use Fcntl;
+
+BEGIN {
+  # Ensure debugging is enabled.
+  $ENV{'Pdb_DEBUG'} = 1;
+}
+
 use ProcessLog;
 
 no warnings 'redefine';
@@ -65,9 +71,23 @@ is(get_line(5), 'msg 0.000: No stack data available.', 'message 2s');
 
 is(get_line(6), 'msg 0.000: test stack message 2', 'message 3');
 is(get_line(7), 'msg 0.000: Stack trace:', 'message 3.1s');
-is(get_line(8), 'msg 0.000:  main  t/001_process_log.t:53  (eval)', 'message 3.2s');
+is(get_line(8), 'msg 0.000:  main  t/001_process_log.t:59  (eval)', 'message 3.2s');
 
-is(get_line(9), 'err main:56 0.000: error message 1', 'error 1');
+is(get_line(9), 'err main:62 0.000: error message 1', 'error 1');
 is(get_line(10), 'ifo 0.000: info message 1', 'info 1');
 
+my $pls = ProcessLog->new('001_process_log.t', 'syslog:LOCAL0', undef);
+$pls->quiet(1);
+eval {
+  $pls->d('debug message');
+  $pls->e('error message');
+  $pls->i('notice message');
+  $pls->m('info message');
+};
+if($@) { fail('syslog messages'); diag($@); }
+else { pass('syslog messages'); }
+
+
+# Cleanup after ourselves
+unlink('001_process_log.t.log');
 1;

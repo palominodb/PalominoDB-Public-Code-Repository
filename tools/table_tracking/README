@@ -1,9 +1,11 @@
 == Contents
 
   1. Overview
-  2. Installing
-  3. Configuring
-  4. Examples
+  2. Where to get it
+  3. Requirements
+  4. Installing
+  5. Configuring
+  6. Examples
 
 == Overview
 
@@ -24,11 +26,23 @@ support for generating reports suitable for:
 
 The API docs contain examples, and reference to get you started.
 
+== Obtaining gems
+
+The lastest table tracking toolkit gem can always be found on bastion
+under /home/sourcecode/PdbTools/.
+
+== Requirements
+
+Minimally, you need the table tracking gem, the pdb-dsn, gem,
+activerecord, actionmailer, actionpack, text-reform, sqlite3-ruby, and diff-lcs
+
+All of those can be installed with the `gem` command.
+
 == Installing
 
 If you're reading this, I suspect you already have, but if not:
 
-    $ sudo gem install table-tracking-toolkit-<version>.gem
+    $ sudo gem install pdb-dsn-<version>.gem table-tracking-toolkit-<version>.gem
 
 Is all that is required for installing.
 

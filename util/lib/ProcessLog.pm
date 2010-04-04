@@ -40,10 +40,10 @@ sub new {
     openlog($script_name, "", $1);
     $self->{logsub} = sub {
       my $self = shift;
-      my $lvl = 'debug';
-      $lvl = 'info' if($_[0] eq "msg");
-      $lvl = 'info' if($_[0] eq "ifo");
-      $lvl = 'error'  if($_[0] eq "err");
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
       foreach my $l (split "\n", _p(@_)) {
         syslog($lvl, $l);
       }

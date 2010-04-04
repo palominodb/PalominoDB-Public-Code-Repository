@@ -1,8 +1,14 @@
 TOOL_PATH = ../../util/build
 LIB_PATH = ../../util/lib
+TLIB_PATH = ../../util/t/lib
 TOOLS_RELEASE = 0.06
+HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 
 all: dirs pdb-archiver pdb-parted pdb-packer
+
+test:
+	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
+	cover
 
 dirs:
 	-mkdir bin
