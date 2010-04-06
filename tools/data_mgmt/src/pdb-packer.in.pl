@@ -86,7 +86,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.03;
+our $VERSION = 0.031;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -166,6 +166,10 @@ sub main {
     }
     unless($_->has('t') or $_->has('r')) {
       $pl->e('DSN:', $_->str(), 'is missing one of the required keys: t or r');
+      return 1;
+    }
+    unless($_->get('r') =~ /\(.*?\)/) {
+      $pl->e('DSN:', $_->str(), 'r key does not have a capture group.');
       return 1;
     }
     if($_->has('t') and $_->has('r')) {
@@ -288,24 +292,31 @@ sub main {
 
 sub get_tables {
   my ($dsn) = @_;
-  my ($schema, $pfx) = ($dsn->get('D'), $dsn->get('r') || $dsn->get('t'));
-  my $w = ($dsn->get('t') ? '' : '%');
-  my @tbls = map {
-    $_->[0];
-  } @{$dsn->get_dbh(1)->selectall_arrayref(
-    qq|SHOW TABLE STATUS FROM `$schema` LIKE '${pfx}${w}'|,
-  )};
+  my $schema = $dsn->get('D');
+  my $sql;
+  my $regex;
+  if($dsn->get('t')) {
+    $sql = qq|SHOW TABLES FROM `$schema` LIKE '|. $dsn->get('t') ."'";
+    $regex = $dsn->get('t');
+  }
+  elsif($dsn->get('r')) {
+    $sql = qq|SHOW TABLES FROM `$schema`|;
+    $regex = $dsn->get('r');
+  }
+  my @tbls = grep /^$regex$/,
+  map { $_->[0] } @{$dsn->get_dbh(1)->selectall_arrayref($sql)};
   return \@tbls;
 }
 
 sub table_age {
   my ($dsn) = @_;
-  my $ta = TableAge->new($dsn->get_dbh(1), $dsn->get('r') . $age_format);
+  my $ta = TableAge->new($dsn->get_dbh(1), $age_format);
   if($age_format eq 'createtime') {
     return $ta->age_by_status($dsn->get('D'), $dsn->get('t'));
   }
   else {
-    return $ta->age_by_name($dsn->get('t'));
+    my $reg = $dsn->get('r');
+    return $ta->age_by_name(($dsn->get('t') =~ /^$reg$/));
   }
 }
 

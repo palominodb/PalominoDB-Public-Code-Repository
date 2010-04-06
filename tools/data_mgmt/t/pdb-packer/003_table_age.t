@@ -1,6 +1,6 @@
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 3;
+use Test::More tests => 4;
 use TestDB;
 use DateTime;
 
@@ -21,7 +21,7 @@ BEGIN {
 my $tdb = TestDB->new();
 my $dsnp = DSNParser->default();
 $dsnp->add_key('r', { 'desc' => 'Table prefix', 'mandatory' => 0 });
-my $dsn = $dsnp->parse($tdb->dsn() . ",D=pdb_packer_age,r=tzbr,t=tzbr_20100417");
+my $dsn = $dsnp->parse($tdb->dsn() . ',D=pdb_packer_age,r=tzbr(_\d+),t=tzbr_20100417');
 
 my $af = $pdb_packer::age_format;
 $pdb_packer::age_format = 'createtime';
