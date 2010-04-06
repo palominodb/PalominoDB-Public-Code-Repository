@@ -3,6 +3,7 @@ use warnings FATAL => 'all';
 use Test::More tests => 8;
 use TestDB;
 use DSN;
+use Carp;
 
 BEGIN {
   require_ok('src/pdb-packer.in.pl');
@@ -21,7 +22,7 @@ BEGIN {
 }
 
 my $ssh_user = $ENV{'LOGNAME'};
-my $ssh_key  = $ENV{'TEST_SSH_KEY'};
+my $ssh_key  = $ENV{'TEST_SSH_KEY'} || $ENV{'HOME'} . '/.ssh/id_rsa';
 
 my $tdb = TestDB->new();
 my $dsn1 = DSNParser->default()->parse($tdb->dsn() .
