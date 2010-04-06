@@ -389,6 +389,25 @@ A Maatkit style DSN.
 
 Keys: h,u,p,F,sU,sK,rF,r,t,D
 
+  h - host
+  u - mysql user
+  p - mysql password
+  F - mysql defaults file
+  sU - ssh user
+  sK - ssh key
+  rF - remote mysql defaults file
+  r - table regex
+  t - table name
+  D - schema
+
+The C<'r'> key is a perl regex to match table names against.
+It MUST have exactly one capture group which selects exactly
+the L<--age-format> portion of the table name for when L<--age> is used.
+
+Example:
+
+  table_name(_\d+)
+
 =head1 OPTIONS
 
 =over 4
