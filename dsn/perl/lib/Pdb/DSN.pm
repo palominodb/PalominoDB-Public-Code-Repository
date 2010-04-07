@@ -260,8 +260,11 @@ sub AUTOLOAD {
   if($name =~/^server_(.+)$/) {
     return $self->{raw}->{'servers'}->{$host}->{$1};
   }
-  if($name =~/^cluster_(.+)$/) {
+  elsif($name =~/^cluster_(.+)$/) {
     return $self->{raw}->{'clusters'}->{$host}->{$1};
+  }
+  elsif($name =~ /^config_(.+)$/) {
+    return $self->{raw}->{'config'}->{$1};
   }
   return undef;
 }
