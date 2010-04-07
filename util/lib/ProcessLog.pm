@@ -1,4 +1,35 @@
 package ProcessLog;
+
+=pod
+
+=head1 NAME
+
+ProcessLog - Logging framework like Log4j but different
+
+=head1 SYNOPSIS
+
+  # New ProcessLog
+  my $pl = ProcessLog->new($0, 'some.log');
+
+  # Regular message
+  $pl->m('my', 'message');
+
+  # Info message
+  $pl->i('info', 'message');
+
+  # Error message
+  $pl->e('error');
+
+  # Debug message (only if $ENV{PDB_DEBUG} is set)
+  $pl->d('debugging', 'output');
+
+  # Error message with a stack trace
+  $pl->es('other error');
+
+=head1 METHODS
+
+=cut
+
 my $mail_available = 1;
 eval 'use Mail::Send';
 if($@) {
@@ -6,7 +37,7 @@ if($@) {
 }
 use Sys::Hostname;
 use Sys::Syslog;
-use Digest::SHA1;
+use Digest::SHA qw(sha1_hex);
 use Time::HiRes qw(time);
 use File::Spec;
 use Fcntl qw(:seek);
@@ -17,18 +48,24 @@ use constant Level1 => 1;
 use constant Level2 => 2;
 use constant Level3 => 3;
 
-# Creates a new processlog.
-# parameters: $script_name, $logpath, $email_to.
-#
-# $script_name: the name of the program using this. Normally $0.
-# $logpath: filename of log. Normally $0.
-#           If it matches syslog:<facility>, then output is sent to syslog.
+=pod
+
+=head3 C<new($script_name, $logpath, $email_to)>
+
+Creates a new processlog.
+
+C<$script_name>: the name of the program using this. Normally $0.
+C<$logpath>: filename of log. Normally $0.
+If it matches C<< syslog:<facility> >>, then output is sent to syslog.
+
+=cut
+
 sub new {
   my $class = shift;
   my ($script_name, $logpath, $email_to) = @_;
   my $self = {};
 
-  $self->{run_id} = Digest::SHA1::sha1_hex(time . rand() . $script_name);
+  $self->{run_id} = sha1_hex(time . rand() . $script_name);
 
   $self->{script_name} = $script_name;
   $self->{log_path} = $logpath;
@@ -64,40 +101,92 @@ sub new {
   return $self;
 }
 
-# Create a null processlog, useful for nagios plugins.
+=pod
+
+=head3 C<null()>
+
+Create a null processlog, useful for nagios plugins.
+This processlog object writes log messages to /dev/null.
+See L<quiet()> for disabling writes to stdout.
+
+=cut
+
 sub null {
   my $class = shift;
   $class->new('', '/dev/null', undef);
 }
 
-# Returns script name.
+=pod
+
+=head3 C<name()>
+
+Returns the name given to this ProcessLog
+when it was created.
+
+=cut
+
 sub name {
   my $self = shift;
   $self->{script_name};
 }
 
-# Returns the runid of this processlog.
-# If you want a new runid - make a new processlog.
+=pod
+
+=head3 C<runid()>
+
+Returns the runid of this processlog.
+If you want a new runid - make a new processlog.
+
+RunIDs are SHA1's of the script name, the time
+with microseconds, and some random value. The objective
+is to produce something that should be unique.
+UUID's might be used in the future, so don't depend on
+this being a SHA1.
+
+=cut
+
 sub runid {
   my $self = shift;
   $self->{run_id};
 }
 
-# Logs a 'start' message.
-# Programs can use this method, and end to place
-# unique ids into the logfile to assist in later processing.
+=pod
+
+=head3 C<start()>
+
+Logs a message like C<< 'BEGIN <runid>' >>.
+This is so that a tool can log to the same
+log file and there's a clear dileneation between runs.
+
+=cut
+
 sub start {
   my $self = shift;
   $self->m("BEGIN $self->{run_id}");
 }
 
-# Logs an 'end' message. See start().
+=pod
+
+=head3 C<end()>
+
+Logs an 'end' message. See L<start()>.
+End messages look like: C<< 'END <runid>' >>.
+
+=cut
+
 sub end {
   my $self = shift;
   $self->m("END $self->{run_id}");
 }
 
-# Gets/Sets the maximum depth for stack traces.
+=pod
+
+=head3 C<stack_depth()>
+
+Gets/Sets the maximum depth for stack traces produced by L<stack()>.
+
+=cut
+
 sub stack_depth {
   my ($self, $opts) = @_;
   my $old = $self->{stack_depth};
@@ -105,7 +194,14 @@ sub stack_depth {
   $old;
 }
 
-# Gets/Sets whether or not this processlog will log to stdout.
+=pod
+
+=head3 C<quiet()>
+
+Gets/Sets whether or not this ProcessLog will log to stdout.
+
+=cut
+
 sub quiet {
   my ($self, $new) = @_;
   my $old = $self->{quiet};
@@ -113,7 +209,14 @@ sub quiet {
   $old;
 }
 
-# Log a message.
+=pod
+
+=head3 C<m(@args)>
+
+Regular message.
+
+=cut
+
 sub m {
   my ($self,$m) = shift;
   my $fh = $self->{LOG};
@@ -121,14 +224,28 @@ sub m {
   $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
 }
 
-# Log a message with a stack trace.
+=pod
+
+=head3 C<ms(@args)>
+
+Regular message with a stack trace.
+
+=cut
+
 sub ms {
   my $self = shift;
   $self->m(@_);
   $self->m($self->stack());
 }
 
-# Log an error.
+=pod
+
+=head3 C<e(@args)>
+
+Error message.
+
+=cut
+
 sub e {
   my ($self,$m) = shift;
   my ($package, undef, $line) = caller 0;
@@ -137,14 +254,28 @@ sub e {
   $self->{logsub}->($self, 'err', $package, $line, $t, @_);
 }
 
-# Log an error with a stack trace.
+=pod
+
+=head3 C<es(@args)>
+
+Error message with a stack trace.
+
+=cut
+
 sub es {
   my $self = shift;
   $self->e(@_);
   $self->e($self->stack());
 }
 
-# Log some information.
+=pod
+
+=head3 C<i(@args)>
+
+Log some information.
+
+=cut
+
 sub i {
   my $self = shift;
   my $fh = $self->{LOG};
@@ -152,14 +283,28 @@ sub i {
   $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
 }
 
-# Log some information with a stack trace.
+=pod
+
+=head3 C<is(@args)>
+
+Log some information with a stack trace.
+
+=cut
+
 sub is {
   my $self = shift;
   $self->i(@_);
   $self->i($self->stack());
 }
 
-# Log debugging output.
+=pod
+
+=head3 C<d(@args)>
+
+Log debugging output.
+
+=cut
+
 sub d {
   my $self = shift;
   my ($package, undef, $line) = caller 0;
@@ -170,20 +315,37 @@ sub d {
   }
 }
 
-# Log debugging output with a stack trace.
+=pod
+
+=head3 C<ds(@args)>
+
+Log debugging output with a stack trace.
+
+=cut
+
 sub ds {
   my $self = shift;
   $self->d(@_);
   $self->d($self->stack());
 }
 
-# Execute a perlsub redirecting stdout/stderr
-# to an anonymous temporary file.
-# This is useful for wrapping an external tool.
-#
-# WARNING: This function is *NOT* thread-safe.
-#          But, it should be fork() safe.
-# 
+=pod
+
+=head3 C<x($coderef, @args)>
+
+Execute a perlsub redirecting stdout/stderr
+to an anonymous temporary file.
+This is useful for wrapping an external tool.
+
+B<WARNING:> This function is B<NOT> thread-safe.
+But, it should be fork() safe.
+
+B<NOTE:> Due to the way C<system()> is implemented
+it's not possible to pass it as a coderef, you must
+wrap it in a dummy subroutine - anonymous or otherwise.
+
+=cut
+
 sub x {
   my ($self, $subref, @args) = @_;
   my $r = undef;
@@ -205,7 +367,15 @@ sub x {
   return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
 }
 
-# Return a nicely formatted stacktrace.
+=pod
+
+=head3 C<stack()>
+
+Returns a stack trace as a string.
+Nicely indented for easy viewing.
+
+=cut
+
 sub stack {
   my ($self, $level) = @_;
   $level = $self->{stack_depth} ||= 10 unless($level);
@@ -267,29 +437,37 @@ sub _restore_stdfhs {
   return 1;
 }
 
-# Send an email to the pre-defined location.
-# If no email was specified at creation time, this method does nothing.
-# Accepts an argument $extra which is intended to be a summary of the problem.
-#
-# The format of the email is as follows:
-#     Subject: <script_name> FAILED
-#
-#     <script_name> on <hostname> failed at <time>.
-#     The Error: <extra>
-#     <stack trace>
-#     RUN ID (for grep): <runid>
-#     Logfile: <path>
-#
-# After the email is sent, the method calls die($extra).
-# If dying is not what you want, this should be done in an eval {}.
-#
-# This method is partially deprecated.
+=pod
+
+=head3 C<email_and_die($extra)>
+
+Send an email to the pre-defined location.
+If no email was specified at creation time, this method does nothing.
+Accepts an argument $extra which is intended to be a summary of the problem.
+
+The format of the email is as follows:
+    Subject: <script_name> FAILED
+
+    <script_name> on <hostname> failed at <time>.
+    The Error: <extra>
+    <stack trace>
+    RUN ID (for grep): <runid>
+    Logfile: <path>
+
+After the email is sent, the method calls die($extra).
+If dying is not what you want, this should be done in an eval {}.
+
+This method is partially deprecated.
+
+=cut
+
 sub email_and_die {
   my ($self, $extra) = @_;
   $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
   $self->failure_email($extra);
   die($extra);
 }
+
 
 sub failure_email {
   my ($self,$extra) = shift;
@@ -319,5 +497,16 @@ sub success_email {
   print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
   $fh->close;
 }
+
+=pod
+
+=head1 ENVIRONMENT
+
+This package responds to the environment variable: C<PDB_DEBUG>.
+When C<PDB_DEBUG> is set to something that evaluates as true in perl,
+then debugging messages (such as those generated by L<d()>) will be
+generated.
+
+=cut
 
 1;
