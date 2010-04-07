@@ -13,7 +13,7 @@ sub time() {
 package main;
 use strict;
 use warnings;
-use Test::More tests => 14;
+use Test::More tests => 23;
 use Fcntl;
 
 BEGIN {
@@ -76,6 +76,11 @@ is(get_line(8), 'msg 0.000:  main  t/001_process_log.t:59  (eval)', 'message 3.2
 is(get_line(9), 'err main:62 0.000: error message 1', 'error 1');
 is(get_line(10), 'ifo 0.000: info message 1', 'info 1');
 
+# stack_depth
+is($pl->stack_depth(), 10, 'default stack depth');
+is($pl->stack_depth(5), 10, 'set stack depth');
+is($pl->stack_depth(), 5, 'read set stack depth');
+
 my $pls = ProcessLog->new('001_process_log.t', 'syslog:LOCAL0', undef);
 $pls->quiet(1);
 eval {
@@ -87,6 +92,24 @@ eval {
 if($@) { fail('syslog messages'); diag($@); }
 else { pass('syslog messages'); }
 
+# Test prompts
+use TestUtil;
+my ($prompt_file) = get_test_data('processlog');
+open my $prompt_fh, "<$prompt_file";
+
+is($pl->p($prompt_fh, 'prompt: '), 'Unchecked input', 'unchecked input');
+
+is($pl->p($prompt_fh, 'checked prompt: ', qr/^Checked input \d+$/),
+  'Checked input 1', 'checked input 1');
+is($pl->p($prompt_fh, 'checked prompt: ', qr/^Checked input \d+$/),
+  'Checked input 2', 'checked input 2');
+
+is($pl->p($prompt_fh, 'failed prompt: ', qr/^Correct input$/),
+  'Correct input', 'repeat prompt till correct');
+is($pl->p($prompt_fh, 'p: ', qr/^C$/, 'Y'), 'Y', 'default value');
+is($pl->p($prompt_fh, 'p: ', qr/^C$/, 'Y'), 'C', 'default not used');
+
+close($prompt_fh);
 
 # Cleanup after ourselves
 unlink('001_process_log.t.log');

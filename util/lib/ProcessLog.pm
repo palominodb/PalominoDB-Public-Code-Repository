@@ -240,6 +240,64 @@ sub ms {
 
 =pod
 
+=head3 C<p()>
+
+Prompt the user for a value, and record the result in the log.
+
+Accepts either: C<strings ...[, regex[, default]]>,
+or, C<filehandle, strings ...[, regex[, default]]>.
+In the general case you should always prompt from C<STDIN> and never use
+the second form, but, the second form could be used for interactive
+network servers or testing purposes.
+
+The regex is to make sure that the input matches the caller's expectations.
+C<p()> will continue to prompt indefinitely as long as the
+input does not match the regex. If no input is given, and
+a default value was specified, then C<p()> will return that instead
+of prompting again.
+
+=cut
+
+sub p {
+  my ($self) = shift;
+  my $fh = \*STDIN;
+  my $regex = qr/.*/;
+  my $default = undef;
+  my $prompt = ();
+  # First arg is a filehandle
+  if(ref($_[0]) eq 'GLOB') {
+    $fh = shift;
+  }
+  # Last arg is a regexp, no default
+  if(ref($_[-1]) eq 'Regexp') {
+    $regex = pop;
+  }
+  # Last arg is not a regexp, second to last is
+  # last arg is assumed to be a default
+  elsif(ref($_[-2]) eq 'Regexp') {
+    $default = pop;
+    $regex = pop;
+  }
+  @prompt = @_;
+  # Log all string input
+  $self->m(@prompt);
+  chomp($_ = <$fh>);
+  if($default and $_ eq '') {
+    $self->m('Using default:', $default);
+    return $default;
+  }
+  while($_ !~ $regex) {
+    $self->d("Input doesn't match:", $regex);
+    $self->m(@prompt);
+    chomp($_ = <$fh>);
+  }
+
+  $self->m('Using input:', $_);
+  return $_;
+}
+
+=pod
+
 =head3 C<e(@args)>
 
 Error message.
