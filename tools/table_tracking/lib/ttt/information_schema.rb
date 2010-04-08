@@ -197,7 +197,7 @@ module TTT
     # That is, a table generated dynamically by MySQL.
     # Also appears to return true for views.
     def system_table?
-      table_type == "SYSTEM VIEW" or (create_time.nil? and update_time.nil?)
+      table_type == "SYSTEM VIEW" or (create_options !~ /partitioned/ and create_time.nil? and update_time.nil?)
     end
   end
 
