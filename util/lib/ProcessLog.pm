@@ -89,6 +89,12 @@ sub new {
       print _p(@_) unless $self->{quiet};
     };
   }
+  elsif($logpath eq 'pdb-test-harness') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      print STDERR '# ', _p(@_);
+    }
+  }
   else {
     open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
     $self->{logsub} = sub {
