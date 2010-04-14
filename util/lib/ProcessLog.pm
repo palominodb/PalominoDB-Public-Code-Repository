@@ -1,4 +1,6 @@
 package ProcessLog;
+use strict;
+use warnings FATAL => 'all';
 
 =pod
 
@@ -263,7 +265,7 @@ sub p {
   my $fh = \*STDIN;
   my $regex = qr/.*/;
   my $default = undef;
-  my $prompt = ();
+  my @prompt = ();
   # First arg is a filehandle
   if(ref($_[0]) eq 'GLOB') {
     $fh = shift;
