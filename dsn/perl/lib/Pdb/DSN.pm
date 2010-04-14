@@ -77,7 +77,7 @@ our $AUTOLOAD;
 
 =pod
 
-=item new($uri)
+=head3 new($uri)
 
     uri: Location of the DSN file. May be local, or remote over HTTP.
     
@@ -103,7 +103,7 @@ sub new {
 
 =pod
 
-=item open($uri)
+=head3 open($uri)
 
     uri: Location of DSN file. May be local, or remote over HTTP.
 
@@ -143,7 +143,7 @@ sub _open_local {
 
 =pod
 
-=item from_hash($hashref)
+=head3 from_hash($hashref)
 
     hashref: Reference to a hash conforming to the DSN specification.
 
@@ -159,7 +159,7 @@ sub from_hash {
 
 =pod
 
-=item validate()
+=head3 validate()
 
     This method, B<when implemented>, will validate that the DSN conforms to all
     requirements.
@@ -173,7 +173,7 @@ sub validate {
 
 =pod
 
-=item get_write_hosts($cluster)
+=head3 get_write_hosts($cluster)
 
     Retrieve destinations for writes for C<$cluster>.
 
@@ -181,20 +181,25 @@ sub validate {
     The way in which writes are load-balaned is application dependent. In general,
     only one database should take writes at any given time.
 
-    See also: L<get_primary($cluster)>.
+    See also: L<cluster_primary($cluster)>.
 
 =cut
 
 sub get_write_hosts {
   my ($self, $cluster) = @_;
   my @write_hosts = ();
-  foreach my $srv (keys %{$self->{raw}->{'servers'}}) {
+  foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
+    if(exists $self->{raw}->{'servers'}->{$srv}
+       and grep /$cluster/, @{$self->{raw}->{'servers'}->{$srv}->{'writefor'}}) {
+     push @write_hosts, $srv;
+    }
   }
+  return @write_hosts;
 }
 
 =pod
 
-=item get_read_hosts($cluster)
+=head3 get_read_hosts($cluster)
 
     Retrieve destinations for reads for C<$cluster>.
 
@@ -203,20 +208,25 @@ sub get_write_hosts {
     it's safe to do reads from any number of slaves, provided that there isn't replication
     lag.
 
-    See also: L<get_failover($cluster)>.
+    See also: L<cluster_failover($cluster)>.
 
 =cut
 
 sub get_read_hosts {
   my ($self, $cluster) = @_;
   my @read_hosts = ();
-  foreach my $srv (keys %{$self->{raw}->{'servers'}}) {
+  foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
+    if(exists $self->{raw}->{'servers'}->{$srv}
+       and grep /$cluster/, @{$self->{raw}->{'servers'}->{$srv}->{'readfor'}}) {
+     push @read_hosts, $srv;
+    }
   }
+  return @read_hosts;
 }
 
 =pod
 
-=item get_all_hosts()
+=head3 get_all_hosts()
 
     Retrieve all hostnames defined.
 
@@ -229,7 +239,7 @@ sub get_all_hosts {
 
 =pod
 
-=item get_all_clusters()
+=head3 get_all_clusters()
 
     Retrieve all clusters defined.
 
@@ -240,11 +250,27 @@ sub get_all_clusters {
   return keys %{$self->{raw}->{'clusters'}};
 }
 
+=pod
+
+=head3 host_active()
+
+Returns 1 if the given host is active, returns 0 otherwise.
+
+=cut
+
 sub host_active {
   my ($self, $host) = @_;
   return 1 if(exists $self->{raw}->{'servers'}->{$host} and _truth($self->{raw}->{'servers'}->{$host}->{'active'}));
   return 0;
 }
+
+=pod
+
+=head3 cluster_active()
+
+Returns 1 if the given cluster is active, returns 0 otherwise.
+
+=cut
 
 sub cluster_active {
   my ($self, $cluster) = @_;
