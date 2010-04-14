@@ -8,7 +8,6 @@ use File::Glob;
 BEGIN {
   require Test::More;
   if($Test::More::VERSION < 0.94) {
-    print STDERR "# Installing new_ok for older Test::More\n";
     Test::More->import();
     sub new_ok {
       my ($class, $args) = @_;
