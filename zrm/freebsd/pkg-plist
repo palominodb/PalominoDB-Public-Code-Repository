@@ -1,6 +1,6 @@
 @srcdir /tmp/zrm-innobackupex-pkg
 @comment PKG_FORMAT_REVISION:1.1
-@name zrm-innobackupex-0.73
+@name zrm-innobackupex-0.75
 @cwd /usr
 @owner mysql
 @group mysql
