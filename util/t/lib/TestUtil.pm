@@ -19,13 +19,12 @@ BEGIN {
   else {
     Test::More->import();
   }
-
 }
 
 use vars qw($VERSION @ISA @EXPORT);
 $VERSION = 0.01;
 @ISA = qw(Exporter);
-@EXPORT = qw(get_test_dir get_files_dir get_test_data slurp new_ok);
+@EXPORT = qw(get_test_dir get_files_dir get_test_data slurp new_ok fake_use);
 
 sub get_test_dir ($) {
   my $hide = shift || 0;
@@ -54,5 +53,22 @@ sub slurp ($) {
   $content;
 }
 
+sub fake_use {
+  my ($filename) = @_;
+  if (exists $INC{$filename}) {
+    return 1 if $INC{$filename};
+  }
+  my $realfilename;
+  ITER: {
+    foreach my $prefix (@INC) {
+      $realfilename = "$prefix/$filename";
+      if (-f $realfilename) {
+        $INC{$filename} = $realfilename;
+        last ITER;
+      }
+    }
+  }
+  return 1;
+}
 
 1;
