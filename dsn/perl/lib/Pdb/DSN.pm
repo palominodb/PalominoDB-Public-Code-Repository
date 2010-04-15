@@ -189,9 +189,14 @@ sub get_write_hosts {
   my ($self, $cluster) = @_;
   my @write_hosts = ();
   foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
-    if(exists $self->{raw}->{'servers'}->{$srv}
-       and grep /$cluster/, @{$self->{raw}->{'servers'}->{$srv}->{'writefor'}}) {
-     push @write_hosts, $srv;
+    if(exists $self->{raw}->{'servers'}->{$srv}) {
+      my $writefor = $self->{raw}->{'servers'}->{$srv}->{'writefor'};
+      if(ref($writefor) eq 'ARRAY' and grep /$cluster/, @$writefor) {
+        push @write_hosts, $srv;
+      }
+      elsif(!ref($writefor) and $writefor eq $cluster) {
+        push @write_hosts, $srv;
+      }
     }
   }
   return @write_hosts;
@@ -216,13 +221,19 @@ sub get_read_hosts {
   my ($self, $cluster) = @_;
   my @read_hosts = ();
   foreach my $srv (@{$self->{raw}->{'clusters'}->{$cluster}->{'servers'}}) {
-    if(exists $self->{raw}->{'servers'}->{$srv}
-       and grep /$cluster/, @{$self->{raw}->{'servers'}->{$srv}->{'readfor'}}) {
-     push @read_hosts, $srv;
+    if(exists $self->{raw}->{'servers'}->{$srv}) {
+      my $readfor = $self->{raw}->{'servers'}->{$srv}->{'readfor'};
+      if(ref($readfor) eq 'ARRAY' and grep /$cluster/, @$readfor) {
+        push @read_hosts, $srv;
+      }
+      elsif(!ref($readfor) and $readfor eq $cluster) {
+        push @read_hosts, $srv;
+      }
     }
   }
   return @read_hosts;
 }
+
 
 =pod
 
