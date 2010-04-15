@@ -27,8 +27,8 @@ my $outfile = shift @ARGV;
   $input = <$file>;
   close $file;
 }
-
 my $script_ver = qx@../../util/gitver.sh $infile@;
+chop($script_ver);
 
 $input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
 $input =~ s/\bGIT_SCRIPT_VERSION\b/$script_ver/g;
