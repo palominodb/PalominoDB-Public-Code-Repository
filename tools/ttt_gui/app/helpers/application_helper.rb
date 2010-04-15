@@ -33,7 +33,7 @@ module ApplicationHelper
     end
 
     if cur
-      cur_create=cur.created_at
+      cur_create=cur.created_at || cur.run_time
       if cur.create_syntax
         cur=tbl.create_syntax.split("\n")
       else
