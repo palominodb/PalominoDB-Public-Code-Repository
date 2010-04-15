@@ -1,0 +1,20 @@
+This package was debianized by Brian Smith <brian@palominodb.com> on
+Thu, 15 Apr 2010 02:34:42 -0700.
+
+It was downloaded from <ssh://bastion.palominodb.com/opt/git/pdb-code.git>
+
+Upstream Author:
+
+    Brian Smith <brian@palominodb.com>
+    Adapted from the original code produced by Zmanda.
+
+Copyright:
+
+    Copyright (C) 2010 Brian Smith
+
+License:
+
+    GPL
+
+The Debian packaging is (C) 2010, Brian Smith <brian@palominodb.com> and
+is licensed under the GPL, see `/usr/share/common-licenses/GPL'.
