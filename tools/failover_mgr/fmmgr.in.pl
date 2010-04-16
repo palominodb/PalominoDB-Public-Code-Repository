@@ -391,8 +391,123 @@ Cause the tool to ignore many types of failures and continue anyway.
 
 =head1 FAILOVER MODULES
 
+Failover modules provide the actual functionality for failing-over
+in various ways. The built-in modules, and their options are documented
+below. A failover module is specified with L<--mode> and one of the headings.
+
+=head2 FlipReadOnly
+
+This module just simply disables the C<read_only> global variable on the
+failover master specified with L<--failover>.
+
+Extra options: I<none>.
+
+Invocation Example:
+
+  fmmgr --mode FlipReadOnly --primary h=dbm,u=failover,p=failover \
+                            --failover h=dbs,u=failover,p=failover
+
+This fails over to C<dbs>. Note, even though this module does not require
+the use of the primary, you still B<MUST> provide it on the command-line.
+
+=head2 MoveSlaves
+
+This module moves some or all of the read slaves for a cluster off the primary
+master and onto the failover master.
+
+Caveat: When using L<--dsn>, B<ALL> slaves will be moved, there is currently
+no way to only move some.
+
+Extra options: C<--slave>
+
+The extra option C<--slave> must be specified once for each slave that is
+to be moved over to the failover master.
+
+Invocation Example:
+
+  fmmgr --mode MoveSlaves --primary h=dbm,u=failover,p=failover \
+                          --failover h=dbs,u=failover,p=failover \
+                          --slave h=dbq1,u=failover,p=failover \
+                          --slave h=dbq2,u=failover,p=failover
+
+This moves C<dbq1>, and C<dbq2> to slave off of C<dbs>. At this time
+all appropriate permissions must already be setup correctly. If they are
+not the failover will not be successful and may leave the slaves in an
+undefined state. If such a condition occurs, fix the permissions and
+re-run this tool with the same parameters.
+
+=head2 FlipAndMoveSlaves
+
+This module composites the actions of the above two modules. It is
+functionally equivalent to running the below:
+
+  fmmgr --mode FlipReadOnly --primary h=dbm,u=failover,p=failover \
+                            --failover h=dbs,u=failover,p=failover
+
+  fmmgr --mode MoveSlaves --primary h=dbm,u=failover,p=failover \
+                          --failover h=dbs,u=failover,p=failover \
+                          --slave h=dbq1,u=failover,p=failover \
+                          --slave h=dbq2,u=failover,p=failover
+
+However, it does not require running this tool twice.
+
+Extra options: C<--slave>
+
+This is the same as the C<--slave> option for L<MoveSlaves>.
+
+Invocation Example:
+
+  fmmgr --mode FlipAndMoveSlaves --primary h=dbm,u=failover,p=failover \
+                          --failover h=dbs,u=failover,p=failover \
+                          --slave h=dbq1,u=failover,p=failover \
+                          --slave h=dbq2,u=failover,p=failover
+
+This sets C<read_only> to 0 on C<dbs> and causes the slaves C<dbq1>, and
+C<dbq2> to slave from C<dbs>.
+
 =head1 PLUGINS
 
+A plugin implements additional business logic I<around> the failover process.
+Plugins are not supposed to do any sort of failover on their own. The built-in
+plugins are documented below. All of the built-in plugins are enabled by
+default. See L<--noplugin> for a way to disable one of them.
+
+=head2 AutoIncrement
+
+This plugin ensures that C<auto_increment_offset> on the primary and failover
+database machines is not identical. It aborts the failover if they are unless
+L<--force> is used.
+
+=head2 ReplicationLag
+
+This plugin ensures that none of the given database machines (slaves included
+for L<MoveSlaves>) are lagging behind their current master.
+If lag is found, this plugin aborts the failover. If L<--force> is used,
+then this plugin prompts to continue instead.
+
+By default this plugin checks the output of C<SHOW SLAVE STATUS>, however,
+as that can be unreliable at times, so, checking a heartbeat table is
+also supported. Heartbeat tables are kept up to date by L<http://www.maatkit.org/doc/mk-heartbeat.html> see there for more details.
+
+To use a heartbeat table pass C<--hb_table> and C<--hb_col>.
+C<--hb_table> is the C<database.table> of the table to query, and C<--hb_col> is the name of the column containing the datestamp.
+
+=head2 ReadOnly
+
+This plugin ensures that C<read_only> on the failover master is set to 1 before
+the failover. It also ensures that C<read_only> is set to 0 after the failover.
+This plugin will prompt to continue the failover if C<read_only> is not set to 1
+, unless L<--force> is specified.
+
+=head2 ProcessCounts
+
+This plugin is primarily informational in purpose. It provides counts of
+processes by user and prompts to continue before running the failover.
+
 =head1 ENVIRONMENT
+
+Setting the environment variable C<Pdb_DEBUG> to a true value will enable
+substantially more debugging about the operation of this tool.
+When diagnosing problems running with this variable on will help.
 
 =cut
