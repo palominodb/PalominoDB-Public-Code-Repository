@@ -25,7 +25,11 @@ sub get_lag {
     $sql = "SELECT NOW() - $hb_col FROM $hb_table";
     $col = $hb_col;
   }
- return $dsn->get_dbh(1)->selectrow_hashref($sql, { Slice => {} })->{$col};
+  my $r = $dsn->get_dbh(1)->selectrow_hashref($sql, { Slice => {} });
+  if(defined $r) {
+    return $r->{$col};
+  }
+  return undef;
 }
 
 sub pre_verification {
@@ -33,6 +37,10 @@ sub pre_verification {
 
   foreach my $dsn (@dsns) {
     my $lag = $self->get_lag($dsn);
+    if(not defined($lag)) {
+      $::PLOG->e('No replication, or replication not running.');
+      croak('No replication, or replication not running') unless($FailoverPlugin::force)
+    }
     $::PLOG->m($dsn->get('h'),'replication lag:', $lag);
     if($lag) { $::PLOG->e('Replication lag found!'); }
     if($lag and !$FailoverPlugin::force) {
