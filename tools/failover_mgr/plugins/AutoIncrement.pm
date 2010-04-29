@@ -12,7 +12,7 @@ sub pre_verification {
   my ($self, $pri_dsn, $fail_dsn) = @_;
 
   my $pri_s = MysqlSlave->new($pri_dsn);
-  my $fail_s = MysqlSlave->new($pri_dsn);
+  my $fail_s = MysqlSlave->new($fail_dsn);
   if($pri_s->auto_inc_off() == $fail_s->auto_inc_off()) {
     $::PLOG->e($pri_dsn->get('h'), 'auto_increment_offset:', $pri_s->auto_inc_off());
     $::PLOG->e($fail_dsn->get('h'), 'auto_increment_offset:', $fail_s->auto_inc_off());
