@@ -18,7 +18,7 @@ task :default => :test
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "1.4.4"
+  s.version = "1.5.0"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"
@@ -40,7 +40,7 @@ support for generating reports suitable for:
 The API docs contain examples, and reference to get you started.
 E_DESC
   s.files = FileList["{bin,lib}/**/*"].to_a
-  s.executables = ["ttt-collect", "ttt-query"]
+  s.executables = ["ttt-collect", "ttt-query", "ttt-admin"]
   s.require_path = "lib"
   s.has_rdoc = true
   s.extra_rdoc_files = ["README", "sample-config.yml"]
