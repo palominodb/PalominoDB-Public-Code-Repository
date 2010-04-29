@@ -1,4 +1,7 @@
 <h1>Servers</h1>
+<% if flash[:error] -%>
+  <br/><span class="error-message"><%= flash[:error] %></span>
+<% end -%>
 <%= link_to "Top Tables", top_tables_path %><%= link_to "Top Databases", top_databases_path %>
 <table>
   <tr>
