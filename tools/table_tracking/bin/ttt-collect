@@ -106,7 +106,7 @@ cur_col=nil
 director=nil
 begin
   TTT::Snapshot.transaction do |txn_id|
-    hosts=dsn.get_all_hosts.reject { |h| !dsn.host_active? h }
+    hosts=dsn.get_all_hosts.select { |h| dsn.host_active?( h ) and dsn.server_ttt?( h ) }
     director = TTT::CollectionDirector.new(cfg, Runtime)
     rds={}
     hosts.each do |host|
