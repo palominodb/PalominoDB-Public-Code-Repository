@@ -7,6 +7,7 @@ require 'pp'
 require 'ttt/db'
 require 'ttt/collector'
 require 'ttt/formatters'
+require 'ttt/crash_reporter'
 require 'text/reform'
 require 'curses'
 
@@ -237,8 +238,13 @@ begin
     rt=output.format(TTT::TrackingTable.tables[stat.to_sym].find_most_recent_versions(find_params))
   end
 rescue Exception => e
-  pp e
-  puts e.backtrace if debug
+  if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
+    TTT::CrashMailer.deliver_crash(e, output, find_params, stat)
+    $stderr.puts "ttt-query has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+  end
+  $stderr.puts e
+  $stderr.puts e.backtrace
+  exit 1
 end
 
 exit rt

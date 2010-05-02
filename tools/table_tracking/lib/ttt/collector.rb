@@ -3,6 +3,7 @@ require 'rubygems'
 require 'ttt/db'
 require 'ttt/history'
 require 'set'
+require 'ttt/crash_reporter'
 
 module TTT
 
@@ -266,6 +267,10 @@ module TTT
 
     def hash
       stat.hash
+    end
+
+    def to_yaml_properties
+      %w{ @desc @action }
     end
 
   end

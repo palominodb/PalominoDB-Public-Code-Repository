@@ -12,6 +12,8 @@ require 'ttt/table_view'
 require 'ttt/table_volume'
 require 'ttt/history'
 require 'ttt/collector'
+require 'text/reform'
+require 'ttt/crash_reporter'
 
 TTT::CollectorRegistry.load
 
@@ -39,9 +41,9 @@ class PurgeAction < BaseAction
         ### Clean out the references in the server tables
         s=TTT::Server.find_by_name(host)
         schs=s.schemas
-        n=TTT::Table.delete_all "schema_id IN (#{schs.map { |sh| sh.id }})"
+        n=TTT::Table.delete_all "schema_id IN (#{schs.map { |sh| sh.id }.join(',')})"
         puts "Deleted #{n} tables from the cache.." if @debug
-        n=TTT::Schema.delete_all "id IN (#{schs.map { |sh| sh.id }})"
+        n=TTT::Schema.delete_all "id IN (#{schs.map { |sh| sh.id }.join(',')})"
         puts "Deleted #{n} schemas from the cache.." if @debug
         TTT::Server.delete s.id
 
@@ -74,6 +76,34 @@ class RenameAction < BaseAction
         puts "Updated #{n} records in the #{col.id.to_s} table.."
       end
     end
+    return 0
+  end
+end
+
+class ListAction < BaseAction
+  def exec()
+    order_by='name'
+    if @args.length == 1
+      k,v = @args.shift.split('=')
+      case k
+      when 'order'
+        order_by=v
+      else
+        puts "Unknown option: #{k} for 'list'"
+      end
+    end
+    rf=Text::Reform.new
+    rf.trim=true
+    srvs = TTT::Server.all(:order => order_by)
+    max_name = srvs.map { |s| s.name.length }.max
+    max_size = sprintf("%4.3G", srvs.map { |s| s.cached_size / 1.0.gigabyte }.max).length
+    puts rf.format(
+      "Host#{" "*max_name}Size#{" "*(max_size+4)}Last Updated\n" +
+      "----#{"-"*max_name}----#{"-"*(max_size+4)}------------------------------",
+      ("["*max_name) + "   ]]]].[[[G" + "    ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      (srvs.map { |s| s.name }), (srvs.map { |s| s.cached_size / 1.0.gigabyte }),
+      (srvs.map { |s| s.updated_at })
+    )
     return 0
   end
 end
@@ -160,9 +190,21 @@ when 'purge'
   action=PurgeAction.new(config, debug, ARGV)
 when 'rename'
   action=RenameAction.new(config, debug, ARGV)
+when 'list'
+  action=ListAction.new(config,debug,ARGV)
 else
   puts "Unknown action (try --help)."
   exit 1
 end
 
-exit action.exec()
+begin
+  exit action.exec()
+rescue Exception => e
+  if !config.has_key? 'send_crashreports' or ( config.has_key? 'send_crashreports' and config['send_crashreports'] )
+    TTT::CrashMailer.deliver_crash(e, action)
+    $stderr.puts "ttt-admin has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+    $stderr.puts e
+    $stderr.puts e.backtrace
+    exit 1
+  end
+end

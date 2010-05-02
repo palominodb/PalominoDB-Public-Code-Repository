@@ -8,6 +8,7 @@ require 'text/reform'
 require 'pdb/dsn'
 require 'ttt/db'
 require 'ttt/collector'
+require 'ttt/crash_reporter'
 
 opts = GetoptLong.new(
   [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
@@ -101,15 +102,17 @@ TTT::Db.migrate
 TTT::Collector.verbose = verbose
 
 Runtime=Time.now
-
+cur_col=nil
+director=nil
 begin
   TTT::Snapshot.transaction do |txn_id|
-    hosts=dsn.get_all_hosts.reject { |h| !dsn.host_active? h || !dsn.server_ttt? h }
+    hosts=dsn.get_all_hosts.reject { |h| !dsn.host_active? h }
     director = TTT::CollectionDirector.new(cfg, Runtime)
     rds={}
     hosts.each do |host|
       TTT::CollectorRegistry.all.each do |coller|
         next unless stats.empty? or stats.include? coller.stat
+        cur_col=coller
         rd=director.collect(host, coller)
         rds[rd.stat] = [] if rds[rd.stat].nil?
         puts "NEW TXN: #{txn_id}"
@@ -124,6 +127,11 @@ begin
     end
   end
 rescue Exception => e
+  if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
+    ActionMailer::Base.delivery_method = :sendmail
+    TTT::CrashMailer.deliver_crash(e, director, cur_col)
+    $stderr.puts "ttt-collect has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+  end
   $stderr.puts e
   $stderr.puts e.backtrace
   exit 1
