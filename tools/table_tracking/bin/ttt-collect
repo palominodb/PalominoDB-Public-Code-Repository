@@ -128,7 +128,6 @@ begin
   end
 rescue Exception => e
   if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
-    ActionMailer::Base.delivery_method = :sendmail
     TTT::CrashMailer.deliver_crash(e, director, cur_col)
     $stderr.puts "ttt-collect has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
   end

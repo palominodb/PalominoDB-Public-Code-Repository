@@ -154,6 +154,9 @@ purge <host> [<host>]+:
 rename <host> <new host>:
     Renames <host> to <new host>.
 
+list "[order=name|cached_size|updated_at[ ASC|DESC]]"
+    Lists hosts optionally sorted by name, size, or last update
+
 DOC_EOF
     exit 1
   when '--config'
@@ -197,8 +200,9 @@ else
   exit 1
 end
 
+ecode=1
 begin
-  exit action.exec()
+  ecode=action.exec()
 rescue Exception => e
   if !config.has_key? 'send_crashreports' or ( config.has_key? 'send_crashreports' and config['send_crashreports'] )
     TTT::CrashMailer.deliver_crash(e, action)
@@ -208,3 +212,4 @@ rescue Exception => e
     exit 1
   end
 end
+exit ecode

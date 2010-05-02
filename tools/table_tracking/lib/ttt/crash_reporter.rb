@@ -31,4 +31,5 @@ module TTT
       end
     end
   end # class
+  CrashMailer.delivery_method = :sendmail
 end
