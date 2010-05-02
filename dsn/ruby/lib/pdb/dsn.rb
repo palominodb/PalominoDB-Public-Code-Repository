@@ -198,11 +198,11 @@ module Pdb
     def method_missing(meth, *args)
       str = meth.id2name
       e = args[0]
-      if str =~ /^server_(.+)$/ and @raw["servers"][e].key? $1
-        return @raw["servers"][e][$1]
+      if str =~ /^server_(.+?)(\??)$/ and @raw["servers"][e].key? $1
+        return $2 == '?' ? Pdb.truth(@raw['servers'][e][$1]) : @raw['servers'][e][$1]
       end
-      if str =~ /^cluster_(.+)$/ and @raw["clusters"][e].key? $1
-        return @raw["clusters"][e][$1]
+      if str =~ /^cluster_(.+?)(\??)$/ and @raw["clusters"][e].key? $1
+        return $2 == '?' ? Pdb.truth(@raw['clusters'][e][$1]) : @raw['clusters'][e][$1]
       end
     end
   end
