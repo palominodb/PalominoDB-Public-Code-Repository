@@ -2,7 +2,7 @@ Name: mysqlctl
 Summary: Better mysql init script
 Version: 0.01
 Vendor: PalominoDB
-Release: 1
+Release: 2
 License: Private
 Group: Application/System
 Source: http://bastion.palominodb.com/releases/SRC/mysqlctl-%{version}.tar.gz
@@ -34,5 +34,6 @@ and has useful exit codes for automation tools.
 %files
 %defattr(0755,root,root)
 %doc README
-%config %{_sysconfdir}/myctl.cnf
 %{_bindir}/mysqlctl
+%attr(0600,root,root)
+%config %{_sysconfdir}/myctl.cnf
