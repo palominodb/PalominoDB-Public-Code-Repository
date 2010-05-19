@@ -86,7 +86,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.031;
+our $VERSION = 0.032;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -95,12 +95,13 @@ my $logfile  = DEFAULT_LOG;
 my $age      = 0;
 
 # These are 'our' so that testing can fiddle with them easily.
-our $pretend  = 0;
-our $pack     = 0;
-our $rotate   = 0;
-our $age_format = "_%Y%m%d";
-our $rotate_format = '';
-our $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
+my $pretend  = 0;
+my $pack     = 0;
+my $rotate   = 0;
+my $age_format = "_%Y%m%d";
+my $rotate_format = '';
+my $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
+my $force    = 0;
 
 sub main {
   # Overwrite ARGV with parameters passed here
@@ -125,7 +126,8 @@ sub main {
     "pack" => \$pack,
     "age=s" => \$age,
     "age-format=s" => \$age_format,
-    "rotate-format=s" => \$rotate_format
+    "rotate-format=s" => \$rotate_format,
+    "force" => \$force
   );
 
   unless(scalar @ARGV >= 1) {
@@ -269,7 +271,7 @@ sub main {
         };
         $pl->d('Pack result:', 'Out:', $r->[0], 'Code:', $r->[1]);
         if($r and $r->[0] and $r->[0] =~ /already/) {
-          $pl->m('  ..table already compressed.');
+          $pl->d('  ..table already compressed.');
         }
         elsif($r and $r->[0] and $r->[0] =~ /error/i) {
           $pl->m('  ..encountered error.');
@@ -337,6 +339,11 @@ sub pack_table {
   # If the table is not a myisam table - we convert it.
   if($tp->engine() ne 'myisam') {
     $tp->mk_myisam($0 . ' on ' . hostname());
+  }
+  if($tp->engine() eq 'myisam' and $tp->format() eq 'compressed') {
+    unless($force) {
+      return [0, 'Table '. $dsn->get('t') . ' already compressed.'];
+    }
   }
   if($dsn->get('h') ne 'localhost') {
     my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
@@ -504,6 +511,10 @@ Default: C<_%Y%m%d>
 If passed, then, matched tables will be converted to packed myisam tables.
 
 Default: off
+
+=item B<--force>
+
+Force packing to run, even if mysql thinks the table is already packed.
 
 =back
 
