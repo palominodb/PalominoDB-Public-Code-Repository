@@ -40,6 +40,8 @@ my $central_dsn = undef;
 my $only_report = 0;
 my $pretend = 0;
 
+my $allow_slave_lag = 0;
+
 my @global_ignore_tables = ('mysql.slow_log', 'mysql.general_log');
 my @global_ignore_databases = ();
 my $mk_table_checksum_path = '/usr/bin/mk-table-checksum';
@@ -65,6 +67,7 @@ sub main {
     'password|p=s' => \$password,
     'store|S=s' => \$central_dsn,
     'replicate-table|R=s' => \$repl_table,
+    'allow-slave-lag|a' => \$allow_slave_lag,
     'only-report' => \$only_report,
     'pretend' => \$pretend,
     'mk-table-checksum-path=s' => \$mk_table_checksum_path,
@@ -275,6 +278,25 @@ sub save_to_central_server {
     $csum_dbh->do($creat_sql);
     goto RETRY;
   }
+
+  unless($allow_slave_lag) {
+    my $ms = MasterSlave->new();
+    my $secs = $ms->get_slave_status($dbh)->{seconds_behind_master};
+    if(!defined $secs) {
+      $pl->e('slave', $dsn->{h}, 'has broken repl!');
+      $pl->m('Will sleep until fixed. Safe to kill tool with Ctrl-C.');
+    }
+    elsif($secs > 0) {
+      $pl->m('slave', $dsn->{h}, 'is not caught up with master. Lag:', $secs);
+      $pl->m('Will sleep until fixed. Safe to kill tool with Ctrl-C.');
+    }
+    while(!defined $secs or $secs > 0) {
+      $pl->d('slave', $dsn->{h}, 'is not caught up with master. Lag:', $secs);
+      sleep(1);
+      $secs = $ms->get_slave_status($dbh)->{seconds_behind_master};
+    }
+  }
+
   foreach my $r ( @{$dbh->selectall_arrayref('SELECT * FROM '. $repl_table, { Slice => {} })} ) {
     my $magic_cols = join(',', map { $_ } sort keys %$r);
     my $magic_vals = join(',', map { $dbh->quote($r->{$_}) } sort keys %$r);
@@ -397,6 +419,19 @@ Like all other PDB tools, you can also specify syslog:<facility>
 to log to syslog.
 
 Default: ./pdb-dsn-checksum.log
+
+=item --allow-slave-lag,-a
+
+Normally pdb-dsn-checksum will spin on each slave until it's caught
+up with the master (i.e., 0 seconds behind), this is to ensure that
+all checksums have been executed on the slave. This behavior will
+make pdb-dsn-checksum spin indefinitely on a slave that is delayed
+on purpose.
+
+This flag disables the above behavior. If you have delayed slaves,
+you must still make sure that they've executed all the checksum queries
+before trusting any results from this tool.
+
 
 =back
 
