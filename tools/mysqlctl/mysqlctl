@@ -60,8 +60,19 @@
 # Description: MySQL is a very fast and reliable SQL database engine.
 ### END INIT INFO
 
-
+#############################################################################
+# This script is designed to have all tunables changed in the below config
+# file. Whenever possible, sensible defaults are pre-selected or taken from
+# the system my.cnf. That means /etc/my.cnf on redhat, and /etc/mysql/my.cnf
+# on debian derived boxes.
+# If you can avoid it for any reason, don't change the path to the config
+# file, even. Since, upgrades to the rpm or debian package this script
+# came with will overwrite your changes.
+#############################################################################
 MYCTL_CNF=/etc/myctl.cnf
+#############################################################################
+# Unless you ABSOLUTELY need to, do not modify this script.
+#############################################################################
 
 pid_file=
 datadir=
@@ -71,8 +82,8 @@ user=mysql
 socket=
 
 # mysqlctl vars
-start_timeout=30
-stop_timeout=30
+start_timeout=1800
+stop_timeout=1800
 flushes=3
 flush_sleep=5
 
@@ -234,7 +245,7 @@ Usage:
 If invoked as any of: mysql.start, mysql.stop, mysql.status
 Then the corresponding action above is run.
 
-exit codes:
+Exit codes:
   7 - could not open defaults file
   6 - start/stop out of sync (e.g., start when already started)
   5 - slave ctl failed (could not stop slave)
@@ -245,6 +256,28 @@ exit codes:
       ( mysql did not start/stop by $timeout seconds, or
         mysql is not running when 'status' is the action )
   0 - ok ( control successful )
+
+Configuration:
+
+Editing $MYCTL_CNF configures this script.
+It's a regular my.cnf file, so, configuration for this
+script should be placed under a [mysqlctl] section.
+
+Currently supported tunables are:
+  - start_timeout   How long to wait for mysql to start.
+                    Currently set: $start_timeout
+
+  - stop_timeout    How long to wait for mysql to stop
+                    mysql May still stop After this time,
+                    but this script will not wait indefinitely.
+                    Currently set: $stop_timeout
+
+  - flushes         How many times to execute FLUSH LOGS
+                    Currently set: $flushes
+
+  - flush_sleep     How long to sleep between flushing.
+                    Currently set: $flush_sleep
+
 EOF
   ;;
 esac

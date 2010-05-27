@@ -7,10 +7,10 @@ password = secret
 ; How long mysqlctl will wait before assuming the stop has failed.
 ; This doesn't mean the stop HAS failed, just that mysqlctl gave
 ; up waiting.
-stop_timeout = 30
+stop_timeout = 1800
 
 ; Same as above, but for starting mysql
-start_timeout = 30
+start_timeout = 1800
 
 ; How many log flushes to do.
 flushes = 3
