@@ -1,4 +1,4 @@
-#!/opt/local/bin/perl
+#!/usr/bin/env perl
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
 # 
@@ -27,8 +27,9 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 
 use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
@@ -45,6 +46,10 @@ my $generate_table=0;
 my $table_engine="InnoDB";
 my $for_infile = 0;
 my %columns = ();
+my $pk_start = 1;
+
+# For stateful generators
+my %gen = ();
 
 GetOptions(
   "h|help" => sub { pod2usage(); },
@@ -57,7 +62,8 @@ GetOptions(
   "e|engine=s" => \$table_engine,
   "i|for-infile" => \$for_infile,
   "s|seed=i" => \$seed,
-  "T|seed-time=i" => \$base_time
+  "T|seed-time=i" => \$base_time,
+  "P|primary-key-start=i" => \$pk_start
 );
 
 if($seed) {
@@ -97,12 +103,35 @@ sub generate_timestamp {
   return "$year-$mon-$mday ${hour}:${min}:${sec}";
 }
 
+sub generate_linear_timestamp {
+  my $sway = shift || 300;
+  my $baset = $base_time;
+  my $grator = sub {
+    my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) =
+                                localtime(int($baset += rand($sway)));
+    $year += 1900;
+    $mon  += 1;
+
+    return "$year-$mon-$mday ${hour}:${min}:${sec}";
+  };
+  return $grator;
+}
+
 unless($out eq "-") {
   open SQL, ">$out";
 }
 else {
   *SQL=\*STDOUT
 }
+
+# create generator functions
+map {
+  my $c = $_;
+  my $t = $columns{$c};
+  if($t =~ /linear_timestamp(?:\((\d*)\))?/) {
+    $gen{$c} = generate_linear_timestamp($1);
+  }
+} keys %columns;
 
 if($generate_table and !$for_infile) {
   print SQL "USE $database; ";
@@ -112,6 +141,9 @@ if($generate_table and !$for_infile) {
     my $c = $_;
     my $t = $columns{$c};
     $t = "INTEGER PRIMARY KEY AUTO_INCREMENT" if($t eq 'int_pk');
+    if($t =~ /linear_timestamp(?:\((\d*)\))?/) {
+      $t = 'TIMESTAMP';
+    }
     $sql_columns .= "$c $t, ";
   } sort keys %columns;
   $sql_columns =~ s/, $//;
@@ -119,9 +151,10 @@ if($generate_table and !$for_infile) {
 }
 
 my $cols_str = join(",", sort keys %columns);
-foreach my $i (1..$n_rows) {
+foreach my $i ($pk_start..$n_rows) {
   my $vals = "";
   map {
+    my $k = $_;
     my $t = $columns{$_};
     if($t =~ /^int_pk/) {
       $vals .= "$i,";
@@ -138,6 +171,14 @@ foreach my $i (1..$n_rows) {
       }
       else {
         $vals .= "'". generate_timestamp() . "',";
+      }
+    }
+    elsif($t =~ /linear_timestamp(?:\((\d*)\))?/) {
+      if($for_infile) {
+        $vals .= $gen{$k}->() .",";
+      }
+      else {
+        $vals .= "'". $gen{$k}->() ."',";
       }
     }
     elsif($t =~ /^(?:var)?char\((\d+)\)/) {
@@ -184,7 +225,7 @@ Options:
 
     --column,-c           May be specified multiple times. Format is: column_name=type(length)
                           'id' column is automatically included, so you need not add that.
-                          Supported types are:
+                          Supported types are (plus see 'Psuedo Column Types' below):
                               varchar
                               char
                               timestamp (weird, but mostly random)
@@ -196,3 +237,26 @@ Options:
                           --engine, and the use of column names.
     --seed,-s             Explicitly set the random seed. Expert use only.
     --seed-time,-T        Explicitly set the base time used for random timestamp generation. Experts only.
+    --primary-key-start,-P Where the primary key should begin for this gen. Default: 1
+
+Pseudo Column Types:
+In addition to the support normal column types, there are some Pseudo-types
+that have specific alternate behavior other than 'random':
+  
+  int_pk:
+    This type is used as the primary key for the table.
+    It can only be specified once, and it produces no random values.
+    The values it produces are in the range: (-P .. -r)
+    That is the value of option -P (normally 1) to the value of -r (normally 500k)
+
+  linear_timestamp(max_shift):
+    This produces a timestamp column much like the regular timestamp column type,
+    however, it guarantees that values inserted will start at --seed-time
+    (normally NOW()), and monotonically increase in random intervals.
+    The normal timestamp type will also insert values less than the current time.
+    This type is best used for when simulating various types of logging tables,
+    where the insert pattern has timestamps increasing with the primary key
+    (if one exists).
+    If max_shift specified, it indicates how much the timestamp is allowed
+    to increase, in seconds.
+    It defaults to 300 seconds.
