@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 use strict;
 use warnings FATAL => 'all';
+
 # ###########################################################################
 # ProcessLog package GIT_VERSION
 # ###########################################################################
@@ -13,6 +14,20 @@ use warnings FATAL => 'all';
 # ###########################################################################
 # ###########################################################################
 # End IniFile package
+# ###########################################################################
+
+# ###########################################################################
+# Path package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Path package
+# ###########################################################################
+
+# ###########################################################################
+# DSN package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End DSN package
 # ###########################################################################
 
 # ###########################################################################
@@ -36,64 +51,477 @@ use warnings FATAL => 'all';
 # End MysqlMasterInfo package
 # ###########################################################################
 
-#package Worker;
-#
-#sub new {
-#  my ($class, $pl, $dry_run, $host, $master_host,
-#    $sandbox, $repl_user, $repl_host) = @_;
+# ###########################################################################
+# MysqlSlave package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End MysqlSlave package
+# ###########################################################################
+
+package ReMysql;
+use strict;
+use warnings FATAL => 'all';
+use Data::Dumper;
+$Data::Dumper::Indent = 0;
+use Carp;
+use Path;
+
+my $pid_check_sleep = 10;
+my $stop_timeout = 3;
+my $start_timeout = 3;
+my $slave_timeout = 3;
+
+sub new {
+  my ($class, $dry_run, $sandbox_path, $dsn) = @_;
+  my $self = {};
+  $$self{dsn} = $dsn;
+  $$self{dry_run} = $dry_run;
+  $$self{sandbox_path} = $sandbox_path;
+  $$self{inst} = MysqlInstance->from_dsn($dsn);
+  $$self{save_mysql} = 1;
+  bless $self, $class;
+
+  $self->verify_permissions();
+
+  return $self;
+}
+
+sub _ro() {
+  my $self = shift;
+  $$self{ro} ||= RObj->new($$self{dsn}->get('h'),
+    $$self{dsn}->get('sU'), $$self{dsn}->get('sK'));
+  return $$self{ro}->copy;
+}
+
+sub verify_permissions {
+  my ($self) = @_;
+  $self->verify_ssh();
+  my $config = $$self{inst}->config();
+  $$self{config} = $config;
+
+  my $ro = $self->_ro;
+  $ro->add_main(\&verify_user_permissions);
+  $::PLOG->d($$self{dsn}->get('h').':', 'Preflight: ssh user permissions');
+  my @r = $ro->do($config);
+  if($r[0] ne 'EXIT') {
+    croak($r[0]);
+  }
+  unless($r[1] == 1) {
+    croak('Invalid permissions on remote');
+  }
+  $self->verify_mysql_permissions();
+
+  return 1;
+}
+
+sub verify_ssh {
+  my $self = shift;
+  my $host = $$self{dsn};
+  my $ro = $self->_ro;
+  $::PLOG->d($$self{dsn}->get('h').':', 'Preflight: ssh');
+  $ro->add_main(sub { return 'OK' });
+  my @r = $ro->do();
+  unless($r[1] eq 'OK') {
+   croak('Unable to ssh to remote');
+  }
+  return 1;
+}
+
+sub verify_user_permissions {
+  my $cfg = shift;
+  my $r = {};
+
+  my $pid = ($$cfg{'mysqld'}{'pid-file'} || $$cfg{'mysqld_safe'}{'pid-file'});
+  die('No pid-file entry in my.cnf') unless($pid);
+  die('No datadir entry in my.cnf') unless($$cfg{'mysqld'}{'datadir'});
+
+  open PID_FILE, '<', $pid or die('Unable to open or read pid file');
+  chomp($pid = <PID_FILE>);
+  close(PID_FILE);
+
+  my @dirs = (
+    $$cfg{'mysqld'}{'datadir'},
+    '/proc/'. $pid
+  );
+
+  for(@dirs) {
+    die('Directory "'. (defined($_) ? $_ : 'undef') .'" does not exist') unless( defined($_) && -d $_ );
+    my @st = stat($_);
+    my ($uid, $gid, $mode) = @st[4,5,2];
+    die('User does not own "'. $_ .'"') unless($< == 0 or $uid == $<);
+  }
+
+  die('path /tmp/mysql exists') if(-e '/tmp/mysql');
+
+  return 1;
+}
+
+sub verify_mysql_permissions {
+  my $self = shift;
+  $::PLOG->d($$self{dsn}->get('h').':', 'Preflight: verify mysql permissions');
+  $$self{dsn}->get_dbh(1);
+  my ($gstr) = $$self{dsn}->get_dbh(1)->selectrow_array('SHOW GRANTS');
+  if($gstr !~ /SUPER/ and $gstr !~ / ALL /) {
+    croak('mysql user needs SUPER');
+  }
+  return 1;
+}
+
+sub make_slave_of {
+  my ($self, $master, $user, $pw) = @_;
+  $master = $$master{dsn};
+  my $ms1 = MysqlSlave->new($master);
+  my $ms2 = MysqlSlave->new($$self{dsn});
+  my ($m1_file, $m1_pos) = $ms1->master_status();
+  my ($binlog_base) = ($m1_file =~ /^(.+)\.\d+$/);
+  $::PLOG->d($$self{dsn}->get('h').':', 'making slave of', $master->get('h'));
+  $ms2->stop_slave();
+  $ms2->change_master_to(
+    master_host => $master->get('h'),
+    master_user => $user,
+    master_port => $master->get('P'),
+    master_password => $pw,
+    master_log_file => sprintf("$binlog_base.%06d", 1),
+    master_log_pos  => 4
+  );
+  $ms2->start_slave();
+  my $i = 0;
+  my $status = defined($ms2->slave_status()->{'Seconds_Behind_Master'}
+    ? 1 : 0);
+  while($i < 3 and !$status) {
+    $status = defined($ms2->slave_status()->{'Seconds_Behind_Master'}
+      ? 1 : 0);
+    sleep(1);
+  }
+  continue {
+    $i++;
+  }
+  unless($status) {
+    croak('Slave not running after 3 seconds');
+  }
+}
+
+sub copy_data {
+  my ($self, $sandbox_path) = @_;
+  my $hostname = $$self{dsn}->get('h');
+  my $key = $$self{dsn}->get('sK');
+  my $user = $$self{dsn}->get('sU');
+  my $datadir = $$self{config}{'mysqld'}{'datadir'};
+  $::PLOG->d($$self{dsn}->get('h').':', 'copying data');
+  system('scp',
+    '-B', '-C', '-r',
+    '-p', '-q',
+    $key ? ('-i', $key) : (),
+    <$sandbox_path/data/*>,
+    "$user\@${hostname}:$datadir"
+  );
+  return $? >> 8;
+}
+
+#sub empty_datadir {
+#  my $self = shift;
+#  my $ro = $self->_ro;
+#  $ro->add_package('Path');
+#  $ro->add_main(sub { Path::dir_empty($_[0]) });
+#  $::PLOG->d($$self{dsn}->get('h').':', 'emptying datadir:',
+#    $$self{config}{'mysqld'}{'datadir'});
+#  my @r =$ro->do($$self{config}{'mysqld'}{'datadir'});
+#  die($r[0]) unless($r[0] eq 'EXIT');
+#  return 0;
+#}
+
+sub check_mysql_pid {
+  my $cfg = shift;
+  my $pid;
+  eval {
+    open PID_FILE, '<', $$cfg{'mysqld'}{'pid-file'} or die($!);
+    chomp($pid = <PID_FILE>);
+  };
+  if(defined $pid and -d '/proc/'. $pid ) {
+    return 1;
+  }
+  return 0;
+}
+
+#sub stop_mysql {
+#  my $self = shift;
+#  my $host = $$self{dsn};
+#  my $i=0;
+#  my $mi = $$self{inst};
+#  $::PLOG->d($$self{dsn}->get('h').':', 'stopping mysql');
+#  $mi->stop;
+#  my $cfg = $$self{config};
+#  my $pid_check = $self->_ro;
+#  $pid_check->add_main(\&check_mysql_pid);
+#  my @r = $pid_check->do($cfg);
+#  if($r[0] ne 'EXIT' and $r[0] !~ /No such file/) {
+#    die($r[0]) if($r[0] ne 'EXIT');
+#  }
+#  elsif($r[0] =~ /No such file/) {
+#    return 1;
+#  }
+#  while($i < $stop_timeout and $r[1]) {
+#    $::PLOG->d($host->get('h'). ':', 'Waiting for mysql stop..');
+#    sleep($pid_check_sleep);
+#    $i++;
+#    @r = $pid_check->do($cfg);
+#  }
+#  if($i == $stop_timeout) {
+#    die('mysql did not stop in a timely fashion');
+#  }
 #}
 #
-#1;
+#sub start_mysql {
+#  my $self = shift;
+#  my $host = $$self{dsn};
+#  my $i=0;
+#  my $mi = $$self{inst};
+#  $::PLOG->d($$self{dsn}->get('h').':', 'starting mysql');
+#  $mi->start;
+#  my $cfg = $$self{config};
+#  my $pid_check = $self->_ro;
+#  $pid_check->add_main(\&check_mysql_pid);
+#  my @r = $pid_check->do($cfg);
+#  die($r[0]) if($r[0] ne 'EXIT' and $r[0] !~ /No such file/);
+#  while($i < $start_timeout and (!$r[1] or $r[0] =~ /No such file/)) {
+#    $::PLOG->d($host->get('h'). ':', 'Waiting for mysql start..');
+#    sleep($pid_check_sleep);
+#    $i++;
+#    @r = $pid_check->do($cfg);
+#  }
+#  if($i == $start_timeout) {
+#    die('mysql did not start in a timely fashion');
+#  }
+#}
+
+sub rebuild_rmot {
+  my $params = shift;
+  my $start_timeout = $$params{'start_timeout'};
+  my $stop_timeout = $$params{'stop_timeout'};
+  my $pid_check_sleep = $$params{'pid_check_sleep'};
+  my $save_mysqldb = $$params{'save_mysqldb'};
+  my $mi = MysqlInstance->new('localhost');
+  my $cfg = $mi->config;
+  my $datadir = $$cfg{'mysqld'}{'datadir'};
+  my $i=0;
+
+# #############################################################################
+# Stop mysql
+# #############################################################################
+
+  $mi->stop;
+  while($i < $stop_timeout && check_mysql_pid($cfg)) {
+    sleep($pid_check_sleep);
+    $i++;
+  }
+  if($i == $stop_timeout) {
+    die('mysql did not stop in a timely fashion');
+  }
+  $i = 0;
+
+# #############################################################################
+# Save mysql db to /tmp
+# #############################################################################
+
+  system('mv', $datadir . '/mysql', '/tmp/');
+
+# #############################################################################
+# Remove existing data
+# #############################################################################
+
+  Path::dir_empty($datadir);
+
+# #############################################################################
+# print status (removed datadir), and wait for signal (continue)
+# #############################################################################
+
+  R_print('datadir ready');
+  my @r = R_read();
+  unless($r[0] eq 'continue') {
+    die('Received invalid signal from controller');
+  }
+
+# #############################################################################
+# Remove ib_logfiles
+# #############################################################################
+
+  unlink($datadir . "/ib_logfile0");
+  unlink($datadir . "/ib_logfile1");
+
+# #############################################################################
+# Remove new mysql db and restore old from /tmp
+# #############################################################################
+
+  system('rm', '-rf', $datadir . '/mysql');
+  system('mv', '/tmp/mysql', $datadir . '/');
+
+# #############################################################################
+# Start mysql
+# #############################################################################
+
+  $mi->start;
+  while($i < $start_timeout && !check_mysql_pid($cfg)) {
+    sleep($pid_check_sleep);
+    $i++;
+  }
+  if($i == $start_timeout) {
+    die('mysql did not start in a timely fashion');
+  }
+
+  return 0;
+}
+
+sub rebuild {
+  my $self;
+  my $ro = $self->_ro;
+  $ro->add_package('IniFile');
+  $ro->add_package('MysqlInstance::Methods');
+  $ro->add_package('MysqlInstance');
+  $ro->add_package('Path');
+  $ro->add_sub(\&check_mysql_pid);
+  $ro->add_main(\&rebuild_remote);
+
+  $ro->start({
+      start_timeout => $start_timeout,
+      stop_timeout => $stop_timeout,
+      pid_check_sleep => $pid_check_sleep,
+      save_mysqldb => $$self{'save_mysql'}
+    });
+  
+  my @r = $ro->read();
+  
+  unless($r[0] eq 'datadir ready') {
+    die('Got invalid signal from remote end: '. $r[0]);
+  }
+  else {
+    $self->copy_data($$self{sandbox_path});
+    $ro->write('continue');
+  }
+  $ro->wait();
+  return 0;
+}
+
+#sub rebuild {
+#  my $self = shift;
+#  my $datadir = $$self{config}{'mysqld'}{'datadir'};
+#  my @r;
 #
-package pdb_master;
+#  unless($$self{dry_run}) {
+## #############################################################################
+## Stop mysql on remote
+## #############################################################################
+#
+#    $self->stop_mysql;
+#
+## #############################################################################
+## Save the mysql database to /tmp on remote
+## #############################################################################
+#
+#    my $ro = $self->_ro;
+#    if($$self{save_mysql}) {
+#      $::PLOG->d($$self{dsn}->get('h').':', 'Saving mysql database');
+#      $ro->add_main(sub {
+#          my $config = shift;
+#          my $datadir = shift;
+#          my $r = system('mv', "$datadir/mysql", '/tmp/');
+#          return $r >> 8;
+#        });
+#      @r = $ro->do($$self{config}, $datadir);
+#      die($r[0]. ' ret: '. $r[1]) unless($r[0] eq 'EXIT' and $r[1] == 0);
+#    }
+#
+## #############################################################################
+## Remove existing data and copy over new data
+## #############################################################################
+#
+#    $self->empty_datadir();
+#    if($self->copy_data($$self{sandbox_path})) {
+#      die($$self{dsn}->get('h') .': Error encountered while copying data');
+#    }
+#
+## #############################################################################
+## Remove the ib_logfiles, since they may not be the right size.
+## #############################################################################
+#
+#
+## #############################################################################
+## Replace the mysql database from /tmp
+## #############################################################################
+#
+#    $ro = $self->_ro;
+#    if($$self{save_mysql}) {
+#      $::PLOG->d($$self{dsn}->get('h').':', 'Restoring mysql database');
+#      $ro->add_main(sub {
+#          my $config = shift;
+#          my $datadir = shift;
+#          system('rm', '-rf', "$datadir/mysql");
+#          my $r = system('mv', "/tmp/mysql", $datadir);
+#          if($< == 0) {
+#            system('chown', '-R', 'mysql:mysql', $datadir);
+#          }
+#          return $r >> 8;
+#        });
+#      @r = $ro->do($$self{config}, $datadir);
+#      die($r[0]. ' ret: '. $r[1]) unless($r[0] eq 'EXIT' and $r[1] == 0);
+#    }
+#
+## #############################################################################
+## Start mysql on remote
+## #############################################################################
+#
+#    $self->start_mysql;
+#
+#  } ## $dry_run
+#  else {
+#    $::PLOG->d($$self{dsn}->get('h').':', ' dry-run: rebuild not done');
+#  }
+#
+#  return 0;
+#}
+
+1;
+
+package PdbMaster;
 use strict;
 use warnings FATAL => 'all';
 
-use vars qw($VERSION);
-$VERSION = 0.01;
-
-use Getopt::Long qw(GetOptionsFromArray :config no_ignore_case);
+our $VERSION = 0.01;
+use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use POSIX ':sys_wait_h';
 use Data::Dumper;
+use Carp;
 
+use DSN;
 use ProcessLog;
 use IniFile;
+use MysqlSlave;
 use MysqlInstance;
 use MysqlMasterInfo;
 use RObj;
 
-my $ssh_key = undef;
-my @save_dbs = qw(mysql);
-my $save_dest = '/tmp';
-my $save_user = 'root';
-my $save_pass = undef;
+my $pl;
+my $dry_run = 0;
+my $sandbox_path;
 
-# User/Pw for all hosts in cluster
-# to use for replication
-my ($repl_user, $repl_pass);
 
 sub main {
   my @ARGV = @_;
-  my $sandbox_path = undef;
-  my (@hosts, @masters, @pids);
-  my $dry_run = 0;
-  my $pl;
-  GetOptionsFromArray(\@ARGV,
-    'help|h|?'  => sub { pod2usage( -verbose => 1); },
-    'dry-run|n' => \$dry_run,
-    'ssh-key|i=s' => \$ssh_key,
-    'save|S=s@' => \@save_dbs,
-    'save-destination|D=s' => \$save_dest,
-    'save-user=s' => \$save_user,
-    'save-password=s' => \$save_pass,
-    'repl-user=s' => \$repl_user,
-    'repl-password=s' => \$repl_pass
+  my $dsnp = DSNParser->default();
+  my (%o, @hosts);
+  $o{'logfile'} = 'pdb-test-harness';
+  GetOptions(\%o,
+    'help|h',
+    'dry-run|n',
+    'logfile|L',
+    'repl-user=s',
+    'repl-password=s'
   );
-  if(scalar @ARGV < 3) {
-    pod2usage(-message => "Must have a sandbox and at least two host references.",
+  if(scalar @ARGV < 2) {
+    pod2usage(-message => "Must have a sandbox and at least two DSNs",
       -verbose => 1);
   }
+  $dry_run = $o{'dry-run'};
   $sandbox_path = shift @ARGV;
   @hosts        = @ARGV;
   if(! -d $sandbox_path or ! -f "$sandbox_path/my.sandbox.cnf" ) {
@@ -101,25 +529,34 @@ sub main {
       -verbose => 1);
   }
 
-  $pl = ProcessLog->new($0, '/dev/null', undef);
-  @hosts = map { MysqlInstance->new(parse_hostref($_), $ssh_key) } @hosts;
-  @masters = @hosts[0,1];
+  $pl = ProcessLog->new($0, $o{'logfile'}, undef);
+  {
+    no strict 'refs';
+    no warnings 'once';
+    *::PLOG = \$pl;
+  }
+  @hosts = map { $dsnp->parse($_) } @hosts;
   $pl->i("pdb-master v$VERSION build SCRIPT_GIT_VERSION");
   foreach my $host (@hosts) {
-    #my %remote_cfg
-    #my $rmi = RObj->new($host->{host}, $host->{user}, $host->{ssh_key});
-    #$rmi->add_package('MysqlMasterInfo');
-    #$rmi->add_main(sub { MysqlMasterInfo->open(@_); });
-    #$master_info = $rmi->do($remote_cfg{'mysqld'}{'master-info-file'}
-    #  || $remote_cfg{'mysqld'}{'datadir'} . '/master.info');
-    my $pid = fork();
-    if($pid == 0) {
-      return worker($pl, $dry_run, $host, $sandbox_path);
+    my $host_cfg;
+    eval {
+      $host = ReMysql->new($dry_run, $sandbox_path, $host);
+    };
+    if($@) {
+      chomp($@);
+      $pl->e('Error in pre-flight check for host:', $host->get('h'));
+      $pl->e('Error:', $@);
+      return 1;
     }
-    $pl->d('Spawned worker:', $pid);
-    die('Unable to spawn worker process.') unless($pid);
-    push @pids, $pid;
   }
+
+  $pl->i('All pre-flight checks passed. Beginning work.');
+  my @pids;
+  foreach my $host (@hosts) {
+    push @pids, spawn_worker($host);
+    $pl->d('Process:', $pids[-1], 'started.');
+  }
+
   my $kid;
   while( ($kid = waitpid(-1, 0)) >= 0 ) {
     # If there was an error with any of the workers,
@@ -130,308 +567,37 @@ sub main {
         kill(15, $_); # Send SIGTERM
       }
       $pl->e('One of the workers encountered an error.');
-    }
-    else {
-      $pl->d('Worker:', $kid, 'finished.');
-    }
-  }
-  $pl->i('pdb-master finished');
-  return 0;
-}
-
-if(!caller) { main(@ARGV); }
-
-sub exit_worker {
-  my ($host, $pl, $code, $step) = @_;
-  # Descriptions
-  my @steps = ('not started', 'mysql stopped', 'got config and master.info',
-    'required databases saved', 'data removed', 'data copied',
-    'removed old ib_logfiles', 'restarted mysql');
-  $pl->i("$host->{host}:", 'worker exited at step:', $steps[$step], '(', $step, ')');
-  exit($code);
-}
-
-sub worker {
-  my ($pl, $dry_run, $host, $sandbox_path) = @_;
-  my ($master_info, %remote_cfg, $rmi, $res);
-  my $saved_dbs_file;
-  # exit flag - if true exit at the next
-  # safe spot.
-  my $exit = 0;
-  # Step is which step of the rebuild
-  # This process is at.
-  my $step = 0;
-
-  my $sig_handler = sub {
-    $pl->m("$host->{host}:", 'Caught Signal - cleaning up.');
-    $exit = 1;
-  };
-  $pl->d("Installing signal handlers..");
-  local $SIG{TERM} = $sig_handler;
-  local $SIG{HUP}  = $sig_handler;
-  local $SIG{QUIT} = $sig_handler;
-  local $SIG{INT}  = $sig_handler;
-
-  my $status = $host->status;
-  $pl->i("$host->{host} status: ", $status ? 'Not Running' : 'Running');
-  unless($dry_run) {
-    if($host->stop and $status == 0) {
-      $pl->e("Unable to stop mysql on $host->{host}. Exiting worker.");
       return 1;
     }
+    else {
+      $pl->d('Process:', $kid, 'completed.');
+    }
   }
-  $step++;
-  exit_worker($host, $pl, 1, $step) if($exit);
-  $pl->m("$host->{host}:", 'Collecting remote configuration');
-  %remote_cfg = %{$host->config};
-  $rmi = RObj->new($host->{host}, $host->{user}, $host->{ssh_key});
-  $rmi->add_package('MysqlMasterInfo');
-  $rmi->add_main(sub { MysqlMasterInfo->open(@_); });
-  $master_info = $rmi->do($remote_cfg{'mysqld'}{'master-info-file'}
-    || $remote_cfg{'mysqld'}{'datadir'} . '/master.info');
-  $step++;
-  exit_worker($pl, 1, $step) if($exit);
 
-  # Save required databases
-  $pl->m("$host->{host}:", 'Saving:', join(', ', @save_dbs));
-  $rmi = $rmi->copy;
-  $rmi->add_main(\&save_databases);
-  $saved_dbs_file = $rmi->do($dry_run, \%remote_cfg,
-    $save_user, $save_pass, @save_dbs);
-  $step++;
-  exit_worker($host, $pl, 1, $step) if($exit);
+  $pl->d('All hosts prepped for re-slaving.');
+  $hosts[0]->make_slave_of($hosts[1], $o{'repl-user'}, $o{'repl-password'});
+  $hosts[1]->make_slave_of($hosts[0], $o{'repl-user'}, $o{'repl-password'});
 
-  $pl->m("$host->{host}:", 'Removing remote data');
-  $rmi = $rmi->copy;
-  $rmi->add_main(\&remove_datadir);
-  $res = [$rmi->do($dry_run, $remote_cfg{'mysqld'}{'datadir'})]->[1];
-  $pl->d("$host->{host}:", 'removed files:', @{@$res[0]} ? join("\n  ", @{@$res[0]}) : 'none' );
-  $pl->e("$host->{host}:", 'got errors while removing files:', join("\n  ", @{@$res[1]})) if(@{@$res[1]});
-  $step++;
-  exit_worker($host, $pl, 1, $step) if($exit or @{@$res[1]});
-
-  $pl->m("$host->{host}:", 'Copying data to remote');
-  $res = copy_data($dry_run, $host->{host},
-    $host->{user}, $host->{ssh_key}, $sandbox_path,
-    $remote_cfg{'mysqld'}{'datadir'});
-  $step++;
-  exit_worker($host, $pl, 1, $step) if($exit or $res);
-
+  foreach my $host (@hosts[2 .. $#hosts]) {
+    $host->make_slave_of($hosts[0], $o{'repl-user'}, $o{'repl-password'});
+  }
+  $pl->i('pdb-master finished.');
   return 0;
 }
 
-sub parse_hostref {
-  my $ref = shift;
-  my ($host, $user, $path);
-  if($ref =~ /^(.+?)\@(.+?):(.+?)$/) {
-    $host = $2;
-    $user = $1;
-    $path = $3;
+sub spawn_worker {
+  my $host = shift;
+  my $pid = fork();
+  if(not defined($pid)) {
+    croak("fork failed [$!]");
   }
-  elsif($ref =~ /^(.+?)\@(.+?)$/) {
-    $user = $1;
-    $host = $2;
-    $path = undef;
+  if($pid) {
+    return $pid;
   }
-  elsif($ref =~ /^(.+?):(.+?)$/) {
-    $host = $1;
-    $path = $2;
-  }
-  elsif($ref =~ /^(.+?)$/) {
-    $host = $1;
-  }
-  return undef if(!$host or $host eq '');
-  return wantarray ? ($host, $user, $path) : [$user, $host, $path];
-}
-
-sub save_databases {
-  my ($dry_run, $remote_cfg, $user, $pw, $dest, @databases) = @_;
-  eval 'use File::Temp;';
-  my $dumpfile = File::Temp->new( TEMPLATE => 'pdb-mm-XXXXXXXXXXXXXXX',
-                                  DIR      => $dest,
-                                  SUFFIX   => '.sql',
-                                  UNLINK   => 0
-                                );
-  unless($dry_run) {
-    system('mysqldump',
-      '--skip-opt',
-      '--user', $user,
-      '--password='. $pw,
-      '--socket', $remote_cfg->{'mysqld'}->{'socket'},
-      '--add-drop-table',
-      '--create-options',
-      '--disable-keys',
-      '--extended-insert',
-      '--no-autocommit',
-      '--quick',
-      '--flush-privileges',
-      '--databases',
-      # Support testing by explicitly using the filename method.
-      '--result-file', $dumpfile->filename,
-      , join(' ', @databases)
-    );
-  }
-  else {
-    $? = -1;
-  }
-
-  if($? == -1 or ($? >> 8) > 0) {
-    $dumpfile->unlink_on_destroy(1);
-    return $?;
-  }
-
-  return $dumpfile->filename;
-}
-
-# Empties out the remote datadir, if !$dry_run
-sub remove_datadir {
-  my ($dry_run, $datadir_path) = @_;
-  my ($results, $errors);
-  eval "use File::Path qw(rmtree);";
-  eval {
-    unless($dry_run) {
-      my %opts = ( 'keep_root' => 1, error => \$errors, result => \$results );
-      rmtree($datadir_path, \%opts);
-    }
-    else {
-      $results = [];
-      $errors  = [];
-    }
-  };
-  if($@) {
-    R_die('DIE', $@);
-  }
-  return [$results, $errors];
-}
-
-# Copies sandbox data into the remote datadir, if !$dry_run
-# Pre-condition mysql is not running, and all important data saved.
-sub copy_data {
-  my ($dry_run, $host, $user, $key, $sandbox_path, $datadir) = @_;
-  unless($dry_run) {
-    system('scp',
-      '-B', '-C', '-r',
-      '-q', '-p',
-      $key ? ('-i', $key) : (),
-      "$sandbox_path/data/",
-      "$user\@$host". ':' ."$datadir/"
-    );
-  }
-  else {
-    $? = 0;
-  }
-  return $? >> 8;
+  exit($host->rebuild());
 }
 
 
-=pod
-
-=head1 NAME
-
-pdb-master - build a master-master cluster from a mysqlsandbox
-
-=head1 SYNOPSIS
-
-pdb-master [options] <sandbox path> <[user@]host[:my.cnf path]>+
-
-=head1 ARGUMENTS
-
-After options, the arguments to pdb-master are a path to a sandbox.
-This must be a filesystem path. Followed by one or more host references.
-You may not mix the sandbox path, and host references. The tool will fail if
-the first argument is not a directory.
-
-Host references are an optional username followed by an at sign C<@>,
-followed by a mandatory hostname, followed by an optional colon C<:> and
-a path to a my.cnf file on the remote host.
-
-Example host references:
-
-C<root@db1> , C<db2:/etc/prd/my.cnf> , C<db3> , C<mysql@db4:/etc/my.cnf>
-
-pdb-master tries to be as smart as possible in it's operation.
-So, it will autodetect standard locations for RedHat and Debian Linux
-distributions, and FreeBSD. Meaning that specifying the my.cnf path
-is not usually needed.
-
-Only the first two hosts are master-master the rest are built as query slaves hanging off the secondary master. This is because building master-master clusters with more than two masters is not well supported by mysql.
-
-=head1 REQUIREMENTS
-
-Where possible this tool inline's its requirements much like
-L<http://code.google.com/p/maatkit/> in order to reduce external dependencies.
-
-At the time of writing this tool needs the following external commands
-available in the $PATH: ssh, mysql, mysqldump, scp, and tar.
-
-For SSH access to the remote hosts, only public key authentication is allowed.
-This is done both for security and to accomodate Debian. There is a Net::SSH::Perl
-module but Debian refuses to package it because one of its dependencies is
-"hard" to pacakge.
-
-=head1 OPTIONS
-
-=over 4
-
-=item --help,-h
-
-This help.
-
-=item --dry-run,-n
-
-Report on, but do not execute, actions that would be taken.
-
-=item --ssh-key,-i
-
-SSH key to use when connecting to remote hosts.
-If not specified it is assumed that an L<ssh-agent(1)> is running,
-or that .ssh/config has been setup appropriately.
-
-Default: none
-
-=item --save,-S
-
-Preserve a database on the remote machine.
-This option can be specified multiple times to save many databases.
-The save/restore is done by doing a mysqldump and then reloading that mysqldump.
-
-Default: mysql
-
-=item --save-destination,-D
-
-Where to save databases.
-
-This parameter is a path to a directory on the remote machine that
-has enough free space to save all databases specified with C<--save>.
-The saving is done using C<mysqldump> on the remote machine.
-
-Default: /tmp
-
-=item --save-user
-
-User for C<mysqldump> to use when saving databases. The user must exist
-before the rebuild and after the rebuild. It's up to you to figure out how
-to accomplish that.
-
-Since the C<mysqldump> happens on the remote machine, this must be a user
-that can access mysql from 'localhost', rather than the machine this tool
-runs on.
-
-Default: root
-
-=item --save-password
-
-Password for C<--save-user>.
-
-Default: <none>
-
-=item --repl-user
-
-User to use/setup for replication. The user will be checked for existance,
-and if it doesn't exist this tool will attempt to create the user
-
-=back
-
-=cut
+if(!caller) { exit(main(@ARGV)); }
 
 1;

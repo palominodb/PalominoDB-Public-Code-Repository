@@ -1,10 +1,10 @@
 TOOL_PATH = ../../util/build
 LIB_PATH = ../../util/lib
 TLIB_PATH = ../../util/t/lib
-TOOLS_RELEASE = 0.06
+TOOLS_RELEASE = 0.07
 HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 
-all: dirs pdb-archiver pdb-parted pdb-packer
+all: dirs pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge
 
 test:
 	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
@@ -24,6 +24,18 @@ pdb-parted:
 pdb-packer:
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-packer.in.pl bin/pdb-packer
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-packer bin/pdb-packer
+
+pdb-master:
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-master.in.pl bin/pdb-master
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-master bin/pdb-master
+
+pdb-zrm-restore:
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-zrm-restore.in.pl bin/pdb-zrm-restore
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-zrm-restore bin/pdb-zrm-restore
+
+pdb-sandbox-merge:
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-sandbox-merge.in.pl bin/pdb-sandbox-merge
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-sandbox-merge bin/pdb-sandbox-merge
 
 rpmball:
 	mkdir -pv pdb-data-management-$(TOOLS_RELEASE)

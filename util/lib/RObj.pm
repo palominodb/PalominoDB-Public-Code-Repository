@@ -545,7 +545,7 @@ sub R_exit {
 
 sub DESTROY {
   my $s = shift;
-  waitpid $s->{ssh_pid}, 0;
+  waitpid $s->{ssh_pid}, 0 if(defined($$s{ssh_pid}));
 }
 
 
