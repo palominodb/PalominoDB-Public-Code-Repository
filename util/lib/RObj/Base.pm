@@ -47,6 +47,7 @@ use vars qw(@ISA $VERSION @EXPORT);
 # Protocol version AND RObj version
 $VERSION = 0.01;
 
+use constant NATIVE_DEATH      => -3;
 use constant COMPILE_FAILURE   => -2;
 use constant TRANSPORT_FAILURE => -1;
 use constant OK => 0;

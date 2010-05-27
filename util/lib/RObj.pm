@@ -27,7 +27,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 2052bc8fe38f08c660f2fc8d830f2491eda1b226
+# RObj::Base package 7b005acbf29f2c5bb30272a197ead7bdf4977ce6
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -49,6 +49,7 @@ use vars qw(@ISA $VERSION @EXPORT);
 
 $VERSION = 0.01;
 
+use constant NATIVE_DEATH      => -3;
 use constant COMPILE_FAILURE   => -2;
 use constant TRANSPORT_FAILURE => -1;
 use constant OK => 0;
@@ -342,7 +343,7 @@ sub _wrap {
   my $code_sha = sha1_hex($code);
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 83df3e584f585d8fa5a79806f595e0615e51ed8e
+# RObj::E package 6cdc9f7bdbdeda6862d9b7a120cb21ea0658a8a3
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -364,6 +365,7 @@ use vars qw(@ISA $VERSION @EXPORT);
 
 $VERSION = 0.01;
 
+use constant NATIVE_DEATH      => -3;
 use constant COMPILE_FAILURE   => -2;
 use constant TRANSPORT_FAILURE => -1;
 use constant OK => 0;
@@ -464,7 +466,7 @@ RObj::Base->import;
 
 use constant COMPILE_FAILURE => RObj::Base::COMPILE_FAILURE;
 use constant TRANSPORT_FAILURE => RObj::Base::TRANSPORT_FAILURE;
-use constant NATIVE_DEATH => -3;
+use constant NATIVE_DEATH => RObj::Base::NATIVE_DEATH;
 use constant OK => RObj::Base::OK;
 
 my $ro = RObj::Base->new;
@@ -571,7 +573,7 @@ sub R_exit {
 
 sub DESTROY {
   my $s = shift;
-  waitpid $s->{ssh_pid}, 0;
+  waitpid $s->{ssh_pid}, 0 if(defined($$s{ssh_pid}));
 }
 
 

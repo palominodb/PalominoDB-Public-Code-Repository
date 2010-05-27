@@ -50,18 +50,34 @@ use warnings;
 # End IniFile package
 # ###########################################################################
 
+# ###########################################################################
+# Path package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Path package
+# ###########################################################################
+
+# ###########################################################################
+# Which package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Which package
+# ###########################################################################
+
 package pdb_zrm_restore;
 use strict;
 use warnings;
-use Getopt::Long qw(GetOptionsFromArray :config no_ignore_case);
+use Getopt::Long qw(:config no_ignore_case);
 use Data::Dumper;
 use Pod::Usage;
 use DBI;
-use File::Path qw(remove_tree);
 use File::Spec qw(splitdir);
 
+use IniFile;
 use ProcessLog;
 use ZRMBackup;
+use Path;
+use Which;
 
 my $mysqlbinlog_path;
 my $mysql_path;
@@ -71,23 +87,25 @@ my $mysqld_path;
 my $pl;
 
 sub main {
-  my @ARGV = @_;
+  @ARGV = @_;
   my %o;
   $o{'mysql-user'} = 'root';
   $o{'mysql-password'} = '';
+  $o{'log-file'} = '/dev/null';
 
   # Locate our various external programs.
-  chomp($mysqlbinlog_path  = qx/which mysqlbinlog/);
-  chomp($mysql_path        = qx/which mysql/);
-  chomp($innobackupex_path = qx/which innobackupex-1.5.1/);
-  chomp($mysqld_path       = qx/which mysqld_safe/);
+  $mysqlbinlog_path = Which::which('mysqlbinlog');
+  $mysql_path = Which::which('mysql');
+  $innobackupex_path = Which::which('innobackupex-1.5.1');
+  $mysqld_path = Which::which('mysqld_safe');
 
   my @backups;
   my %cfg;
   my $datadir;
-  GetOptionsFromArray(\@ARGV, \%o,
-    'help',
+  GetOptions(\%o,
+    'help' => sub { pod2usage(-verbose => 99) },
     'dry-run',
+    'log-file|L=s',
     'identify-dirs|i',
     'estimate|e',
     'defaults-file|F=s',
@@ -103,7 +121,7 @@ sub main {
     'strip|p=i'
   );
 
-  $pl = ProcessLog->new($0, "/dev/null", undef);
+  $pl = ProcessLog->new($0, $o{'log-file'}, undef);
   if(not exists $o{'identify-dirs'} and exists $o{i}) {
     $o{'identify-dirs'} = $o{i};
   }
@@ -120,12 +138,14 @@ sub main {
     $o{'strip'} = $o{p};
   }
   if(!$o{'identify-dirs'} and !$o{'defaults-file'}) {
-    pod2usage(-message => 'Must have --defaults-file or --identify-dirs at a minimum', -verbose => 99);
+    $pl->e('Must have --defaults-file or --identify-dirs at a minimum. Try --help.');
+    return 1;
   }
 
   # Ensure that --mysqld points to the 'safe' shell script.
-  if(!$o{'identify-dirs'} and !$o{'mysqld'} or $o{'mysqld'} !~ /safe/) {
-    pod2usage(-message => 'You must provide a path to mysqld_safe. *Not* the raw binary.', -verbose => 99);
+  if(not exists $o{'identify-dirs'} and (!$o{'mysqld'} or $o{'mysqld'} !~ /safe/)) {
+    $pl->e('You must provide a path to mysqld_safe, *not* the raw binary. Try --help.');
+    return 1;
   }
 
   # Collect all the backup set information straight away.
@@ -186,7 +206,7 @@ sub main {
   # being used like a scratch area.
   $pl->m("Removing contents of $datadir.");
   unless($o{'dry-run'}) {
-    remove_tree($datadir, { keep_root => 1 });
+    Path::dir_empty($datadir);
   }
 
   # Extract the backups
@@ -198,7 +218,7 @@ sub main {
   if( -f "$datadir/xtrabackup_logfile" ) {
     $pl->m("Applying xtrabackup log.");
     unless($o{'dry-run'}) {
-      my %r = %{$pl->x(sub { system(@_) }, "pushd $datadir ; innobackupex-1.5.1 --apply-log $datadir ; popd")};
+      my %r = %{$pl->x(sub { system(@_) }, "cd $datadir ; innobackupex-1.5.1 --defaults-file=$o{'defaults-file'} --apply-log .")};
       if($r{rcode} != 0) {
         $pl->e("Error applying xtrabackup log:");
         $_ = $r{fh};
@@ -212,18 +232,20 @@ sub main {
     $pl->m("Target doesn't look like an xtrabackup, not attempting log apply.");
   }
 
-  $iblog_size = $cfg{'mysqld'}{'innodb_log_file_size'};
-  # Convert to size in bytes
-  if($iblog_size =~ /(\d+)[Mm]$/) {
-    $iblog_size = $1*1024*1024;
-  }
-  elsif($iblog_size =~ /(\d+)[Gg]$/) {
-    $iblog_size = $1*1024*1024*1024;
-  }
-  if(-s "$datadir/ib_logfile0" < $iblog_size) {
-    $pl->i("ib_logfiles are smaller than what $o{'defaults-file'} says they should be.");
-    $pl->i("Removing the ib_logfiles.");
-    unlink(<$datadir/ib_logfile*>);
+  my $iblog_size = $cfg{'mysqld'}{'innodb_log_file_size'};
+  if(defined $iblog_size) {
+    # Convert to size in bytes
+    if($iblog_size =~ /(\d+)[Mm]$/) {
+      $iblog_size = $1*1024*1024;
+    }
+    elsif($iblog_size =~ /(\d+)[Gg]$/) {
+      $iblog_size = $1*1024*1024*1024;
+    }
+    if(-s "$datadir/ib_logfile0" < $iblog_size or -s "$datadir/ib_logfile0" > $iblog_size) {
+      $pl->i("ib_logfiles are not the size that $o{'defaults-file'} says they should be.");
+      $pl->i("Removing the ib_logfiles.");
+      unlink(<$datadir/ib_logfile*>);
+    }
   }
 
   if($backups[-1]->backup_level == 1) {
@@ -233,7 +255,34 @@ sub main {
     # XXX This trusts shell sorting.
     $pl->m("Applying binlogs.");
     unless($o{'dry-run'}) {
-      system("$mysqlbinlog_path $datadir/*-bin.[0-9]* | $mysql_path --defaults-file=$o{'defaults-file'} --user=$o{'mysql-user'} ". ($o{'mysql-password'} eq "" ? "" : "--password=$o{'mysql-password'}"));
+      $pl->m('Reading position information from', $datadir . '/xtrabackup_binlog_info');
+      open BINLOG_INFO, '<', "$datadir/xtrabackup_binlog_info";
+      my $l = <BINLOG_INFO>;
+      close BINLOG_INFO;
+      my ($binlog, $pos) = split(/\s+/, $l);
+      my ($first_fname, $first_logno) = split( '\.', $binlog);
+      my $binlog_pattern = $backups[-1]->incremental();
+      for(sort(<$datadir/$binlog_pattern>)) {
+
+        my $binlog_opts = '';
+        my ($fname, $logno) = split('\.', $_);
+        if(int($first_logno) > int($logno)) {
+          $pl->d('Skipping binlog:', $_);
+          next;
+        }
+        if(int($first_logno) == int($logno)) {
+          $pl->d('First binlog after backup point.');
+          $binlog_opts = "--offset $pos";
+        }
+
+        $pl->m('Applying:', $_);
+        system("$mysqlbinlog_path $binlog_opts $_ | $mysql_path --defaults-file=$o{'defaults-file'}");
+        if(($? >> 8) > 0) {
+          stop_mysqld(\%o, \%cfg);
+          $pl->e('Error applying binlog.');
+          return 1;
+        }
+      }
     }
     stop_mysqld(\%o, \%cfg);
     wait;
@@ -256,10 +305,10 @@ sub start_mysqld {
     pop @path; pop @path;
     my $mysqld_basedir = File::Spec->catdir(@path);
     $pl->i('mysqld basedir:', $mysqld_basedir);
-    $pl->i('starting mysqld with:', $o{'mysqld'}, '--defaults-file', $o{'defaults-file'});
+    $pl->i('starting mysqld with:', $o{'mysqld'}, '--defaults-file', $o{'defaults-file'}, '--skip-grant-tables', '--skip-networking');
     chdir $mysqld_basedir;
     unless($o{'dry-run'}) {
-      exec "$o{'mysqld'} --defaults-file=$o{'defaults-file'}"
+      exec "$o{'mysqld'} --defaults-file=$o{'defaults-file'} --skip-grant-tables --skip-networking"
     }
     else {
       exit(0);
@@ -312,11 +361,6 @@ sub read_pidfile {
   chomp($pid = <$fh>);
   close($fh);
   return $pid;
-}
-
-sub rm_datadir {
-  my (%o, $ddir) = @_;
-  return 0;
 }
 
 sub extract_backups {
@@ -393,6 +437,12 @@ This help.
 
 Report on actions that would be taken, and print an estimate of how much disk
 space will be needed for the restore.
+
+=item --log-file,-L
+
+Sets the logfile that should be written to.
+
+Default: /dev/null
 
 =item --identify-dirs,-i
 

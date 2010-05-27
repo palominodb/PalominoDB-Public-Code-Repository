@@ -1,7 +1,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 6;
+use Test::More tests => 9;
 BEGIN {
   use_ok('DSN');
 }
@@ -20,3 +20,10 @@ is($dsn->get_dbi_str(), "DBI:mysql:port=$TestDB::port;mysql_socket=$TestDB::sock
 $dsn2->fill_in($dsn);
 ok($dsn2->has('u'), 'fill_in sets new keys');
 is($dsn2->get('h'), 'testhost', "fill_in does not overwrite keys");
+
+my $dsn3 = $p->parse("h=localhost,P=$TestDB::port,S=$TestDB::socket,u=invalid,p=bad");
+
+eval {
+  my $dbh = $dsn3->get_dbh();
+};
+like($@, qr/Access denied/, "get_dbh dies for Access denied");

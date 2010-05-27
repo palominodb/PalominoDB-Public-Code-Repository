@@ -281,6 +281,7 @@ sub _action {
   if(!$m) {
     $m = MysqlInstance::Methods->detect();
   }
+  my $config = {IniFile::read_config($m->{config})};
   if($action eq 'stop') {
     $result = system($m->{stop}) >> 8;
   }
@@ -294,7 +295,7 @@ sub _action {
     $result = system($m->{status}) >> 8;
   }
   elsif($action eq 'config') {
-    $result = {IniFile::read_config($m->{config})};
+    $result = $config;
   }
   # This is for the testing framework
   elsif($action eq 'hostname') {

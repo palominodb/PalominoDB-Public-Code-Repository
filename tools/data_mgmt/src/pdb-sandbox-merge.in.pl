@@ -48,7 +48,7 @@ package pdb_sandbox_merge;
 use strict;
 use warnings;
 
-use Getopt::Long qw(GetOptionsFromArray :config no_ignore_case);
+use Getopt::Long qw(:config no_ignore_case);
 use Data::Dumper;
 use List::Util;
 
@@ -60,7 +60,7 @@ $Data::Dumper::Indent = 1;
 my $pl;
 
 sub main {
-  my @ARGV = @_;
+  @ARGV = @_;
   my %o;
   my $base;
   my @pids;
@@ -68,17 +68,20 @@ sub main {
   $o{'parallel'} = 1;
   $o{'user'} = 'root';
   $o{'password'} = 'msandbox';
+  $o{'log-file'} = '/dev/null';
   @{$o{'ignore-db'}} = qw(mysql information_schema);
-  GetOptionsFromArray(\@ARGV, \%o,
+  GetOptions(\%o,
     'help|h',
     'user|u=s',
-    'password|p=s',
+    'log-file|L=s',
+    'password|p:s',
     'ignore-db|i=s@',
     'include-mysql-db|I',
+    'force',
     'parallel|P!',
   );
   my @sandboxes = @ARGV;
-  $pl = ProcessLog->new($0, '/dev/null', undef);
+  $pl = ProcessLog->new($0, $o{'log-file'}, undef);
 
   if(@sandboxes < 2) {
     $pl->e('Cannot merge a single sandbox. That makes no sense.');
@@ -105,7 +108,7 @@ sub main {
         $pl->e("Unable to read $sbox/my.sandbox.cnf");
         exit(1);
       }
-      my @dbs = qx|$sbox/use --user=$o{'user'} --password=$o{'password'} --batch --skip-column-names -e 'show databases'|;
+      my @dbs = qx|$sbox/use --user=$o{'user'} --password='$o{'password'}' --batch --skip-column-names -e 'show databases'|;
       chomp(@dbs);
       @dbs = grep { !/mysql/ } @dbs;
       @dbs = grep { !/information_schema/} @dbs;
@@ -115,8 +118,10 @@ sub main {
         # listed ignores.
         any($a, @{$o{'ignore-db'}});
       } @dbs;
-      $pl->d('dump command:', qq#$sbox/my sqldump --routines --no-autocommit --skip-add-drop-table --skip-add-drop-database --add-locks --extended-insert --quick --user=$o{'user'} --password=$o{'password'} --socket=$cfg{'mysqld'}{'socket'} --databases @dbs | $base/use --user=$o{'user'} --password=$o{'password'}#);
-      exec("$sbox/my sqldump --routines --no-autocommit --skip-add-drop-table --skip-add-drop-database --add-locks --extended-insert --quick --user=$o{'user'} --password=$o{'password'} --socket=$cfg{'mysqld'}{'socket'} --databases @dbs | $base/use --user=$o{'user'} --password=$o{'password'}");
+      my $load_force = $o{'force'} ? '--force' : '';
+      $pl->d('dump command:', qq#$sbox/my sqldump --routines --no-autocommit --skip-add-drop-table --skip-add-drop-database --add-locks --extended-insert --quick --user=$o{'user'} --password='$o{'password'}' --socket=$cfg{'mysqld'}{'socket'} --databases @dbs | $base/use $load_force --user=$o{'user'} --password='$o{'password'}'#);
+
+      exec("$sbox/my sqldump --routines --no-autocommit --skip-add-drop-table --skip-add-drop-database --add-locks --extended-insert --quick --user=$o{'user'} --password='$o{'password'}' --socket=$cfg{'mysqld'}{'socket'} --databases @dbs | $base/use $load_force --user=$o{'user'} --password='$o{'password'}'");
     }
     elsif(defined $pid and $pid > 0) {
       $pl->i("Spawned mysqldump for $sbox.");
@@ -139,7 +144,7 @@ sub main {
     if( ($? >> 8) != 0 ) {
       $pl->e("One of the loads did not complete successfully. It returned: $?");
       $pl->e("Aborting rest of dumps.");
-      kill_all();
+      kill_all(@pids);
     }
   }
 
@@ -233,6 +238,12 @@ Default: root
 Password accross all sandboxes.
 
 Default: msandbox
+
+=item --log-file,-L
+
+Where to log output from this tool.
+
+Default: /dev/null
 
 =item --ignore-db,-i
 

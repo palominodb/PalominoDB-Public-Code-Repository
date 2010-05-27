@@ -147,8 +147,15 @@ sub _load_index() {
     # Convert backup sizes to kilobytes
     # kilos are easier to work with, usually.
     if($k eq "backup_size" or $k eq "backup_size_compressed") {
-      $v =~ s/ MB$//;
-      $v *= 1024;
+      if($v =~ / MB$/) {
+        $v =~ s/ MB$//;
+        $v *= 1024;
+      }
+      elsif($v =~ / GB$/) {
+        $v =~ s/ GB$//;
+        $v *= 1024;
+        $v *= 1024;
+      }
     }
     # Normalize backup_status to something more easily tested.
     elsif($k eq "backup_status") {

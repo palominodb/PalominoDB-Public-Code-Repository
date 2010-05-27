@@ -27,7 +27,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 2052bc8fe38f08c660f2fc8d830f2491eda1b226
+# RObj::Base package 7b005acbf29f2c5bb30272a197ead7bdf4977ce6
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -49,6 +49,7 @@ use vars qw(@ISA $VERSION @EXPORT);
 
 $VERSION = 0.01;
 
+use constant NATIVE_DEATH      => -3;
 use constant COMPILE_FAILURE   => -2;
 use constant TRANSPORT_FAILURE => -1;
 use constant OK => 0;
@@ -152,7 +153,7 @@ RObj::Base->import;
 
 use constant COMPILE_FAILURE => RObj::Base::COMPILE_FAILURE;
 use constant TRANSPORT_FAILURE => RObj::Base::TRANSPORT_FAILURE;
-use constant NATIVE_DEATH => -3;
+use constant NATIVE_DEATH => RObj::Base::NATIVE_DEATH;
 use constant OK => RObj::Base::OK;
 
 my $ro = RObj::Base->new;
