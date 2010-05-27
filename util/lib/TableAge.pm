@@ -28,7 +28,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 package TableAge;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Data::Dumper;
 use DateTime::Format::Strptime;
 
@@ -57,6 +57,22 @@ sub age_by_name {
     $self->{name_dft}->pattern($pattern);
   }
   return $self->{name_dft}->parse_datetime($table);
+}
+
+sub older_than {
+  my ($self, $tbl_age, $when) = @_;
+  if(DateTime->compare($tbl_age, $when) == -1) {
+    return 1;
+  }
+  return 0;
+}
+
+sub newer_than {
+  my ($self, $tbl_age, $when) = @_;
+  if(DateTime->compare($tbl_age, $when) == 1) {
+    return 1;
+  }
+  return 0;
 }
 
 1;
