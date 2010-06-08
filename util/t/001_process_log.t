@@ -33,7 +33,7 @@ use English qw(-no_match_vars);
 sub get_line {
   my $n = shift;
   $n = 1 unless($n);
-  open my $lh, '<', '001_process_log.t.log';
+  open my $lh, '<', 't/files/001_process_log.t.log';
   while($lh->input_line_number < $n) {
     $_ = <$lh>;
   }
@@ -43,9 +43,9 @@ sub get_line {
 }
 
 # Make sure everything is peachy before we get started.
-unlink('001_process_log.t.log');
+unlink('t/files/001_process_log.t.log');
 
-my $pl = ProcessLog->new('001_process_log.t', '001_process_log.t.log', undef);
+my $pl = ProcessLog->new('001_process_log.t', 't/files/001_process_log.t.log', undef);
 $pl->quiet(1);
 ok($pl, 'instantiation');
 
@@ -112,5 +112,5 @@ is($pl->p($prompt_fh, 'p: ', qr/^C$/, 'Y'), 'C', 'default not used');
 close($prompt_fh);
 
 # Cleanup after ourselves
-unlink('001_process_log.t.log');
+unlink('t/files/001_process_log.t.log');
 1;

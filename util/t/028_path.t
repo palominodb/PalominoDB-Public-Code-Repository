@@ -11,7 +11,7 @@ BEGIN {
 }
 
 END {
-  rmtree("testdir");
+  rmdir("testdir");
 }
 
 eval {
