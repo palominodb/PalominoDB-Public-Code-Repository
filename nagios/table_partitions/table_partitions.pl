@@ -28,6 +28,7 @@ use DBI;
 use Getopt::Long;
 use Pod::Usage;
 use DateTime;
+use DateTime::Format::Strptime;
 
 # Defined since Nagios::Plugin doesn't always exist.
 use constant OK       => 0;
@@ -77,7 +78,7 @@ if($last_p->{description} eq 'MAXVALUE') {
   $last_p = $parts->partitions->[-2];
 }
 
-$last_ptime = to_date($parts->desc_from_days($last_p->{name}));
+$last_ptime = to_date($parts->desc_from_datelike($last_p->{name}));
 my $today = DateTime->today(time_zone => 'local');
 
 my $du = $last_ptime - $today;
@@ -102,8 +103,9 @@ exit(UNKNOWN);
 
 sub to_date {
   my ($dstr) = @_;
-  my ($year, $month, $day) = split '-', $dstr;
-  return DateTime->new(year => $year, month => $month, day => $day, time_zone => 'local')->truncate( to => 'day' );
+  my $fmt1 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d', time_zone => 'local');
+  my $fmt2 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d %T', time_zone => 'local');
+  return ($fmt1->parse_datetime($dstr) || $fmt2->parse_datetime($dstr))->truncate( to => 'day' );
 }
 
 =pod

@@ -58,6 +58,7 @@ use Getopt::Long;
 use Pod::Usage;
 use DateTime;
 use DateTime::Duration;
+use DateTime::Format::Strptime;
 
 use Data::Dumper;
 $Data::Dumper::Indent = 0;
@@ -143,7 +144,8 @@ sub main {
     $dsn .= ";mysql_read_default_file=$db_file;mysql_read_default_group=client";
   }
 
-  $dbh = DBI->connect($dsn, $db_user, $db_pass, { RaiseError => 1, PrintError => 0, AutoCommit => 0 });
+  $dbh = DBI->connect($dsn, $db_user, $db_pass,
+    { RaiseError => 1, PrintError => 0, AutoCommit => 0, ShowErrorStatement => 1 });
 
   $pl = ProcessLog->new('pdb-parted', $logfile || 'pdb-parted.log', $email_to);
 
@@ -189,7 +191,7 @@ sub add_partitions {
     if(not defined($next_pN));
   $next_pN++;
 
-  $last_p->{date} = to_date($parts->desc_from_days($last_p->{name}));
+  $last_p->{date} = to_date($parts->desc_from_datelike($last_p->{name}));
   $reqdur = DateTime::Duration->new( $range => $add );
 
   $pl->d('Today:', $today->ymd, 'Last:', $last_p->{date}->ymd);
@@ -280,7 +282,7 @@ sub drop_partitions {
   $pl->m("Dropping $drop partitions.");
   for(my $i=0; $i < $drop ; $i++) {
     my $p = $parts->first_partition;
-    $pl->i("Dropping data older than:", to_date($parts->desc_from_days($p->{name}))->ymd);
+    $pl->i("Dropping data older than:", to_date($parts->desc_from_datelike($p->{name}))->ymd);
     $r = $parts->drop_partition($p->{name}, $pretend);
     last unless($r);
   }
@@ -289,8 +291,9 @@ sub drop_partitions {
 
 sub to_date {
   my ($dstr) = @_;
-  my ($year, $month, $day) = split '-', $dstr;
-  return DateTime->new(year => $year, month => $month, day => $day, time_zone => 'local')->truncate( to => 'day' );
+  my $fmt1 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d', time_zone => 'local');
+  my $fmt2 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d %T', time_zone => 'local');
+  return ($fmt1->parse_datetime($dstr) || $fmt2->parse_datetime($dstr))->truncate( to => 'day' );
 }
 
 exit main(@ARGV);

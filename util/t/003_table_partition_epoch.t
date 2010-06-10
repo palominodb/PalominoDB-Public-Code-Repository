@@ -1,4 +1,4 @@
-use Test::More tests => 23;
+use Test::More tests => 16;
 use ProcessLog;
 use TablePartitions;
 use TestDB;
@@ -7,51 +7,39 @@ my $tdb = TestDB->new;
 $tdb->clean_db;
 $tdb->use('test');
 $tdb->dbh->do(
-  qq#CREATE TABLE tbmx_date (
+  qq#CREATE TABLE tb_epoch (
     id integer auto_increment,
-    ts datetime not null,
+    ts timestamp not null,
     v  varchar(22) not null,
     primary key (id,ts)
   )
-  PARTITION BY RANGE (to_days(ts)) (
-    partition p0 values less than (to_days('2010-01-01')),
-    partition p1 values less than (to_days('2010-01-02')),
-    partition p2 values less than (to_days('2010-01-03')),
+  PARTITION BY RANGE (unix_timestamp(ts)) (
+    partition p0 values less than (unix_timestamp('2010-01-01')),
+    partition p1 values less than (unix_timestamp('2010-01-02')),
+    partition p2 values less than (unix_timestamp('2010-01-03')),
     partition p3 values less than MAXVALUE
   )
 #);
-$tdb->dbh->do(
-  qq#CREATE TABLE tp (
-    id integer auto_increment,
-    ts datetime not null,
-    v  varchar(22) not null,
-    primary key (id,ts)
-  )
-  PARTITION BY RANGE (id) (
-    partition p0 values less than (100),
-    partition p1 values less than MAXVALUE
-  )
-#);
+
 my $pl = ProcessLog->null;
 $pl->quiet(1);
-my $tp = TablePartitions->new($pl, $tdb->dbh, 'test', 'tbmx_date');
-my $tp2 = TablePartitions->new($pl, $tdb->dbh, 'test', 'tp');
+my $tp = TablePartitions->new($pl, $tdb->dbh, 'test', 'tb_epoch');
 
 ok($tp, 'instantiation check');
 my $parts=  [
-  {'description' => 734138,
+  {'description' => 1262332800,
     'name' => 'p0',
     'position' => 1,
     'sub_name' => undef,
     'sub_position' => undef
   },
-  {'description' => 734139,
+  {'description' => 1262419200,
     'name' => 'p1',
     'position' => 2,
     'sub_name' => undef,
     'sub_position' => undef
   },
-  {'description' => 734140,
+  {'description' => 1262505600,
     'name' => 'p2',
     'position' => 3,
     'sub_name' => undef,
@@ -69,7 +57,7 @@ is_deeply($tp->first_partition, $parts->[0], 'first partition');
 is_deeply($tp->last_partition, $parts->[-1], 'last partition');
 is($tp->method, 'RANGE', 'method');
 is($tp->has_maxvalue_data, 0, 'empty table');
-$tdb->dbh->do(qq#INSERT INTO tbmx_date (ts,v) VALUES ('2010-01-04', 'little test')#);
+$tdb->dbh->do(qq#INSERT INTO tb_epoch (ts,v) VALUES ('2010-01-04', 'little test')#);
 is($tp->has_maxvalue_data, 1, 'maxvalue populated');
 
 $tp->drop_partition('p0', 0);
@@ -87,25 +75,25 @@ ok($tp->end_reorganization(0), 'finish re-organization');
 $pl->quiet(1);
 
 $parts = [
-  {'description' => 734139,
+  {'description' => 1262419200,
     'name' => 'p1',
     'position' => 1,
     'sub_name' => undef,
     'sub_position' => undef
   },
-  {'description' => 734140,
+  {'description' => 1262505600,
     'name' => 'p2',
     'position' => 2,
     'sub_name' => undef,
     'sub_position' => undef
   },
-  {'description' => 734141,
+  {'description' => 1262592000,
     'name' => 'p3',
     'position' => 3,
     'sub_name' => undef,
     'sub_position' => undef
   },
-  {'description' => 734142,
+  {'description' => 1262678400,
     'name' => 'p4',
     'position' => 4,
     'sub_name' => undef,
@@ -120,15 +108,4 @@ $parts = [
 ];
 
 is_deeply($tp->partitions(), $parts, 'partitions after re-org');
-is($tp->desc_from_datelike('p1'), '2010-01-02', 'desc_from_datelike');
-
-is($tp->expression_column, 'ts', 'datelike expression column');
-is($tp2->expression_column, 'id', 'non-datelike expression column');
-
-ok($tp2->start_reorganization('p1'), 'start re-organization 2');
-ok($tp2->add_reorganized_part('p1', 200), 'add reorg part p1 2');
-ok($tp2->add_reorganized_part('p2', 300), 'add reorg part p2 2');
-ok($tp2->add_reorganized_part('p3', 'MAXVALUE'), 'add reorg part p3 2');
-$pl->quiet(0);
-ok($tp2->end_reorganization(0), 'finish re-organization 2');
-$pl->quiet(1);
+is($tp->desc_from_datelike('p1'), '2010-01-02 00:00:00', 'desc_from_datelike');

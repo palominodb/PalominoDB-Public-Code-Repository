@@ -148,17 +148,17 @@ sub expression_column {
   my ($self) = @_;
   my ($col, $fn) = $self->expr_datelike;
   return $col if(defined($col));
-  $self->{partition_expression} =~ /^(A-Za-z\-_\$)\(([A-Za-z0-9\-_\$]+)\)/i;
+  $self->{partition_expression} =~ /^\s*(A-Za-z\-_\$)\(([A-Za-z0-9\-_\$]+)\)/i;
   return $2 if ($1 and $2);
   return $self->{partition_expression};
 }
 
 sub expr_datelike {
   my ($self) = @_;
-  my %datefuncs = ( 'to_days' => 1, 'month' => 1, 'year' => 1 );
-  $self->{partition_expression} =~ /^([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
+  my %datefuncs = ( 'to_days' => 'from_days', 'month' => 1, 'year' => 1, 'unix_timestamp' => 'from_unixtime' );
+  $self->{partition_expression} =~ /^\s*([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
   if($datefuncs{lc($1)}) {
-    return ($2, $1);
+    return ($2, $1, $datefuncs{lc($1)});
   }
   else {
     return undef;
@@ -182,12 +182,12 @@ sub has_maxvalue_data {
   if ( $self->{partitions}->[-1]->{description} eq 'MAXVALUE' ) {
     $descr = $self->{partitions}->[-2]->{description};
     if($self->expr_datelike) {
-      my (undef, $fn) = $self->expr_datelike;
-      if($fn eq 'to_days') {
-        $descr = "from_days($descr)";
+      my (undef, $fn, $cfn) = $self->expr_datelike;
+      if($fn) {
+        $descr = "$cfn($descr)";
       }
       else {
-        die("No support for maxvalue calculation unless using to_days for dates");
+        die("No support for maxvalue calculation unless using to_days or unix_timestamp for dates");
       }
     }
   }
@@ -284,11 +284,12 @@ sub add_range_partition {
       return undef;
     }
   }
+  my (undef, $fn, $cfn) = $self->expr_datelike;
   my $qtd_desc = $self->{dbh}->quote($description);
-  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN (to_days($qtd_desc)))");
+  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN ($fn($qtd_desc)))");
   eval {
     unless($pretend) {
-      $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN (to_days($qtd_desc)))");
+      $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN ($fn($qtd_desc)))");
       $self->_add_part($name, "to_days($qtd_desc)");
     }
   };
@@ -323,25 +324,27 @@ sub drop_partition {
 # If the partitioning expression is date-like,
 # then return the description like a datestamp.
 # Else, return undef.
-sub desc_from_days {
+sub desc_from_datelike {
   my ($self, $name) = @_;
-  return undef if(!$self->expr_datelike);
+  my ($desc, $fn, $cfn) = $self->expr_datelike;
+
   if($self->method ne 'RANGE') {
     $self->{pl}->d("Only makes sense for RANGE partitioning.");
     return undef;
   }
-  my $desc = undef;
+  return undef if(!$fn);
+
   for my $p (@{$self->{partitions}}) {
     if($p->{name} eq $name) {
       $desc = $p->{description};
       last;
     }
   }
-  $self->{pl}->d("SQL: SELECT FROM_DAYS($desc)");
-  my ($ds) = $self->{dbh}->selectrow_array("SELECT FROM_DAYS($desc)");
+
+  $self->{pl}->d("SQL: SELECT $cfn($desc)");
+  my ($ds) = $self->{dbh}->selectrow_array("SELECT $cfn($desc)");
   return $ds;
 }
-
 
 sub _add_part {
   my ($self, $name, $desc) = @_;
