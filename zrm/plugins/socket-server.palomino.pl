@@ -69,6 +69,7 @@ my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
 my $wait_timeout = 8*3600; # 8 Hours
 my $mycnf_path = "/etc/my.cnf";
 my $mysql_socket_path = undef;
+my $innobackupex_opts = "";
 
 my ($mysql_user, $mysql_pass);
 
@@ -116,6 +117,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     }
     elsif($var eq "mysql_socket") {
       $mysql_socket_path = $val;
+    }
+    elsif($var eq "innobackupex_opts") {
+      $innobackupex_opts = $val;
     }
   }
 }
@@ -233,7 +237,8 @@ sub doRealHotCopy()
     &printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
-  open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
+
+  open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path $innobackupex_opts --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
   &printLog("Opened InnoBackupEX.\n");
   open(INNO_LOG, "</tmp/innobackupex-log");
   &printLog("Opened Inno-Log.\n");
