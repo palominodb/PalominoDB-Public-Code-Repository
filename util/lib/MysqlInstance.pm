@@ -164,62 +164,42 @@ package MysqlInstance;
 use strict;
 use warnings FATAL => 'all';
 use IniFile;
-use RObj;
 use Carp;
 
 use DBI;
 
 sub new {
-  my ($class, $host, $user, $mycnf, $ssh_key)  = @_;
+  my ($class, $mycnf, $methods)  = @_;
   my $self = {};
-  croak('Must provide $host') unless($host);
-  croak('Must provide $user') unless($user or $host eq 'localhost');
-  $self->{host}     = $host;
-  $self->{user}     = $user;
   $self->{mycnf}    = $mycnf;
-  $self->{ssh_key}  = $ssh_key;
-  $self->{methods}  = undef;
-  $self->{ro}       = RObj->new($host, $user, $ssh_key);
-  $self->{ro}->add_main(\&_action);
-  $self->{ro}->add_package('IniFile');
-  $self->{ro}->add_package('MysqlInstance::Methods');
+  $self->{methods}  = $methods || MysqlInstance::Methods->detect();
   bless $self, $class;
-  if($self->{mycnf}) {
-    $self->_do('');
-    $self->{methods}->{config} = $self->{mycnf};
-  }
   return $self;
-}
-
-sub from_dsn {
-  my ($class, $dsn) = @_;
-  die("Need sU and sK DSN items") unless($dsn->get('sU') and $dsn->get('sK'));
-  return $class->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('rF'), $dsn->get('sK'));
 }
 
 sub stop {
   my ($self) = @_;
-  $self->_do('stop');
+  system($self->{methods}->{stop}) >> 8;
 }
 
 sub start {
   my ($self) = @_;
-  $self->_do('start');
+  system($self->{methods}->{start}) >> 8;
 }
 
 sub restart {
   my ($self) = @_;
-  $self->_do('restart');
+  system($self->{methods}->{restart}) >> 8;
 }
 
 sub status {
   my ($self) = @_;
-  $self->_do('status');
+  system($self->{methods}->{status}) >> 8;
 }
 
 sub config {
   my ($self) = @_;
-  $self->_do('config');
+  return {IniFile::read_config($self->{mycnf} || $self->{methods}->{config})};
 }
 
 sub methods {
@@ -229,80 +209,33 @@ sub methods {
   return $old_methods;
 }
 
-sub get_dbh {
-  my ($self, $user, $pw) = @_;
-  my $dsn = "DBI:mysql:";
-  my $cfg = $self->config;
-  my $dbh;
-  if($self->{host} eq 'localhost') {
-    $dsn .= "host=localhost;";
-    if($cfg->{'client'}->{'socket'}) {
-      $dsn .= "mysql_socket=". $cfg->{'client'}->{'socket'} .';';
-    }
-    elsif($cfg->{'mysqld'}->{'socket'}) {
-      $dsn .= "mysql_socket=". $cfg->{'mysqld'}->{'socket'} .';';
-    }
-  }
-  if($cfg->{'client'}->{'port'}) {
-    $dsn .= "port=". $cfg->{'client'}->{'port'} .';';
-  }
-  elsif($cfg->{'mysqld'}->{'port'}) {
-    $dsn .= "port=". $cfg->{'mysqld'}->{'port'} .';';
-  }
-  # Trap connect errors
-  eval {
-    $dbh = DBI->connect($dsn, $user, $pw, { AutoCommit => 0, RaiseError => 1, PrintError => 0 });
-  };
-  # TODO More common initialization as I think of it.
-  return $dbh;
-}
-
-sub _do {
-  my($self, $action) = @_;
-  my @res;
-  if($self->{host} eq 'localhost' or !$self->{host}) {
-    @res = ('EXIT', _action($self->{methods}, $action));
-  }
-  else {
-    @res = $self->{ro}->do($self->{methods}, $action);
-  }
-  croak('Remote did not terminate cleanly. Got: '. $res[0] . 'instead of EXIT') unless(scalar @res and $res[0] eq 'EXIT');
-  # Update $self with returned state
-  # In the case of a local call, this should
-  # wind up being a no-op.
-  $self->{methods} = $res[1]->[1];
-  # Return actual result;
-  return $res[1]->[0];
-}
-
-sub _action {
-  my ($m, $action) = @_;
-  my $result;
-  if(!$m) {
-    $m = MysqlInstance::Methods->detect();
-  }
-  my $config = {IniFile::read_config($m->{config})};
-  if($action eq 'stop') {
-    $result = system($m->{stop}) >> 8;
-  }
-  elsif($action eq 'start') {
-    $result = system($m->{start}) >> 8;
-  }
-  elsif($action eq 'restart') {
-    $result = system($m->{restart}) >> 8;
-  }
-  elsif($action eq 'status') {
-    $result = system($m->{status}) >> 8;
-  }
-  elsif($action eq 'config') {
-    $result = $config;
-  }
-  # This is for the testing framework
-  elsif($action eq 'hostname') {
-    chomp($result = qx/hostname -f/);
-  }
-
-  return [$result, $m];
+sub remote {
+use RObj;
+  my ($class, $dsn, $action) = @_;
+  my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
+  $ro->add_package('IniFile');
+  $ro->add_package('MysqlInstance::Methods');
+  $ro->add_package('MysqlInstance');
+  $ro->add_main(sub {
+      my $act = shift;
+      my $mi = MysqlInstance->new();
+      if($act eq 'stop') {
+        $mi->stop();
+      }
+      elsif($act eq 'start') {
+        $mi->start();
+      }
+      elsif($act eq 'restart') {
+        $mi->restart();
+      }
+      elsif($act eq 'status') {
+        $mi->status();
+      }
+      elsif($act eq 'config') {
+        $mi->config();
+      }
+    });
+  return [$ro->do($action)];
 }
 
 1;
