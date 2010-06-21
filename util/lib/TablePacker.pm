@@ -58,7 +58,7 @@ sub STORABLE_freeze {
   my ($self, $cloning) = @_;
   return if $cloning;
   return (
-    Storable::freeze({
+    Storable::nfreeze({
         myisamchk => $self->{myisamchk},
         myisampack => $self->{myisampack},
         datadir => $self->{datadir},
