@@ -47,7 +47,7 @@ sub STORABLE_freeze {
   my $f = {};
   _merge($f, $self);
   return (
-    Storable::freeze($f)
+    Storable::nfreeze($f)
   );
 }
 
