@@ -179,11 +179,11 @@ stop_mysql() {
     exit 6
   fi
 
-  $mysqladminbin --defaults-file=$MYCTL_CNF stop-slave
+  $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket stop-slave
   while [[ $flushes -gt 0 ]] ; do
-    $mysqladminbin --defaults-file=$MYCTL_CNF flush-logs
+    $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket flush-logs
     if [[ ! $? ]] ; then
-      $mysqladminbin --defaults-file=$MYCTL_CNF start-slave
+      $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket start-slave
       echo MySQL flush logs failed.
       exit 4
     fi
@@ -228,7 +228,7 @@ case $ACTION in
     stop_mysql
   ;;
   status)
-    if $mysqladminbin --defaults-file=$MYCTL_CNF ping &>/dev/null
+    if $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket ping &>/dev/null
     then
       echo "MySQL Running."
       exit 0
