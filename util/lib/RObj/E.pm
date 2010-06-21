@@ -27,14 +27,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 7b005acbf29f2c5bb30272a197ead7bdf4977ce6
+# RObj::Base package 4bb5a6302f358fcf73e3824a06c75e5783e97adf
 # ###########################################################################
 package RObj::Base;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
 use English qw(-no_match_vars);
-use Storable qw(thaw freeze);
+use Storable qw(thaw nfreeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use Carp;
@@ -118,7 +118,7 @@ sub write_message {
   my ($self, $fh, @objs) = @_;
   my $buf;
   eval {
-    $buf = encode_base64(freeze(\@objs));
+    $buf = encode_base64(nfreeze(\@objs));
   };
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
@@ -143,7 +143,7 @@ package main;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
-use Storable qw(freeze thaw);
+use Storable qw(nfreeze thaw);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use IO::Handle;

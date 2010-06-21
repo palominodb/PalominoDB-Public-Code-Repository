@@ -27,14 +27,14 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 7b005acbf29f2c5bb30272a197ead7bdf4977ce6
+# RObj::Base package 4bb5a6302f358fcf73e3824a06c75e5783e97adf
 # ###########################################################################
 package RObj::Base;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
 use English qw(-no_match_vars);
-use Storable qw(thaw freeze);
+use Storable qw(thaw nfreeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use Carp;
@@ -118,7 +118,7 @@ sub write_message {
   my ($self, $fh, @objs) = @_;
   my $buf;
   eval {
-    $buf = encode_base64(freeze(\@objs));
+    $buf = encode_base64(nfreeze(\@objs));
   };
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
@@ -143,7 +143,7 @@ use strict;
 use warnings;
 use 5.008;
 
-use Storable qw(freeze thaw);
+use Storable qw(nfreeze thaw);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use IPC::Open3;
@@ -195,7 +195,7 @@ sub copy {
 # Be called as the entry point for your RObj.
 sub add_main {
   my ($self, $coderef) = @_;
-  die("Not a coderef '$coderef'") unless ref($coderef) eq 'CODE';
+  croak("Not a coderef") unless ref($coderef) eq 'CODE';
   push @{$self->{code}}, ['R_main', $coderef];
 }
 
@@ -203,7 +203,7 @@ sub add_main {
 # your RObj will need.
 sub add_sub {
   my ($self, $name, $coderef) = @_;
-  die("Not a coderef '$coderef'") unless ref($coderef) eq 'CODE';
+  croak("Not a coderef") unless ref($coderef) eq 'CODE';
   push @{$self->{code}}, [$name, $coderef];
 }
 
@@ -339,18 +339,18 @@ sub _wrap {
     }
     push @$code, [$c->[0], $ctxt];
   }
-  $code = encode_base64(freeze($code));
+  $code = encode_base64(nfreeze($code));
   my $code_sha = sha1_hex($code);
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 6cdc9f7bdbdeda6862d9b7a120cb21ea0658a8a3
+# RObj::E package 165a5088444988d397941403acfecef7e3af0b7d
 # ###########################################################################
 package RObj::Base;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
 use English qw(-no_match_vars);
-use Storable qw(thaw freeze);
+use Storable qw(thaw nfreeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use Carp;
@@ -434,7 +434,7 @@ sub write_message {
   my ($self, $fh, @objs) = @_;
   my $buf;
   eval {
-    $buf = encode_base64(freeze(\@objs));
+    $buf = encode_base64(nfreeze(\@objs));
   };
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
@@ -456,7 +456,7 @@ package main;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
-use Storable qw(freeze thaw);
+use Storable qw(nfreeze thaw);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use IO::Handle;

@@ -31,7 +31,7 @@ use strict;
 use warnings FATAL => 'all';
 use 5.0008;
 use English qw(-no_match_vars);
-use Storable qw(thaw freeze);
+use Storable qw(thaw nfreeze);
 use MIME::Base64;
 use Digest::SHA qw(sha1_hex);
 use Carp;
@@ -125,7 +125,7 @@ sub write_message {
   my ($self, $fh, @objs) = @_;
   my $buf;
   eval {
-    $buf = encode_base64(freeze(\@objs));
+    $buf = encode_base64(nfreeze(\@objs));
   };
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
