@@ -77,7 +77,6 @@ sub new {
   $$self{dsn} = $dsn;
   $$self{dry_run} = $dry_run;
   $$self{sandbox_path} = $sandbox_path;
-  $$self{inst} = MysqlInstance->from_dsn($dsn);
   $$self{save_mysql} = 1;
   bless $self, $class;
 
@@ -96,7 +95,7 @@ sub _ro() {
 sub verify_permissions {
   my ($self) = @_;
   $self->verify_ssh();
-  my $config = $$self{inst}->config();
+  my $config = MysqlInstance->remote($$self{dsn}, 'config')->[-1];
   $$self{config} = $config;
 
   my $ro = $self->_ro;
@@ -218,23 +217,11 @@ sub copy_data {
   return $? >> 8;
 }
 
-#sub empty_datadir {
-#  my $self = shift;
-#  my $ro = $self->_ro;
-#  $ro->add_package('Path');
-#  $ro->add_main(sub { Path::dir_empty($_[0]) });
-#  $::PLOG->d($$self{dsn}->get('h').':', 'emptying datadir:',
-#    $$self{config}{'mysqld'}{'datadir'});
-#  my @r =$ro->do($$self{config}{'mysqld'}{'datadir'});
-#  die($r[0]) unless($r[0] eq 'EXIT');
-#  return 0;
-#}
-
 sub check_mysql_pid {
   my $cfg = shift;
   my $pid;
   eval {
-    open PID_FILE, '<', $$cfg{'mysqld'}{'pid-file'} or die($!);
+    open PID_FILE, '<', $$cfg{'mysqld'}{'pid-file'} or return -1;
     chomp($pid = <PID_FILE>);
   };
   if(defined $pid and -d '/proc/'. $pid ) {
@@ -243,64 +230,13 @@ sub check_mysql_pid {
   return 0;
 }
 
-#sub stop_mysql {
-#  my $self = shift;
-#  my $host = $$self{dsn};
-#  my $i=0;
-#  my $mi = $$self{inst};
-#  $::PLOG->d($$self{dsn}->get('h').':', 'stopping mysql');
-#  $mi->stop;
-#  my $cfg = $$self{config};
-#  my $pid_check = $self->_ro;
-#  $pid_check->add_main(\&check_mysql_pid);
-#  my @r = $pid_check->do($cfg);
-#  if($r[0] ne 'EXIT' and $r[0] !~ /No such file/) {
-#    die($r[0]) if($r[0] ne 'EXIT');
-#  }
-#  elsif($r[0] =~ /No such file/) {
-#    return 1;
-#  }
-#  while($i < $stop_timeout and $r[1]) {
-#    $::PLOG->d($host->get('h'). ':', 'Waiting for mysql stop..');
-#    sleep($pid_check_sleep);
-#    $i++;
-#    @r = $pid_check->do($cfg);
-#  }
-#  if($i == $stop_timeout) {
-#    die('mysql did not stop in a timely fashion');
-#  }
-#}
-#
-#sub start_mysql {
-#  my $self = shift;
-#  my $host = $$self{dsn};
-#  my $i=0;
-#  my $mi = $$self{inst};
-#  $::PLOG->d($$self{dsn}->get('h').':', 'starting mysql');
-#  $mi->start;
-#  my $cfg = $$self{config};
-#  my $pid_check = $self->_ro;
-#  $pid_check->add_main(\&check_mysql_pid);
-#  my @r = $pid_check->do($cfg);
-#  die($r[0]) if($r[0] ne 'EXIT' and $r[0] !~ /No such file/);
-#  while($i < $start_timeout and (!$r[1] or $r[0] =~ /No such file/)) {
-#    $::PLOG->d($host->get('h'). ':', 'Waiting for mysql start..');
-#    sleep($pid_check_sleep);
-#    $i++;
-#    @r = $pid_check->do($cfg);
-#  }
-#  if($i == $start_timeout) {
-#    die('mysql did not start in a timely fashion');
-#  }
-#}
-
-sub rebuild_rmot {
+sub rebuild_remote {
   my $params = shift;
   my $start_timeout = $$params{'start_timeout'};
   my $stop_timeout = $$params{'stop_timeout'};
   my $pid_check_sleep = $$params{'pid_check_sleep'};
   my $save_mysqldb = $$params{'save_mysqldb'};
-  my $mi = MysqlInstance->new('localhost');
+  my $mi = MysqlInstance->new();
   my $cfg = $mi->config;
   my $datadir = $$cfg{'mysqld'}{'datadir'};
   my $i=0;
@@ -310,7 +246,7 @@ sub rebuild_rmot {
 # #############################################################################
 
   $mi->stop;
-  while($i < $stop_timeout && check_mysql_pid($cfg)) {
+  while($i < $stop_timeout && check_mysql_pid($cfg) > 0) {
     sleep($pid_check_sleep);
     $i++;
   }
@@ -372,14 +308,16 @@ sub rebuild_rmot {
 }
 
 sub rebuild {
-  my $self;
+  my $self = shift;
   my $ro = $self->_ro;
   $ro->add_package('IniFile');
   $ro->add_package('MysqlInstance::Methods');
   $ro->add_package('MysqlInstance');
   $ro->add_package('Path');
-  $ro->add_sub(\&check_mysql_pid);
+  $ro->add_sub('check_mysql_pid', \&check_mysql_pid);
   $ro->add_main(\&rebuild_remote);
+
+  $ro->debug('localhost:9999');
 
   $ro->start({
       start_timeout => $start_timeout,
@@ -401,84 +339,6 @@ sub rebuild {
   return 0;
 }
 
-#sub rebuild {
-#  my $self = shift;
-#  my $datadir = $$self{config}{'mysqld'}{'datadir'};
-#  my @r;
-#
-#  unless($$self{dry_run}) {
-## #############################################################################
-## Stop mysql on remote
-## #############################################################################
-#
-#    $self->stop_mysql;
-#
-## #############################################################################
-## Save the mysql database to /tmp on remote
-## #############################################################################
-#
-#    my $ro = $self->_ro;
-#    if($$self{save_mysql}) {
-#      $::PLOG->d($$self{dsn}->get('h').':', 'Saving mysql database');
-#      $ro->add_main(sub {
-#          my $config = shift;
-#          my $datadir = shift;
-#          my $r = system('mv', "$datadir/mysql", '/tmp/');
-#          return $r >> 8;
-#        });
-#      @r = $ro->do($$self{config}, $datadir);
-#      die($r[0]. ' ret: '. $r[1]) unless($r[0] eq 'EXIT' and $r[1] == 0);
-#    }
-#
-## #############################################################################
-## Remove existing data and copy over new data
-## #############################################################################
-#
-#    $self->empty_datadir();
-#    if($self->copy_data($$self{sandbox_path})) {
-#      die($$self{dsn}->get('h') .': Error encountered while copying data');
-#    }
-#
-## #############################################################################
-## Remove the ib_logfiles, since they may not be the right size.
-## #############################################################################
-#
-#
-## #############################################################################
-## Replace the mysql database from /tmp
-## #############################################################################
-#
-#    $ro = $self->_ro;
-#    if($$self{save_mysql}) {
-#      $::PLOG->d($$self{dsn}->get('h').':', 'Restoring mysql database');
-#      $ro->add_main(sub {
-#          my $config = shift;
-#          my $datadir = shift;
-#          system('rm', '-rf', "$datadir/mysql");
-#          my $r = system('mv', "/tmp/mysql", $datadir);
-#          if($< == 0) {
-#            system('chown', '-R', 'mysql:mysql', $datadir);
-#          }
-#          return $r >> 8;
-#        });
-#      @r = $ro->do($$self{config}, $datadir);
-#      die($r[0]. ' ret: '. $r[1]) unless($r[0] eq 'EXIT' and $r[1] == 0);
-#    }
-#
-## #############################################################################
-## Start mysql on remote
-## #############################################################################
-#
-#    $self->start_mysql;
-#
-#  } ## $dry_run
-#  else {
-#    $::PLOG->d($$self{dsn}->get('h').':', ' dry-run: rebuild not done');
-#  }
-#
-#  return 0;
-#}
-
 1;
 
 package PdbMaster;
@@ -486,7 +346,7 @@ use strict;
 use warnings FATAL => 'all';
 
 our $VERSION = 0.01;
-use Getopt::Long qw(:config no_ignore_case);
+use Getopt::Long qw(:config permute no_ignore_case);
 use Pod::Usage;
 use POSIX ':sys_wait_h';
 use Data::Dumper;
@@ -494,11 +354,6 @@ use Carp;
 
 use DSN;
 use ProcessLog;
-use IniFile;
-use MysqlSlave;
-use MysqlInstance;
-use MysqlMasterInfo;
-use RObj;
 
 my $pl;
 my $dry_run = 0;
@@ -506,16 +361,19 @@ my $sandbox_path;
 
 
 sub main {
-  my @ARGV = @_;
+  @ARGV = @_;
   my $dsnp = DSNParser->default();
   my (%o, @hosts);
   $o{'logfile'} = 'pdb-test-harness';
+  $ReMysql::start_timeout = 120;
+  $ReMysql::stop_timeout = 120;
   GetOptions(\%o,
     'help|h',
     'dry-run|n',
     'logfile|L',
     'repl-user=s',
-    'repl-password=s'
+    'repl-password=s',
+    'no-fork'
   );
   if(scalar @ARGV < 2) {
     pod2usage(-message => "Must have a sandbox and at least two DSNs",
@@ -551,26 +409,35 @@ sub main {
   }
 
   $pl->i('All pre-flight checks passed. Beginning work.');
-  my @pids;
-  foreach my $host (@hosts) {
-    push @pids, spawn_worker($host);
-    $pl->d('Process:', $pids[-1], 'started.');
-  }
-
-  my $kid;
-  while( ($kid = waitpid(-1, 0)) >= 0 ) {
-    # If there was an error with any of the workers,
-    # kill them all!
-    $pl->d('Return code:', ($? >> 8));
-    if( ($? >> 8) > 0 ) {
-      for(@pids) {
-        kill(15, $_); # Send SIGTERM
-      }
-      $pl->e('One of the workers encountered an error.');
-      return 1;
+  unless($o{'no-fork'}) {
+    my @pids;
+    foreach my $host (@hosts) {
+      push @pids, spawn_worker($host);
+      $pl->d('Process:', $pids[-1], 'started.');
     }
-    else {
-      $pl->d('Process:', $kid, 'completed.');
+
+    my $kid;
+    while( ($kid = waitpid(-1, 0)) >= 0 ) {
+      # If there was an error with any of the workers,
+      # kill them all!
+      $pl->d('Return code:', ($? >> 8));
+      if( ($? >> 8) > 0 ) {
+        for(@pids) {
+          kill(15, $_); # Send SIGTERM
+        }
+        $pl->e('One of the workers encountered an error.');
+        return 1;
+      }
+      else {
+        $pl->d('Process:', $kid, 'completed.');
+      }
+    }
+  }
+  else {
+    $pl->m('Rebuilding serially due to --no-fork');
+    foreach my $host (@hosts) {
+      $pl->d('doing:', $host->{dsn}->get('h'));
+      $host->rebuild();
     }
   }
 
