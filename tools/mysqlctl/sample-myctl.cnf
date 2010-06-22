@@ -23,3 +23,8 @@ flush_sleep = 5
 ;; To use, uncomment and set to the correct path.
 ; mysqld_safebin = /opt/mysql-custom/bin/mysqld_safe
 ; mysqladminbin = /opt/mysql-custom/bin/mysqladmin
+
+;; Another option to setting the full path is to set the basedir
+;; path to the ROOT of a mysql install. Where, basedir/bin
+;; contains mysqladmin, and basedir/sbin contains mysqld_safe
+; basedir = /usr/local/my-build-of-6.0

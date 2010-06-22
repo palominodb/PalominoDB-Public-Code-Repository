@@ -74,10 +74,24 @@ MYCTL_CNF=/etc/myctl.cnf
 # Unless you ABSOLUTELY need to, do not modify this script.
 #############################################################################
 
+INIT_NAME=
+
+case $0 in
+  *rc?.d*)
+    INIT_NAME=$(basename $(readlink $0))
+  ;;
+  *init.d*)
+    INIT_NAME=$(basename $0)
+  ;;
+esac
+
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH
+
 pid_file=
 datadir=
-mysqld_safebin=$(which mysqld_safe)
-mysqladminbin=$(which mysqladmin)
+mysqld_safebin=
+mysqladminbin=
 user=mysql
 socket=
 
@@ -135,6 +149,14 @@ for l in `my_print_defaults --defaults-file=$MYCTL_CNF mysqlctl`; do
   esac
 done
 
+if [[ -z "$basedir" ]] ; then
+  PATH=${PATH}:$basedir/bin:$basedir/sbin
+  export PATH
+fi
+
+mysqld_safebin=$(which mysqld_safe)
+mysqladminbin=$(which mysqladmin)
+
 start_mysql() {
   if [[ -f $pid_file ]] ; then
     pid=$(cat $pid_file)
@@ -153,6 +175,9 @@ start_mysql() {
   while [[ $i -lt $start_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ -f $pid_file ]] ; then
+      if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
+        touch /var/lock/subsys/$INIT_NAME &>/dev/null
+      fi
       echo MySQL Started.
       exit 0
     fi
@@ -197,6 +222,9 @@ stop_mysql() {
   while [[ $i -lt $stop_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ ! -f $pid_file ]] ; then
+      if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
+        rm -f /var/lock/subsys/$INIT_NAME &>/dev/null
+      fi
       echo MySQL Stopped.
       exit 0
     fi
