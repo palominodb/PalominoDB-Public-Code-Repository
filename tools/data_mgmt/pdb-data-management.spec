@@ -1,9 +1,9 @@
 Name: pdb-data-management
 Summary: PalominoDB tools for data management
-Version: 0.06
+Version: 0.07
 Vendor: PalominoDB
 Release: 1
-License: Private
+License: BSD
 Group: Application/System
 Source: http://bastion.palominodb.com/releases/SRC/pdb-data-management-%{version}.tar.gz
 URL: http://blog.palominodb.com
@@ -45,6 +45,36 @@ Several of the tools make use of the highly robust and popular maatkit <http://m
 
 Just the table archiving tool.
 
+%package zrm-restore
+Summary: Just the zrm-restore tool.
+Group: Application/System
+
+%description zrm-restore
+A growing collection of tools for managing growing datasets in MySQL.
+Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+Just the zrm-restore tool.
+
+%package sandbox-merge
+Summary: Just the sandbox merging tool.
+Group: Application/System
+
+%description sandbox-merge
+A growing collection of tools for managing growing datasets in MySQL.
+Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+Just the sandbox merging tool.
+
+%package master
+Summary: Just the cluster rebuild tool.
+Group: Application/System
+
+%description master
+A growing collection of tools for managing growing datasets in MySQL.
+Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+Just the cluster rebuild tool.
+
 %prep
 %setup -q
 
@@ -57,9 +87,10 @@ make
 
 %{__rm} -rf %{buildroot}
 %{__mkdir} -p %{buildroot}
-%{__install} -D -m 0755 tools/data_mgmt/bin/pdb-parted %{buildroot}/%{_bindir}/pdb-parted
-%{__install} -D -m 0755 tools/data_mgmt/bin/pdb-packer %{buildroot}/%{_bindir}/pdb-packer
-%{__install} -D -m 0755 tools/data_mgmt/bin/pdb-archiver %{buildroot}/%{_bindir}/pdb-archiver
+
+for tool in pdb-{archiver,parted,packer,master,zrm-restore,sandbox-merge}; do
+  %{__install} -D -m 0755 tools/data_mgmt/bin/$tool %{buildroot}/%{_bindir}/$tool
+done
 
 %clean
 
@@ -67,9 +98,12 @@ make
 
 %files
 %defattr(0755,root,root)
-%{_bindir}/pdb-parted
 %{_bindir}/pdb-archiver
+%{_bindir}/pdb-parted
 %{_bindir}/pdb-packer
+%{_bindir}/pdb-master
+%{_bindir}/pdb-zrm-restore
+%{_bindir}/pdb-sandbox-merge
 
 %files packer
 %defattr(0755,root,root)
@@ -82,3 +116,15 @@ make
 %files archiver
 %defattr(0755,root,root)
 %{_bindir}/pdb-archiver
+
+%files master
+%defattr(0755,root,root)
+%{_bindir}/pdb-master
+
+%files zrm-restore
+%defattr(0755,root,root)
+%{_bindir}/pdb-zrm-restore
+
+%files sandbox-merge
+%defattr(0755,root,root)
+%{_bindir}/pdb-sandbox-merge
