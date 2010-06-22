@@ -3,7 +3,7 @@
 
 Name: mysqlctl
 Summary: Better mysql init script
-Version: 0.02
+Version: 0.03
 Vendor: PalominoDB
 Release: 1
 License: BSD
