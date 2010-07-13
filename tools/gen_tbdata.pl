@@ -45,6 +45,7 @@ my $base_time=time;
 my $generate_table=0;
 my $table_engine="InnoDB";
 my $for_infile = 0;
+my $insert_ignore = 0;
 my %columns = ();
 my $pk_start = 1;
 
@@ -63,7 +64,8 @@ GetOptions(
   "i|for-infile" => \$for_infile,
   "s|seed=i" => \$seed,
   "T|seed-time=i" => \$base_time,
-  "P|primary-key-start=i" => \$pk_start
+  "P|primary-key-start=i" => \$pk_start,
+  "I|insert-ignore" => \$insert_ignore
 );
 
 if($seed) {
@@ -151,6 +153,7 @@ if($generate_table and !$for_infile) {
 }
 
 my $cols_str = join(",", sort keys %columns);
+my $insert_opts = ($insert_ignore ? "IGNORE" : "");
 foreach my $i ($pk_start..$n_rows) {
   my $vals = "";
   map {
@@ -192,7 +195,7 @@ foreach my $i ($pk_start..$n_rows) {
   } sort keys %columns;
   $vals =~ s/,$//;
   if(!$for_infile) {
-    print SQL "INSERT INTO $table ($cols_str) VALUES ($vals);\n";
+    print SQL "INSERT $insert_opts INTO $table ($cols_str) VALUES ($vals);\n";
   }
   else {
     $vals =~ s/,/\t/g;
