@@ -44,6 +44,13 @@ use warnings;
 # End TablePartitions package
 # ###########################################################################
 
+# ###########################################################################
+# IniFile package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End IniFile package
+# ###########################################################################
+
 package pdb_parted;
 
 use strict;
@@ -51,6 +58,7 @@ use warnings;
 use English qw(-no_match_vars);
 
 use ProcessLog;
+use IniFile;
 use TablePartitions;
 
 use DBI;
@@ -89,6 +97,7 @@ sub main {
     $add,
     $drop,
     $i_am_sure,
+    $do_archive,
     $uneven
   );
 
@@ -107,6 +116,7 @@ sub main {
     "range|r=s", \$range,
     "add=i", \$add,
     "drop=i", \$drop,
+    "archive", \$do_archive,
     "i-am-sure", \$i_am_sure
   );
 
@@ -132,6 +142,17 @@ sub main {
     pod2usage(-message => "--defaults-file $db_file doesn't exist, or is a directory.");
   }
 
+  if(!$db_user and $db_file) {
+    my $inf = IniFile->read_config($db_file);
+    $db_host ||= $inf->{client}->{host};
+    $db_user ||= $inf->{client}->{user};
+    $db_pass ||= $inf->{client}->{password};
+  }
+
+  # Pretty safe to assume localhost if not set.
+  # Most MySQL tools do.
+  $db_host ||= 'localhost';
+
   if($add and $drop) {
     pod2usage(-message => "only one of --add or --drop may be specified");
   }
@@ -155,10 +176,12 @@ sub main {
 
   my $r = 0;
   if($add) {
-    $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_schema, $db_table, $i_am_sure);
+    $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_host, $db_schema, $db_table, $i_am_sure);
   }
   elsif($drop) {
-    $r = drop_partitions($drop, $dbh, $parts, $db_schema, $db_table, $i_am_sure);
+    $r = drop_partitions($drop, $dbh, $parts,
+    $db_host, $db_schema, $db_table, $db_user, $db_pass,
+    $db_file, $i_am_sure, $do_archive);
   }
 
   $dbh->disconnect;
@@ -168,7 +191,7 @@ sub main {
 }
 
 sub add_partitions {
-  my ($add, $dbh, $parts, $prefix, $range, $db_schema, $db_table, $i_am_sure) = @_;
+  my ($add, $dbh, $parts, $prefix, $range, $db_host, $db_schema, $db_table, $i_am_sure) = @_;
 
   my $ret = 1;
   my $last_p = $parts->last_partition;
@@ -272,7 +295,7 @@ sub add_partitions {
 }
 
 sub drop_partitions {
-  my ($drop, $dbh, $parts, $schema, $table, $i_am_sure) = @_;
+  my ($drop, $dbh, $parts, $host, $schema, $table, $user, $pw, $dfile, $i_am_sure, $do_archive) = @_;
 
   $pl->e("Refusing to drop more than 1 partition unless --i-am-sure is passed.")
     and return undef
@@ -282,11 +305,47 @@ sub drop_partitions {
   $pl->m("Dropping $drop partitions.");
   for(my $i=0; $i < $drop ; $i++) {
     my $p = $parts->first_partition;
+    if($do_archive) {
+      archive_partition($parts, $p, $host, $schema, $table, $user, $pw, $dfile);
+    }
     $pl->i("Dropping data older than:", to_date($parts->desc_from_datelike($p->{name}))->ymd);
     $r = $parts->drop_partition($p->{name}, $pretend);
     last unless($r);
   }
   return $r;
+}
+
+sub archive_partition {
+  my ($parts, $part, $host, $schema, $table, $user, $pw, $dfile) = @_;
+  my ($desc, $fn, $cfn) = $parts->expr_datelike();
+  if($cfn) {
+    $desc = "$cfn(". $part->{description} . ")";
+  }
+  else {
+    $desc = $part->{description};
+  }
+  my @dump_EXEC = ("mysqldump",
+      ( $dfile ? ("--defaults-file=$dfile") : () ),
+      "--no-create-info",
+      "--result-file=". "$host.$schema.$table.". $part->{name} . ".sql",
+      ($host ? ("-h$host") : () ),
+      ($user ? ("-u$user") : () ),
+      ($pw ? ("-p$pw") : () ),
+      "-w ". $parts->expression_column() . "<$desc",
+      $schema,
+      $table);
+  $pl->i("Archiving:", $part->{name}, "to", "$host.$schema.$table". $part->{name} . ".sql");
+  $pl->d("Executing:", @dump_EXEC);
+  unless($pretend) {
+    system(@dump_EXEC);
+  }
+  else {
+    $? = 0;
+  }
+  if(($? << 8) != 0) {
+    $pl->e("Failed to archive $schema.$table.". $part->{name}, "got:", ($? << 8), "from mysqldump");
+    die("Failed to archive $schema.$table.". $part->{name})
+  }
 }
 
 sub to_date {
