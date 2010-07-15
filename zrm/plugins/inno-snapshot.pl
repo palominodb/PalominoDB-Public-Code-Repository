@@ -109,7 +109,7 @@ if( $action eq "get-vm-device-details" ){
 }elsif( $action eq "remove-snapshot" ){
   &doRemoveSnapshot();
 }else{
-  &printAndDie( "Unknown action" );
+  &printLog( "Unsupported action $action. Ignoring." );
 }
 exit( 0 );
 
