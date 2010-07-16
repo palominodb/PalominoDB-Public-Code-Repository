@@ -4,7 +4,7 @@ TLIB_PATH = ../../util/t/lib
 TOOLS_RELEASE = 0.07
 HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 
-all: dirs pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge
+all: dirs pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge pdb-munch
 
 test:
 	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
@@ -36,6 +36,10 @@ pdb-zrm-restore:
 pdb-sandbox-merge:
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-sandbox-merge.in.pl bin/pdb-sandbox-merge
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-sandbox-merge bin/pdb-sandbox-merge
+
+pdb-munch:
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-munch.in.pl bin/pdb-munch
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-munch bin/pdb-munch
 
 rpmball:
 	mkdir -pv pdb-data-management-$(TOOLS_RELEASE)
