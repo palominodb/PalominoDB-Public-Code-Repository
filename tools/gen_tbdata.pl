@@ -49,6 +49,10 @@ my $insert_ignore = 0;
 my %columns = ();
 my $pk_start = 1;
 
+# If the words() type is used
+# This contains the contents of /usr/share/dict/words
+my @dict;
+
 # For stateful generators
 my %gen = ();
 
@@ -72,6 +76,15 @@ if($seed) {
   srand($seed);
 }
 
+sub generate_words {
+  my $number_of_words=shift;
+  my $str;
+  for(1..$number_of_words) {
+    $str .= " ". $dict[rand @dict];
+  }
+  return $str;
+}
+
 sub generate_varchar {
   my $length_of_randomstring=shift;# the length of 
   # the random string to generate
@@ -93,7 +106,7 @@ sub generate_integer {
   # == 2 is 0-99
   # == 3 is 0-199
   # etc.
-  return int(rand($length**10));
+  return int(rand(10**$length));
 }
 
 sub generate_timestamp {
@@ -126,12 +139,17 @@ else {
   *SQL=\*STDOUT
 }
 
-# create generator functions
+# create generator functions and do some per-type initialization
 map {
   my $c = $_;
   my $t = $columns{$c};
   if($t =~ /linear_timestamp(?:\((\d*)\))?/) {
     $gen{$c} = generate_linear_timestamp($1);
+  }
+  if($t =~ /words/) {
+    open my $dict_fh, "</usr/share/dict/words" or die($!);
+    chomp(@dict = <$dict_fh>);
+    close $dict_fh;
   }
 } keys %columns;
 
@@ -192,6 +210,14 @@ foreach my $i ($pk_start..$n_rows) {
         $vals .= "'". generate_varchar($1) . "',";
       }
     }
+    elsif($t =~ /^words\((\d+)\)/) {
+      if($for_infile) {
+        $vals .= generate_words($1) . ",";
+      }
+      else {
+        $vals .= "'". generate_words($1) . "',";
+      }
+    }
   } sort keys %columns;
   $vals =~ s/,$//;
   if(!$for_infile) {
@@ -227,7 +253,6 @@ Options:
     --generate-table,-g   Causes output to issue 'drop table', and 'create table' for the table..
 
     --column,-c           May be specified multiple times. Format is: column_name=type(length)
-                          'id' column is automatically included, so you need not add that.
                           Supported types are (plus see 'Psuedo Column Types' below):
                               varchar
                               char
@@ -263,3 +288,10 @@ that have specific alternate behavior other than 'random':
     If max_shift specified, it indicates how much the timestamp is allowed
     to increase, in seconds.
     It defaults to 300 seconds.
+
+  words(count):
+    This type is very similar to the varchar() type above, but, instead
+    reads /usr/share/dict/words to generate a string composed of a
+    random number of words.
+    Some words are very long so, some of the strings may be truncated
+    on insert, if the column is not long enough.
