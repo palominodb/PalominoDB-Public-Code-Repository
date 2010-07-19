@@ -227,6 +227,7 @@ sub main {
   }
   
   ## Load all the CSV and List data sources into the spec, directly.
+  ## Load all 'module' sources by "require"ing the associated method.
   foreach my $type (keys %spec) {
     my $src = $spec{$type}->{source};
     $pl->d("src:", $src);
@@ -245,6 +246,10 @@ sub main {
     }
     elsif($src =~ /^list:(.*)/) {
       $spec{$type}->{data} = [map { [$_] }split(/,/, $1)];
+    }
+    elsif($src =~ /^module:(.*)/) {
+      $spec{$type} = "module";
+      require "$1";
     }
   }
   
@@ -290,19 +295,36 @@ sub generate_varchar {
   return $random_string;
 }
 
+sub generate_num {
+  my $power_up_to=shift;
+  my $min_digits=shift;
+  $power_up_to=1 if($power_up_to==0);
+  $min_digits ||= $power_up_to;
+  # $power_up_to == 0 is a number between 0-9
+  # == 1 is 0-9
+  # == 2 is 0-99
+  # == 3 is 0-199
+  # == 4 is 0-1999
+  # etc.
+
+  return sprintf("%0${min_digits}d", int(rand(10**$power_up_to)));
+}
+
 ## Does the actual work of updating rows to have obfuscated values.
 sub update_row {
   my ($idx_col, $dbh, $min_idx, $max_idx, $row, $dry_run) = @_;
   my $tbl_config = $conf{$cur_tbl};
+  ## @vals contains the updated column data after the COLUMN: loop
+  ## @data contains the seed data, if any is present.
   my (@vals, @data);
-    
-  $pl->d("Row:", Dumper($row));
+
+  $pl->d("Row:", "$idx_col >= $min_idx AND $idx_col <= $max_idx", Dumper($row));
   $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
   
   ## The keys are sorted here to force the same order in the query as in @vals
   ## Since, @vals is passed wholesale onto $sth->execute() later.
   my $sth = $dbh->prepare_cached("UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
-  foreach my $col (sort keys %$tbl_config) {
+  COLUMN: foreach my $col (sort keys %$tbl_config) {
     
     ## Populate the @data array with either seed data from the pre-loaded CSV file
     ## Or a couple values from a random string generator.
@@ -310,6 +332,9 @@ sub update_row {
       @data = ( [generate_varchar(int(rand(length($row->{$col}))))],
       [generate_varchar(int(rand(length($row->{$col}))))],
       [generate_varchar(int(rand(length($row->{$col}))))] );
+    }
+    elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
+      ## Nothing done here. This is to prevent the catch-all from running.
     }
     else {
       @data = @{$spec{$$tbl_config{$col}}->{data}};  
@@ -323,7 +348,11 @@ sub update_row {
       push @vals, $data[ $rr_upd % $#data ];
       $rr_upd++;
     }
-    
+    elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
+      push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col});
+      next COLUMN;
+    }
+
     ## Keys are sorted here so that each of the matchN keys is in ascending order
     ## thus prioritising lower values of N.
     SEED_KEY: foreach my $sk (sort(grep(/match\d+/, keys(%{$spec{$$tbl_config{$col}}}))) ) {
@@ -422,7 +451,7 @@ sections following the form:
 
   [<datatype>]
   column-type = <mysql column type>
-  source      = <csv:<file>|list:<comma separated list>|random>
+  source      = <csv:<file>|list:<comma separated list>|random|module:<file>>
   match<I>    = <perl regex>
   match<I+1>  = <perl regex>
   match<I+N>  = <perl regex>
