@@ -98,6 +98,7 @@ sub main {
     $drop,
     $i_am_sure,
     $do_archive,
+    $older_than,
     $uneven
   );
 
@@ -112,12 +113,13 @@ sub main {
     "user|u=s" => \$db_user,
     "password|p=s" => \$db_pass,
     "defaults-file|F=s" => \$db_file,
-    "prefix|P=s", \$prefix,
-    "range|r=s", \$range,
-    "add=i", \$add,
-    "drop=i", \$drop,
-    "archive", \$do_archive,
-    "i-am-sure", \$i_am_sure
+    "prefix|P=s" => \$prefix,
+    "range|r=s" => \$range,
+    "older-than=s" => \$older_than,
+    "add=i" => \$add,
+    "drop=i" => \$drop,
+    "archive" => \$do_archive,
+    "i-am-sure" => \$i_am_sure
   );
 
   unless($db_schema and $db_table and $prefix and $range) {
@@ -156,6 +158,9 @@ sub main {
   if($add and $drop) {
     pod2usage(-message => "only one of --add or --drop may be specified");
   }
+  if($range and $older_than) {
+    pod2usage(-message => "only one of --range or --older-than may be specified.");
+  }
 
   $dsn = "DBI:mysql:$db_schema";
   if($db_host) {
@@ -179,7 +184,7 @@ sub main {
     $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_host, $db_schema, $db_table, $i_am_sure);
   }
   elsif($drop) {
-    $r = drop_partitions($drop, $dbh, $parts,
+    $r = drop_partitions($drop, $dbh, $parts, $range, $older_than,
     $db_host, $db_schema, $db_table, $db_user, $db_pass,
     $db_file, $i_am_sure, $do_archive);
   }
@@ -295,20 +300,37 @@ sub add_partitions {
 }
 
 sub drop_partitions {
-  my ($drop, $dbh, $parts, $host, $schema, $table, $user, $pw, $dfile, $i_am_sure, $do_archive) = @_;
+  my ($drop, $dbh, $parts, $range, $older_than, $host, $schema,
+     $table, $user, $pw, $dfile, $i_am_sure, $do_archive) = @_;
 
+  my $today = DateTime->today(time_zone => 'local');
   $pl->e("Refusing to drop more than 1 partition unless --i-am-sure is passed.")
     and return undef
     if($drop > 1 and !$i_am_sure);
 
+  # Return value of this subroutine.
   my $r = 1;
   $pl->m("Dropping $drop partitions.");
   for(my $i=0; $i < $drop ; $i++) {
     my $p = $parts->first_partition;
+    my $p_date = to_date($parts->desc_from_datelike($p->{name}))->ymd;
+    ## Determine if the partition is within $range or $older_than
+    if($range) {
+      if($p_date > $today->clone()->subtract($range => $drop)) {
+        $pl->d("Skipping $p->{name} @ $p_date");
+        next;
+      }
+    }
+    elsif($older_than) {
+      if($p_date > $older_than) {
+        $pl->d("Skipping $p->{name} @ $p_date");
+        next;
+      }
+    }
     if($do_archive) {
       archive_partition($parts, $p, $host, $schema, $table, $user, $pw, $dfile);
     }
-    $pl->i("Dropping data older than:", to_date($parts->desc_from_datelike($p->{name}))->ymd);
+    $pl->i("Dropping data older than:", $p_date);
     $r = $parts->drop_partition($p->{name}, $pretend);
     last unless($r);
   }
@@ -375,6 +397,8 @@ options:
   --range,         -r   Partition range. Mandatory.
                         One of: months, weeks, days.
   --pretend             Report on actions without taking them.
+  
+  --archive             Archive partitions before dropping them.
 
 action:
 
@@ -462,6 +486,15 @@ type: string one of: months, weeks, days ; mandatory
 This is the interval in which partitions operate. Or, the size of the buckets
 that the partitions describe.
 
+When adding paritions, it specifies what timeframe the partitions describe.
+
+When dropping partitions, it specifies the multiplier for the N in C<--drop=N>.
+So, if you have: C<--range weeks --drop 3>, you're asking to drop data older than
+three weeks.
+
+B<Note that you'll also have to pass C<--i-am-sure> in order to drop
+more than one partition.>
+
 =item --i-am-sure
 
 type: boolean
@@ -473,6 +506,22 @@ Disables safety for L<"--drop"> and allows dropping more than one partition at a
 type: boolean
 
 Allow the tool to possibly add non-whole weeks or months. Has no effect when adding days, as those are the smallest unit this tool supports.
+
+=item --archive
+
+type: boolean
+
+mysqldump partitions to files B<in the current directory> named like <host>.<schema>.<table>.<partition_name>.sql
+
+There is not currently a way to archive without dropping a partition.
+
+=item --older-than
+
+type: date
+
+For dropping data, this is an alternate to L<--range>. It specifies
+an absolute date for which partitions older than it should be dropped.
+The date B<MUST> be in the format: C<YYYY-MM-DD>. 
 
 =back
 
