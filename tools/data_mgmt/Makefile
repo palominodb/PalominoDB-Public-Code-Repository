@@ -1,7 +1,7 @@
 TOOL_PATH = ../../util/build
 LIB_PATH = ../../util/lib
 TLIB_PATH = ../../util/t/lib
-TOOLS_RELEASE = 0.07
+TOOLS_RELEASE = 0.08
 HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 
 all: dirs pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge pdb-munch

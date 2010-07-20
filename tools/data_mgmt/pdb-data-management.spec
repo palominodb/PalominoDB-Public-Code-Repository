@@ -1,6 +1,6 @@
 Name: pdb-data-management
 Summary: PalominoDB tools for data management
-Version: 0.07
+Version: 0.08
 Vendor: PalominoDB
 Release: 1
 License: BSD
@@ -75,6 +75,16 @@ Several of the tools make use of the highly robust and popular maatkit <http://m
 
 Just the cluster rebuild tool.
 
+%package munch
+Summary: Just the data obfuscation tool.
+Group: Application/System
+
+%description munch
+A growing collection of tools for managing growing datasets in MySQL.
+Several of the tools make use of the highly robust and popular maatkit <http://maatkit.org> toolset.
+
+Just the data obfuscation tool.
+
 %prep
 %setup -q
 
@@ -88,7 +98,7 @@ make
 %{__rm} -rf %{buildroot}
 %{__mkdir} -p %{buildroot}
 
-for tool in pdb-{archiver,parted,packer,master,zrm-restore,sandbox-merge}; do
+for tool in pdb-{archiver,parted,packer,master,zrm-restore,sandbox-merge,munch}; do
   %{__install} -D -m 0755 tools/data_mgmt/bin/$tool %{buildroot}/%{_bindir}/$tool
 done
 
@@ -104,6 +114,7 @@ done
 %{_bindir}/pdb-master
 %{_bindir}/pdb-zrm-restore
 %{_bindir}/pdb-sandbox-merge
+%{_bindir}/pdb-munch
 
 %files packer
 %defattr(0755,root,root)
@@ -128,3 +139,7 @@ done
 %files sandbox-merge
 %defattr(0755,root,root)
 %{_bindir}/pdb-sandbox-merge
+
+%files munch
+%defattr(0755,root,root)
+%{_bindir}/pdb-munch
