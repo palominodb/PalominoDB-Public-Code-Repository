@@ -98,8 +98,7 @@ sub main {
     $drop,
     $i_am_sure,
     $do_archive,
-    $older_than,
-    $uneven
+    $older_than
   );
 
   GetOptions(
@@ -119,7 +118,8 @@ sub main {
     "add=i" => \$add,
     "drop=i" => \$drop,
     "archive" => \$do_archive,
-    "i-am-sure" => \$i_am_sure
+    "i-am-sure" => \$i_am_sure,
+    "uneven" => \$uneven
   );
 
   unless($db_schema and $db_table and $prefix and $range) {
@@ -236,38 +236,51 @@ sub add_partitions {
   }
   else {
     my @part_dates = ();
-    my $d2 = $today + $reqdur;
-    $pl->d('End date:', $d2->ymd);
-    my $du2 = $d2 - $last_p->{date};
-    $pl->d('delta pre adjustment:', Dumper($du2));
+    my $end_date = $today + $reqdur;
+    my $curs_date = $last_p->{date};
 
-    unless($uneven) {
-      if($range eq 'months' and $du2->in_units('days')) {
-        $pl->i("Warning: Rounding up to a full month.");
-        push @part_dates, ($last_p->{date} + DateTime::Duration->new(months => 1));
-        $du2->subtract(days => $du2->in_units('days'));
+    $pl->d('End date:', $end_date->ymd);
+
+    ###########################################################################
+    # Handle the case where we aren't run on the same day of the week or month.
+    # This is/was part of the requirements for the pdb-parted tool.
+    # It used to be that this code would try to add an extra partition in to 
+    # compenstate for the offset. The new code just fiddles with the start date
+    # to get it to land on a multiple of $today*$range.
+    ###########################################################################
+    $pl->d('Checking for uneven partitioning.');
+    if($range eq 'months') {
+      my $uneven_dur = $today->delta_md($last_p->{date});
+      $pl->d(Dumper($uneven_dur));
+      if($uneven_dur->delta_days) {
+        $pl->i('Found uneven partitioning.', $uneven_dur->delta_days, 'days. Are you running on the same day of the month?');
+        unless($uneven) {
+          $curs_date->add('days' => $uneven_dur->delta_days) unless($uneven);
+        }
       }
-      elsif($range eq 'weeks' and $du2->in_units('days') % 7) {
-        $pl->i("Warning: Correcting for oddly sized partitioning by creating a slightly larger initial partition.");
-        push @part_dates, ($last_p->{date} + DateTime::Duration->new(days => 7 + $du2->in_units('days') % 7));
-        $du2->subtract(days => 7 + $du2->in_units('days') % 7);
+    }
+    elsif($range eq 'weeks') {
+      my $uneven_dur = $today->delta_days($last_p->{date});
+      $pl->d(Dumper($uneven_dur));
+      if($uneven_dur->delta_days % 7) {
+        $pl->i('Found uneven partitioning.', 7 - $uneven_dur->delta_days % 7, 'days. Are you running on the same day of the week?');
+        unless($uneven) {
+          $curs_date->subtract('days' => 7 -  $uneven_dur->delta_days % 7);
+        }
       }
-      elsif($range eq 'days') {
-        $du2 = $d2->delta_days($last_p->{date});
-      }
-      $pl->d('delta post adjustment:',Dumper($du2));
     }
 
-    for(my $i=0; $i < $du2->in_units($range); $i++) {
-      my $d;
-      if($part_dates[-1]) {
-        $d  = $part_dates[-1] + DateTime::Duration->new($range => 1);
-      }
-      else {
-        $d  = $last_p->{date} + DateTime::Duration->new($range => 1);
-      }
-      push @part_dates, $d;
+    $pl->d('cur date:', $curs_date->ymd);
+
+    ###########################################################################
+    # Just loop until $curs_date (date cursor) is greater than
+    # where we want to be. We advance the cursor by $range increments.
+    ###########################################################################
+    while($curs_date < $end_date) {
+      push @part_dates, $curs_date->add($range => 1)->clone();
     }
+
+    $pl->d(Dumper([ map { $_->ymd } @part_dates]));
 
     if($reorganize) {
       $parts->start_reorganization($parts->last_partition()->{name});
@@ -277,6 +290,9 @@ sub add_partitions {
     $pl->i("Will add", scalar @part_dates, "partitions to satisfy", $add, $range, 'requirement.');
 
     my $i=0;
+    ###########################################################################
+    # Loop over the calculated dates and add partitions for each one
+    ###########################################################################
     foreach my $date (@part_dates) {
       if($reorganize) {
         if($date eq 'MAXVALUE') {
@@ -372,6 +388,12 @@ sub archive_partition {
 
 sub to_date {
   my ($dstr) = @_;
+  #############################################################################
+  # MySQL can return two different kinds of dates to us.
+  # For DATE columns we just get the date. Obviously.
+  # For virtually all other time related columns, we also get a time.
+  # This method first tries parsing with just dates and then tries with time.
+  #############################################################################
   my $fmt1 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d', time_zone => 'local');
   my $fmt2 = DateTime::Format::Strptime->new(pattern => '%Y-%m-%d %T', time_zone => 'local');
   return ($fmt1->parse_datetime($dstr) || $fmt2->parse_datetime($dstr))->truncate( to => 'day' );
