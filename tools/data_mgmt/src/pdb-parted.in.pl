@@ -28,7 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 
 # ###########################################################################
 # ProcessLog package GIT_VERSION
@@ -54,7 +54,7 @@ use warnings;
 package pdb_parted;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
 use ProcessLog;
@@ -124,11 +124,11 @@ sub main {
     pod2usage(-message => "--table, --database, --prefix and --range are mandatory.");
   }
 
-  $range=lc($range);
-
   unless($range eq 'months' or $range eq 'days' or $range eq 'weeks') {
     pod2usage(-message => "--range must be one of: months, days, or weeks.");
   }
+
+  $range=lc($range);
 
   unless($prefix =~ /^[A-Za-z][A-Za-z0-9_-]*$/) {
     pod2usage(-message => "--prefix ($prefix) must not include non alpha-numeric characters.");
