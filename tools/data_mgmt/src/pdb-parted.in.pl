@@ -162,6 +162,12 @@ sub main {
     pod2usage(-message => "only one of --range or --older-than may be specified.");
   }
 
+  if($older_than) {
+    unless(($older_than = to_date($older_than))) {
+      pod2usage(-message => "--older-than must be in the form YYYY-MM-DD.");
+    }
+  }
+
   $dsn = "DBI:mysql:$db_schema";
   if($db_host) {
     $dsn .= ";host=$db_host";
@@ -329,7 +335,7 @@ sub drop_partitions {
   $pl->m("Dropping $drop partitions.");
   for(my $i=0; $i < $drop ; $i++) {
     my $p = $parts->first_partition;
-    my $p_date = to_date($parts->desc_from_datelike($p->{name}))->ymd;
+    my $p_date = to_date($parts->desc_from_datelike($p->{name}));
     ## Determine if the partition is within $range or $older_than
     if($range) {
       if($p_date > $today->clone()->subtract($range => $drop)) {
