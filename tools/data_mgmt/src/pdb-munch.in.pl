@@ -57,40 +57,6 @@ use warnings FATAL => 'all';
 # End TableIndexes package
 # ###########################################################################
 
-#package MunchSpec;
-#use strict;
-#use warnings FATAL => 'all';
-#use IniFile;
-#
-#sub new {
-#  my ($class, $specfile) = @_;
-#  my $self = {};
-#  $self->{spec} = IniFile::read_config($specfile);
-#  $self->{specfile} = $specfile;
-#  bless $self, $class;
-#  
-#  # Verify each datatype in the spec.
-#  foreach my $type (keys %{$self->{spec}}) {
-#    for my $c (qw(source column-type method)) {
-#      if(not defined($self->{spec}->{$type}->{$c})) {
-#        die("$c is required for all data specs");
-#      }
-#    }
-#  }
-#  
-#  return $self;
-#}
-#
-#sub data_matches {
-#  my ($self, $type, $data) = @_;
-#  my $spec = $self->{spec}->{$type};
-#  die("Uknown datatype $type") if(not defined $spec);
-#  my @matches = grep /match\d+/, sort keys %$spec;
-#  
-#}
-#
-#1;
-
 package pdb_munch;
 use strict;
 use warnings FATAL => 'all';
@@ -151,6 +117,7 @@ match3     = \s*(\d+) ([a-zA-Z0-9\.]+ ? [a-zA-Z0-9\.]+ ? [a-zA-Z0-9\.]+ ?).*
 match4     = \s*(\d+) ([a-zA-Z0-9\.]+ ? [a-zA-Z0-9\.]+ ?).*
 EOF
 
+my %c;
 my %spec;
 my %conf;
 my $pl;
@@ -159,29 +126,33 @@ my $db;
 my $dsn;
 
 my $rr_upd;
+my $changed_rows;
 
 sub main {
   @ARGV = @_;
-  my %c = ('logfile' => "$0.log", 'batch-size' => 10_000);
   my $dsnp = DSNParser->default();
   my $tbl_indexer;
+
+  %c = ('logfile' => "$0.log", 'batch-size' => 10_000, 'max-retries' => 1_000);
   %spec = ();
   %conf = ();
   $cur_tbl = undef;
   $dsn = undef;
   $db = undef;
   $rr_upd = 0;
+  $changed_rows = 0;
   GetOptions(\%c,
     'help|h',
-    'i-am-sure',
     'logfile|L=s',
     'dry-run|n',
     'dump-spec',
     'spec|s=s',
     'config|c=s',
     'batch-size|b=i',
+    'limit=i',
+    'max-retries=i'
   );
-  
+
   if($c{'help'}) {
     pod2usage(-verbose => 99);
     return 1;
@@ -218,6 +189,7 @@ sub main {
   
   ## Verify each datatype in the spec.
   foreach my $type (keys %spec) {
+    next if ($type =~ /^__\w+__$/); # Skip control sections
     for my $c (qw(source column-type method)) {
       if(not defined($spec{$type}->{$c})) {
         $pl->e("$c is required for all data specs");
@@ -229,6 +201,7 @@ sub main {
   ## Load all the CSV and List data sources into the spec, directly.
   ## Load all 'module' sources by "require"ing the associated method.
   foreach my $type (keys %spec) {
+    next if ($type =~ /^__\w+__$/); # Skip control sections
     my $src = $spec{$type}->{source};
     $pl->d("src:", $src);
     if($src =~ /^csv:(.*)/) {
@@ -248,7 +221,7 @@ sub main {
       $spec{$type}->{data} = [map { [$_] }split(/,/, $1)];
     }
     elsif($src =~ /^module:(.*)/) {
-      $spec{$type} = "module";
+      $spec{$type}->{source} = "module";
       require "$1";
     }
   }
@@ -260,8 +233,8 @@ sub main {
     return 1;
   }
   
-  $pl->d("Spec:", Dumper(\%spec));
-  $pl->d("Config:", Dumper(\%conf));
+  ProcessLog::_PdbDEBUG >= 2 && $pl->d("Spec:", Dumper(\%spec));
+  ProcessLog::_PdbDEBUG >= 2 && $pl->d("Config:", Dumper(\%conf));
   
   ## Get connection information out of the config file
   $dsn = $dsnp->parse($conf{connection}{dsn});
@@ -274,9 +247,11 @@ sub main {
     $rr_upd = 0;
     $cur_tbl = $tbl;
     $pl->d("Table config:", $conf{$tbl});
-    $tbl_indexer->walk_table(undef, $c{'batch-size'}, \&update_row, $db, $tbl, $c{'dry-run'});
+    $tbl_indexer->walk_table(undef, $c{'batch-size'}, \&update_row, $db, $tbl);
   }
-  
+
+  $pl->i("Changed Rows:", $changed_rows);
+
   return 0;
 }
 
@@ -312,20 +287,31 @@ sub generate_num {
 
 ## Does the actual work of updating rows to have obfuscated values.
 sub update_row {
-  my ($idx_col, $dbh, $min_idx, $max_idx, $row, $dry_run) = @_;
+  my ($idx_col, $dbh, $min_idx, $max_idx, $row) = @_;
+  my $dry_run = $c{'dry-run'};
   my $tbl_config = $conf{$cur_tbl};
+  my $max_retries = $c{'max-retries'};
+  my $retries = 0;
   ## @vals contains the updated column data after the COLUMN: loop
   ## @data contains the seed data, if any is present.
   my (@vals, @data);
 
+# We jump to this label when there was a duplicate key error on the row
+# and $c{'max-retries'} is greater than 0.
+UPDATE_ROW_TOP:
+  @vals = ();
+  @data = ();
+
   $pl->d("Row:", "$idx_col >= $min_idx AND $idx_col <= $max_idx", Dumper($row));
-  $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
-  
+
   ## The keys are sorted here to force the same order in the query as in @vals
   ## Since, @vals is passed wholesale onto $sth->execute() later.
   my $sth = $dbh->prepare_cached("UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
+
   COLUMN: foreach my $col (sort keys %$tbl_config) {
-    
+    if(not defined($$row{$col})) {
+      $row->{$col} = "";
+    }
     ## Populate the @data array with either seed data from the pre-loaded CSV file
     ## Or a couple values from a random string generator.
     if($spec{$$tbl_config{$col}}->{source} eq "random") {
@@ -349,6 +335,7 @@ sub update_row {
       $rr_upd++;
     }
     elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
+      no strict 'refs';
       push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col});
       next COLUMN;
     }
@@ -358,19 +345,47 @@ sub update_row {
     SEED_KEY: foreach my $sk (sort(grep(/match\d+/, keys(%{$spec{$$tbl_config{$col}}}))) ) {
       my $rgx = $spec{$$tbl_config{$col}}{$sk};
       my @res = $row->{$col} =~ /^$rgx$/;
-      $pl->d("R:", qr/^$rgx$/, $#res+1, @res);
+      $pl->d("R:", $col, qr/^$rgx$/, $#res+1, @res);
       if(@res) {
         for(my $i=0; $i < $#res+1; $i++) {
-          $pl->d("S:", $res[$i], "(", @{$vals[-1]}, ")", "*", $vals[-1]->[$i], "*", $i, scalar @{$vals[-1]});
-          $row->{$col} =~ s/$res[$i]/$vals[-1]->[$i]/;
+          $pl->d("V:", $col, Dumper(\@vals));
+          $pl->d("S:", $col, $res[$i], "(", @{$vals[-1]}, ")", "*", $vals[-1]->[$i], "*", $i, scalar @{$vals[-1]});
+          substr($row->{$col}, index($row->{$col}, $res[$i]), length($res[$i]), $vals[-1]->[$i]);
         }
         $vals[-1] = $row->{$col};
         last SEED_KEY;
       }
     }
+    if(ref($vals[-1])) {
+      if($spec{'__params__'}{'die-on-unmatched'}) {
+        die("Unable to match $col");
+      }
+      $vals[-1] = $row->{$col};
+    }
   }
+  $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
   $pl->d("SQL Bind:", @vals, $row->{$idx_col});
-  $sth->execute(@vals, $row->{$idx_col}) unless($dry_run);
+  eval {
+    $sth->execute(@vals, $row->{$idx_col}) unless($dry_run);
+  };
+  if($@ and $@ =~ /.*Duplicate entry/) {
+    if($max_retries and $retries < $max_retries) {
+      $retries++;
+      goto UPDATE_ROW_TOP;
+    }
+    else {
+      die($@);
+    }
+  }
+  if($changed_rows % $c{'batch-size'} == 0) {
+    $pl->d("SQL: COMMIT /*", $changed_rows, '/', $c{'batch-size'}, "*/");
+    $dbh->commit;
+    $dbh->begin_work if($dbh->{AutoCommit});
+  }
+  $changed_rows++;
+  if($changed_rows > $c{'limit'}) {
+    die("Reached $c{'limit'} rows");
+  }
 }
 
 if(!caller) { exit(main(@ARGV)); }
@@ -397,11 +412,12 @@ and triple check your configuration before running this tool.
 
 =over 8
 
-=item --i-am-sure
+=item --logfile,-L
 
-Do not prompt to continue after displaying the processed configuration.
+Specifies where to log. Can be set to a string like: syslog:<facility> to
+do syslog logging. LOCAL0 usually logs to /var/log/messages.
 
-Use this option at your own peril.
+Default: ./pdb-munch.log
 
 =item --dry-run,-n
 
@@ -421,9 +437,22 @@ Use the column types from this file.
 
 Use the host/table configuration in this file.
 
+=item --max-retries
+
+How many times to retry after a unique key error.
+
+Default: 1,000
+
+=item --limit
+
+If used, will stop the tool after --limit rows.
+
 =item --batch-size,-b
 
 Tells pdb-munch to modify --batch-size records at a time.
+The batch size also determines the commit interval. For InnoDB,
+very long transactions can push other operations out and slow
+down the muncher.
 
 Default: 10,000
 
@@ -440,6 +469,34 @@ Default: 10,000
   # munch spec includes several datatypes. 
   pdb-munch --dump-spec
   
+=head1 CONFIG FILES
+
+The config file defines which host to connect to, and what columns in which
+tables to modify. Example:
+
+  [connection]
+  dsn =   h=testdb,u=root,p=pass,D=testdb
+  
+  ;; Tables
+  ;[table_name]
+  ;column_name = type
+  
+  [addresses]
+  address_line_one = address
+  name = name
+  email = email_righthand
+  
+The C<connection> section has only one parameter: C<dsn>, it specifies
+the connection information. It's a list of key-value pairs separated by
+commas. Description of keys:
+
+  h - host name
+  u - mysql user
+  p - mysql password
+  D - mysql schema(database)
+
+All are mandatory.
+  
 =head1 SPEC FILES
 
 Spec files describe different kinds of datatypes stored inside
@@ -452,9 +509,56 @@ sections following the form:
   [<datatype>]
   column-type = <mysql column type>
   source      = <csv:<file>|list:<comma separated list>|random|module:<file>>
+  method      = <random|roundrobin|<perl subroutine name>>
   match<I>    = <perl regex>
   match<I+1>  = <perl regex>
   match<I+N>  = <perl regex>
+
+The spec file should contain the special section C<[__param__]> which controls
+the way certain conditions in the muncher are handled. Presently, only one
+parameter C<die-on-unmatched> is used, which, if set to a true value will
+cause pdb-munch to die if all of the C<< match<I> >> patterns fail. Example:
+
+  [__param__]
+  die-on-unmatched = 1
+
+Parameter descriptions:
+
+=over 8
+
+=item C<column-type>
+
+Specifies the type of MySQL column this datatype is stored in.
+Presently, this is unused, but required.
+
+=item C<source>
+
+The source is where to pull data from. The most common is from a CSV file.
+
+The C<list:> type is an inline comma separated list of values. It's most
+useful for ENUM column types.
+
+C<random> generates several randomly sized random strings per row and selects one.
+
+C<module:> is the most flexible, it allows you to load an arbitrary perl module
+and then use the C<method> parameter to call a subroutine in it. The sub will
+recieve a handle to the database connection, and the column data.
+
+=item C<method>
+
+One of: random, roundrobin, or the name of a perl subroutine.
+For random, the tool will select a random value from the source, for roundrobin,
+it'll use them in order as they appear one after another in a loop.
+The perl sub, if used, will be called as described above.
+
+=item C<< match<I> >>
+
+For the C<csv:>, C<list:>, and C<random> source types, these define how to
+replace the cell contents. For C<csv:> types, each capture group in the regex
+corresponds to a column in the CSV. The C<list:> and C<random> types ony support
+one capture group.
+
+=back
 
 =head1 ENVIRONMENT
 
