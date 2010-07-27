@@ -72,6 +72,7 @@ my $dbh =  DBI->connect("DBI:mysql:$db_schema;host=$db_host", $db_user, $db_pass
 my $pl = ProcessLog->null;
 my $parts = TablePartitions->new($pl, $dbh, $db_schema, $db_table);
 my $last_ptime = 0;
+my $req_date = 0;
 my $last_p = $parts->last_partition;
 
 if($last_p->{description} eq 'MAXVALUE') {
@@ -79,22 +80,16 @@ if($last_p->{description} eq 'MAXVALUE') {
 }
 
 $last_ptime = to_date($parts->desc_from_datelike($last_p->{name}));
-my $today = DateTime->today(time_zone => 'local');
-
-my $du = $last_ptime - $today;
-
-if($range eq 'days') {
-  $du = $last_ptime->delta_days($today);
-}
+$req_date = DateTime->today(time_zone => 'local')->add($range => $verify);
 
 $dbh->disconnect;
 
-if($du->in_units($range) < $verify) {
-  print "CRITICAL: Not enough partitions. ". $du->in_units($range) . " $range less than $verify $range\n";
+if($req_date > $last_ptime) {
+  print "CRITICAL: Not enough partitions. Less than $verify $range available.\n";
   exit(CRITICAL);
 }
 else {
-  print "OK: Enough partitions. ". $du->in_units($range) . " $range greater than, or equal to $verify $range\n";
+  print "OK: Enough partitions. At least $verify $range partitions available.\n";
   exit(OK);
 }
 
