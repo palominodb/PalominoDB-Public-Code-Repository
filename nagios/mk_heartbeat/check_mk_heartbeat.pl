@@ -102,6 +102,6 @@ elsif($rint > $warn_max) {
   exit(WARNING);
 }
 else {
-  print "OK: Lag $crit_min < $rint < $warn_min and $crit_max > $rint > $warn_max";
+  print "OK: Lag $rint greater than (crit:$crit_min warn:$warn_min) and $rint less than (crit:$crit_max warn:$warn_max).";
   exit(OK);
 }
