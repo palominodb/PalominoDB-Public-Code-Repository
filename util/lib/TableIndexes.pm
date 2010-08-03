@@ -193,7 +193,7 @@ sub get_best_index {
 
 =pod
 
-=head3 C<walk_table($index, $size, $cb, $db, $table, @cb_data)>
+=head3 C<walk_table($index, $size, $start, $cb, $db, $table, @cb_data)>
 
 If C<$index> is defined, then walk up that index, otherwise,
 use L<get_best_index> and walk up that one.
@@ -201,15 +201,18 @@ use L<get_best_index> and walk up that one.
 C<$size> defines approximately how many rows at a time should
 be fetched at once.
 
+C<$start> start the walk from a row other than the first.
+
 C<$cb> is a coderef to call with: $index_column, $dbh, $min_id, $max_id, $row_data, @cb_data
 Where, min_id and max_id compose the range of the index currently being queried.
 
 =cut
 
 sub walk_table {
-  my ($self, $index, $size, $cb, $db, $table, @cb_data) = @_;
+  my ($self, $index, $size, $start, $cb, $db, $table, @cb_data) = @_;
   my $dbh = $self->{dsn}->get_dbh(1);
   my ($sth, $min_idx, $max_idx, $rows);
+  $start ||= 0;
   $rows = 0;
   
   if(not defined $table) {
@@ -222,6 +225,7 @@ sub walk_table {
     # Start a transaction if one is not currently going
     $dbh->begin_work if($dbh->{AutoCommit});
     $min_idx = $dbh->selectrow_array("SELECT `$index->{'column'}` FROM `$db`.`$table` LIMIT 1");
+    $min_idx = $start if($start);
     $max_idx = $min_idx+$size;
     $sth = $dbh->prepare("SELECT * FROM `$db`.`$table` WHERE `$index->{'column'}` >= ? AND `$index->{'column'}` <= ?");
   
