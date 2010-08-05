@@ -239,8 +239,8 @@ sub main {
     return 1;
   }
   
-  ProcessLog::_PdbDEBUG >= 2 && $pl->d("Spec:", Dumper(\%spec));
-  ProcessLog::_PdbDEBUG >= 2 && $pl->d("Config:", Dumper(\%conf));
+  ProcessLog::_PdbDEBUG >= 3 && $pl->d("Spec:", Dumper(\%spec));
+  ProcessLog::_PdbDEBUG >= 3 && $pl->d("Config:", Dumper(\%conf));
   
   ## Get connection information out of the config file
   $dsn = $dsnp->parse($conf{connection}{dsn});
@@ -336,7 +336,7 @@ UPDATE_ROW_TOP:
   @vals = ();
   $data = [];
 
-  $pl->d("Row:", "$idx_col >= $min_idx AND $idx_col <= $max_idx", Dumper($row));
+  ProcessLog::_PdbDEBUG >= 2 && $pl->d("Row:", "$idx_col >= $min_idx AND $idx_col <= $max_idx", Dumper($row));
 
   ## The keys are sorted here to force the same order in the query as in @vals
   ## Since, @vals is passed wholesale onto $sth->execute() later.
@@ -379,11 +379,11 @@ UPDATE_ROW_TOP:
     SEED_KEY: foreach my $sk (sort(grep(/match\d+/, keys(%{$spec{$$tbl_config{$col}}}))) ) {
       my $rgx = $spec{$$tbl_config{$col}}{$sk};
       my @res = $row->{$col} =~ /^$rgx$/;
-      $pl->d("R:", $col, qr/^$rgx$/, $#res+1, @res);
+      ProcessLog::_PdbDEBUG >= 2 && $pl->d("R:", $col, qr/^$rgx$/, $#res+1, @res);
       if(@res) {
         for(my $i=0; $i < $#res+1; $i++) {
-          $pl->d("V:", $col, Dumper(\@vals));
-          $pl->d("S:", $col, $res[$i], "(", @{$vals[-1]}, ")", "*", $vals[-1]->[$i], "*", $i, scalar @{$vals[-1]});
+          ProcessLog::_PdbDEBUG >= 2 && $pl->d("V:", $col, Dumper(\@vals));
+          ProcessLog::_PdbDEBUG >= 2 && $pl->d("S:", $col, $res[$i], "(", @{$vals[-1]}, ")", "*", $vals[-1]->[$i], "*", $i, scalar @{$vals[-1]});
           substr($row->{$col}, index($row->{$col}, $res[$i]), length($res[$i]), $vals[-1]->[$i]);
         }
         $vals[-1] = $row->{$col};
@@ -397,8 +397,8 @@ UPDATE_ROW_TOP:
       $vals[-1] = $row->{$col};
     }
   }
-  $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
-  $pl->d("SQL Bind:", @vals, $row->{$idx_col});
+  ProcessLog::_PdbDEBUG >= 2 && $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
+  ProcessLog::_PdbDEBUG >= 2 && $pl->d("SQL Bind:", @vals, $row->{$idx_col});
   eval {
     $sth->execute(@vals, $row->{$idx_col}) unless($dry_run);
   };
