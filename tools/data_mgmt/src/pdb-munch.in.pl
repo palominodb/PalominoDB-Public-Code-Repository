@@ -328,13 +328,13 @@ sub update_row {
   my $retries = 0;
   ## @vals contains the updated column data after the COLUMN: loop
   ## @data contains the seed data, if any is present.
-  my (@vals, @data);
+  my (@vals, $data);
 
 # We jump to this label when there was a duplicate key error on the row
 # and $c{'max-retries'} is greater than 0.
 UPDATE_ROW_TOP:
   @vals = ();
-  @data = ();
+  $data = [];
 
   $pl->d("Row:", "$idx_col >= $min_idx AND $idx_col <= $max_idx", Dumper($row));
 
@@ -349,23 +349,23 @@ UPDATE_ROW_TOP:
     ## Populate the @data array with either seed data from the pre-loaded CSV file
     ## Or a couple values from a random string generator.
     if($spec{$$tbl_config{$col}}->{source} eq "random") {
-      @data = ( [generate_varchar(int(rand(length($row->{$col}))))],
+      $data = [ [generate_varchar(int(rand(length($row->{$col}))))],
       [generate_varchar(int(rand(length($row->{$col}))))],
-      [generate_varchar(int(rand(length($row->{$col}))))] );
+      [generate_varchar(int(rand(length($row->{$col}))))] ];
     }
     elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
       ## Nothing done here. This is to prevent the catch-all from running.
     }
     else {
-      @data = @{$spec{$$tbl_config{$col}}->{data}};  
+      $data = $spec{$$tbl_config{$col}}->{data};
     }
     
     ## Select the data in the fashion requested.
     if($spec{$$tbl_config{$col}}->{method} eq 'random') {
-      push @vals, $data[int(rand($#data))];
+      push @vals, $$data[int(rand(scalar(@$data)-1))];
     }
     elsif($spec{$$tbl_config{$col}}->{method} eq 'roundrobin') {
-      push @vals, $data[ $rr_upd % $#data ];
+      push @vals, $$data[ $rr_upd % (scalar(@$data)-1) ];
       $rr_upd++;
     }
     elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
