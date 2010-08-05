@@ -128,10 +128,15 @@ my $dsn;
 my $rr_upd;
 my $changed_rows;
 
+# key => table name
+# value => [table, id_column, cur_id, min_id, max_id]
+my %resume_info;
+
 sub main {
   @ARGV = @_;
   my $dsnp = DSNParser->default();
   my $tbl_indexer;
+  %resume_info = ();
 
   %c = ('logfile' => "$0.log", 'batch-size' => 10_000, 'max-retries' => 1_000);
   %spec = ();
@@ -150,7 +155,8 @@ sub main {
     'config|c=s',
     'batch-size|b=i',
     'limit=i',
-    'max-retries=i'
+    'max-retries=i',
+    'resume|r=s'
   );
 
   if($c{'help'}) {
@@ -242,12 +248,14 @@ sub main {
   delete $conf{connection};
   $tbl_indexer = TableIndexes->new($dsn);
   
+  load_resume($c{resume}) if($c{resume});
 
   foreach my $tbl (sort keys %conf) {
     $rr_upd = 0;
     $cur_tbl = $tbl;
+    $resume_info{$cur_tbl} ||= [undef, undef, undef, undef];
     $pl->d("Table config:", $conf{$tbl});
-    $tbl_indexer->walk_table(undef, $c{'batch-size'}, \&update_row, $db, $tbl);
+    $tbl_indexer->walk_table(undef, $c{'batch-size'}, $resume_info{$cur_tbl}->[2], \&update_row, $db, $tbl);
   }
 
   $pl->i("Changed Rows:", $changed_rows);
@@ -283,6 +291,32 @@ sub generate_num {
   # etc.
 
   return sprintf("%0${min_digits}d", int(rand(10**$power_up_to)));
+}
+
+# Saves information about the progress of the muncher to the file
+# specified by --resume
+sub save_resume {
+  my $res_fh;
+  open($res_fh, ">$c{resume}") or die("Unable to open $c{resume}: $!");
+  foreach my $tbl (sort keys %resume_info) {
+    print($res_fh join("\t", ($tbl, @{$resume_info{$tbl}})));
+  }
+  close($res_fh);
+
+  return 1;
+}
+
+# Loads information about the progress of the muncher from the file
+# specified by --resume
+sub load_resume {
+  my $res_fh;
+  my @res;
+  open($res_fh, "<$c{resume}") or die("Unable to open $c{resume}: $!");
+  while(<$res_fh>) {
+    my ($tbl, @data) = split(/\t/);
+    chomp(@data);
+    $resume_info{$tbl} = [@data];
+  }
 }
 
 ## Does the actual work of updating rows to have obfuscated values.
@@ -381,9 +415,13 @@ UPDATE_ROW_TOP:
     $pl->d("SQL: COMMIT /*", $changed_rows, '/', $c{'batch-size'}, "*/");
     $dbh->commit;
     $dbh->begin_work if($dbh->{AutoCommit});
+    if($c{resume}) {
+      $resume_info{$cur_tbl} = [$idx_col, $$row{$idx_col}, $min_idx, $max_idx];
+      save_resume();
+    }
   }
   $changed_rows++;
-  if($changed_rows > $c{'limit'}) {
+  if($c{'limit'} and ($changed_rows > $c{'limit'})) {
     die("Reached $c{'limit'} rows");
   }
 }
@@ -455,6 +493,11 @@ very long transactions can push other operations out and slow
 down the muncher.
 
 Default: 10,000
+
+=item --resume,-r
+
+Load saved resume info from file.
+In order to start pdb-munch for a new 
 
 =back
 
