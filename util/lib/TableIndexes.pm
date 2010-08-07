@@ -211,7 +211,8 @@ Where, min_id and max_id compose the range of the index currently being queried.
 sub walk_table {
   my ($self, $index, $size, $start, $cb, $db, $table, @cb_data) = @_;
   my $dbh = $self->{dsn}->get_dbh(1);
-  my ($sth, $min_idx, $max_idx, $rows);
+  my ($sth, $min_idx, $max_idx, $last_idx, $rows);
+  my $row;
   $start ||= 0;
   $rows = 0;
   
@@ -225,20 +226,20 @@ sub walk_table {
     # Start a transaction if one is not currently going
     $dbh->begin_work if($dbh->{AutoCommit});
     $min_idx = $dbh->selectrow_array("SELECT `$index->{'column'}` FROM `$db`.`$table` LIMIT 1");
+    $last_idx = $dbh->selectrow_array("SELECT MAX(`$index->{'column'}`) FROM `$db`.`$table` LIMIT 1");
     $min_idx = $start if($start);
     $max_idx = $min_idx+$size;
     $sth = $dbh->prepare("SELECT * FROM `$db`.`$table` WHERE `$index->{'column'}` >= ? AND `$index->{'column'}` <= ?");
   
     do {
       $sth->execute($min_idx, $max_idx);
-      my $row;
       while($row = $sth->fetchrow_hashref) {
         $rows++;
         &$cb($index->{'column'}, $dbh, $min_idx, $max_idx, $row, @cb_data);
       }
       $min_idx = $max_idx+1;
       $max_idx += $size;
-    } while($sth->rows > 0);
+    } while($min_idx < $last_idx);
   };
   if($@) {
     ## Rollback is called here because the callback may be doing aribitrary
