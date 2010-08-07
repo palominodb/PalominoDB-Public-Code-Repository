@@ -299,7 +299,7 @@ sub save_resume {
   my $res_fh;
   open($res_fh, ">$c{resume}") or die("Unable to open $c{resume}: $!");
   foreach my $tbl (sort keys %resume_info) {
-    print($res_fh join("\t", ($tbl, @{$resume_info{$tbl}})));
+    print($res_fh join("\t", ($tbl, @{$resume_info{$tbl}})), "\n");
   }
   close($res_fh);
 
