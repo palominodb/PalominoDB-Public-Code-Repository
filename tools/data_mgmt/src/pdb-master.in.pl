@@ -178,7 +178,7 @@ sub make_slave_of {
   $ms2->change_master_to(
     master_host => $master->get('h'),
     master_user => $user,
-    master_port => $master->get('P'),
+    master_port => $master->get('P') || 3306,
     master_password => $pw,
     master_log_file => sprintf("$binlog_base.%06d", 1),
     master_log_pos  => 4
@@ -365,12 +365,15 @@ sub main {
   my $dsnp = DSNParser->default();
   my (%o, @hosts);
   $o{'logfile'} = 'pdb-test-harness';
-  $ReMysql::start_timeout = 120;
-  $ReMysql::stop_timeout = 120;
+  {
+    no warnings 'once';
+    $ReMysql::start_timeout = 120;
+    $ReMysql::stop_timeout = 120;
+  }
   GetOptions(\%o,
     'help|h',
     'dry-run|n',
-    'logfile|L',
+    'logfile|L=s',
     'repl-user=s',
     'repl-password=s',
     'no-fork'
