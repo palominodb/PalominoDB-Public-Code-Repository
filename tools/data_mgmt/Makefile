@@ -41,6 +41,10 @@ pdb-munch:
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-munch.in.pl bin/pdb-munch
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-munch bin/pdb-munch
 
+pdb-map-tables:
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-map-tables.in.pl bin/pdb-map-tables
+	perl -I$(TOOL_PATH) $(TOOL_PATH)/unuse_inline_modules bin/pdb-map-tables bin/pdb-map-tables
+
 rpmball:
 	mkdir -pv pdb-data-management-$(TOOLS_RELEASE)
 	mkdir pdb-data-management-$(TOOLS_RELEASE)/util/
