@@ -10,10 +10,10 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# Pdb::DSN package GIT_VERSION
+# YAMLDSN package GIT_VERSION
 # ###########################################################################
 # ###########################################################################
-# End Pdb::DSN package
+# End YAMLDSN package
 # ###########################################################################
 
 package pdb_dsn_checksum;
@@ -26,7 +26,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use List::Util qw(max);
 
-use Pdb::DSN;
+use YAMLDSN;
 use ProcessLog;
 
 my $pl = undef;
@@ -91,7 +91,7 @@ sub main {
     return 1;
   }
 
-  my $dsn = Pdb::DSN->new($dsnuri);
+  my $dsn = YAMLDSN->new($dsnuri);
   my $dp = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
   $csum_dsn = $dp->parse($central_dsn);
   $csum_dbh = $dp->get_dbh($dp->get_cxn_params($csum_dsn));

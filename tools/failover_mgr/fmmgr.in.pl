@@ -46,10 +46,10 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
-# Pdb::DSN package GIT_VERSION
+# YAMLDSN package GIT_VERSION
 # ###########################################################################
 # ###########################################################################
-# End Pdb::DSN package
+# End YAMLDSN package
 # ###########################################################################
 
 # ###########################################################################
@@ -185,7 +185,7 @@ use FlipAndMoveSlaves;
 use ProcessLog;
 use Plugin;
 use DSN;
-use Pdb::DSN;
+use YAMLDSN;
 
 use Getopt::Long qw(:config no_ignore_case pass_through no_auto_abbrev);
 use Pod::Usage;
@@ -262,7 +262,7 @@ sub main {
 
   # Load YAML DSN, if present
   if($yaml_dsn) {
-    my $pdb_dsn = Pdb::DSN->new($yaml_dsn);
+    my $pdb_dsn = YAMLDSN->new($yaml_dsn);
     unless($pdb_dsn->config_username() and $pdb_dsn->config_password()) {
       pod2usage(
         -message => 'YAML DSN needs to have a config section with "username" and "password" keys.',

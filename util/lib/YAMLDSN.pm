@@ -26,17 +26,17 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-package Pdb::DSN;
+package YAMLDSN;
 =pod
 
 =head1 NAME
 
-Pdb::DSN - Perl interface to the PalominoDB DSN format.
+YAMLDSN - Perl interface to the PalominoDB DSN format.
 
 =head1 SYNOPSIS
 
-    my $dsn = Pdb::DSN->new("http://int.example.com/dsn/dsn.yml");
-    $dsn    = Pdb::DSN->new("/path/to/dsn.yml");
+    my $dsn = YAMLDSN->new("http://int.example.com/dsn/dsn.yml");
+    $dsn    = YAMLDSN->new("/path/to/dsn.yml");
 
     $dsn->get_all_hosts();         # => ['s1', 's2']
     $dsn->get_all_clusters();      # => ['c1']
@@ -52,7 +52,7 @@ Pdb::DSN - Perl interface to the PalominoDB DSN format.
 PalominoDB DSN format allows for arbitrary application-specific keys
 to be included in the file to support operational processes.
 Since, extending the dsn for every imaginable key makes little sense
-Pdb::DSN exposes these via 'dynamic methods'.
+YAMLDSN exposes these via 'dynamic methods'.
 
 Presently, there are two kinds of dynamic methods:
 
