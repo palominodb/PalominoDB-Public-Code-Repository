@@ -92,6 +92,7 @@ pid_file=
 datadir=
 mysqld_safebin=
 mysqladminbin=
+mysqlclientbin=
 user=mysql
 socket=
 
@@ -156,6 +157,7 @@ fi
 
 mysqld_safebin=$(which mysqld_safe)
 mysqladminbin=$(which mysqladmin)
+mysqlclientbin=$(which mysql)
 
 start_mysql() {
   if [[ -f $pid_file ]] ; then
@@ -202,6 +204,11 @@ stop_mysql() {
   else
     echo MySQL not running.
     exit 6
+  fi
+
+  ## Set InnoDB shutdown type, if it was specified in the config
+  if [[ -n "$innodb_shutdown" ]]; then
+    $mysqlclientbin --defaults-file=$MYCTL_CNF --socket=$socket -e "SET GLOBAL innodb_fast_shutdown=$innodb_shutdown"
   fi
 
   $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket stop-slave
@@ -292,19 +299,27 @@ It's a regular my.cnf file, so, configuration for this
 script should be placed under a [mysqlctl] section.
 
 Currently supported tunables are:
-  - start_timeout   How long to wait for mysql to start.
-                    Currently set: $start_timeout
+  - start_timeout     How long to wait for mysql to start.
+                      Currently set: $start_timeout
 
-  - stop_timeout    How long to wait for mysql to stop
-                    mysql May still stop After this time,
-                    but this script will not wait indefinitely.
-                    Currently set: $stop_timeout
+  - stop_timeout      How long to wait for mysql to stop
+                      mysql May still stop After this time,
+                      but this script will not wait indefinitely.
+                      Currently set: $stop_timeout
 
-  - flushes         How many times to execute FLUSH LOGS
-                    Currently set: $flushes
+  - flushes           How many times to execute FLUSH LOGS
+                      Currently set: $flushes
 
-  - flush_sleep     How long to sleep between flushing.
-                    Currently set: $flush_sleep
+  - flush_sleep       How long to sleep between flushing.
+                      Currently set: $flush_sleep
+
+  - innodb_shutdown   What kind of shutdown InnoDB should do.
+                      Currently set: $innodb_shutdown
+                      See the sample config for values, or [1].
+
+
+References:
+[1]  http://dev.mysql.com/doc/refman/5.1/en/innodb-parameters.html#sysvar_innodb_fast_shutdown
 
 EOF
   ;;

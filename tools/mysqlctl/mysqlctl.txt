@@ -10,8 +10,6 @@ As of the initial release, it explicitly executes `STOP SLAVE`,
 and runs `FLUSH LOGS` 3 times to ensure that all binlog contents
 are safely on disk. If 3 times is not enough for you, there are tunables
 that can raise that.
-The tool has been designed such that future functionally can be rapidly
-added to it.
 
 One of the principal purposes of this tool is to provide
 automation tools real information about the success or failure
@@ -20,6 +18,12 @@ the development of this script, it was found that none of the init
 scripts for RedHat, Debian, or FreeBSD could be depended upon to
 return real, useful, results via exit status.
 
+Features
+--------
+
+- Explicitly stopping the slave
+- Configurable log flushing
+- Controlling InnoDB shutdown
 
 Usage as a tool
 ---------------
