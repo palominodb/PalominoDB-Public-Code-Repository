@@ -43,6 +43,8 @@ module TTT
         "database" => "information_schema",
         }.merge(cfg["dsn_connection"])
       )
+      cfg['dsn_connection']['wait_timeout'] ||= 10000
+      ActiveRecord::Base.execute("SET wait_timeout=" + cfg['dsn_connection']['wait_timeout'])
     end
     def self.get_connected_host
       @@connected_host
