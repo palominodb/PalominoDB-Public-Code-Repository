@@ -79,6 +79,20 @@ Currently supported tunables are:
     How long to sleep between flushing. +
     Default: 1
 
+`innodb_shutdown`::
+    What kind of shutdown InnoDB should do.
+    Possible values are: 0, 1, or 2.
+    See <http://dev.mysql.com/doc/refman/5.1/en/innodb-parameters.html#sysvar_innodb_fast_shutdown> for details.
+
+`hook_script`::
+    Script to call with the success or failure of the start and stop actions.
+    This script should define two functions: +hook_start+ and +hook_stop+.
+    Both are called with one parameter which is the result of the action.
+    Possible values for the +hook_start+ action are: +already_running+,
+    +stale_pidfile+, +started+, +timed_out+. And, possible values for
+    +hook_stop+ are: +stale_pidfile+, +socket_but_no_pidfile+,
+    +already_stopped+, +flush_logs_failed+, +stopped+, +timed_out+.
+
 Exit codes
 ----------
 

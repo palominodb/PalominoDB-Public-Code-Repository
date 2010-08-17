@@ -88,7 +88,7 @@ case $0 in
   ;;
 esac
 
-## Explicit $PATH is needed fro during boot
+## Explicit $PATH is needed for during boot
 ## It also adds a modicum of extra security
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export PATH
@@ -162,6 +162,18 @@ for l in `my_print_defaults --defaults-file=$MYCTL_CNF mysqlctl`; do
   esac
 done
 
+hook_start() {
+  : # default no-op implementation
+}
+
+hook_stop() {
+  : # default no-op implementation
+}
+
+if [[ -n "$hook_script" ]]; then
+  . $hook_script
+fi
+
 ## If basedir is defined then add
 ## $basedir/{bin,sbin} to the path so that we
 ## might find mysqld and utilties
@@ -185,9 +197,11 @@ start_mysql() {
   if [[ -f $pid_file ]] ; then
     pid=$(cat $pid_file)
     if [[ -d "/proc/$pid" ]] ; then
+      hook_start already_running
       echo MySQL Running.
       exit 6
     fi
+    hook_start stale_pidfile
     echo Stale pid-file. Did MySQL crash?
     echo Remove $pid_file if ok
     exit 2
@@ -203,11 +217,13 @@ start_mysql() {
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         touch /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
+      hook_start started
       echo MySQL Started.
       exit 0
     fi
     i=$(( $i + 1 ))
   done
+  hook_start timed_out
   echo MySQL start timed out.
   exit 1
 }
@@ -216,15 +232,18 @@ stop_mysql() {
   if [[ -f $pid_file ]] ; then
     pid=$(cat $pid_file)
     if [[ ! -d "/proc/$pid" ]] ; then
+      hook_stop stale_pidfile
       echo Stale pid-file. Did MySQL crash?
       echo Remove $pid_file if ok
       exit 2
     fi
   elif [[ -f $socket ]] ; then
+    hook_stop socket_but_no_pidfile
     echo Socket present, but pid-file missing.
     echo Need pid-file.
     exit 2
   else
+    hook_stop already_stopped
     echo MySQL not running.
     exit 6
   fi
@@ -240,6 +259,7 @@ stop_mysql() {
     $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket flush-logs
     if [[ ! $? ]] ; then
       $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket start-slave
+      hook_stop flush_logs_failed
       echo MySQL flush logs failed.
       exit 4
     fi
@@ -257,11 +277,13 @@ stop_mysql() {
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         rm -f /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
+      hook_stop stopped
       echo MySQL Stopped.
       exit 0
     fi
     i=$(( $i + 1 ))
   done
+  hook_stop timed_out
   echo MySQL stop timed out.
   exit 1
 }
@@ -342,10 +364,12 @@ Currently supported tunables are:
                       Currently set: $innodb_shutdown
                       See the sample config for values, or [1].
 
+  - hook_script       Script to call with the success or failure
+                      of the start and stop actions.
+
 
 References:
 [1]  http://dev.mysql.com/doc/refman/5.1/en/innodb-parameters.html#sysvar_innodb_fast_shutdown
-
 EOF
   ;;
 esac
