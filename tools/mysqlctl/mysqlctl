@@ -76,6 +76,9 @@ MYCTL_CNF=/etc/myctl.cnf
 
 INIT_NAME=
 
+## If the script is called from a known init directory
+## we set the tname of the init script to the filename of the script.
+## This supports calling the script something other than mysqlctl
 case $0 in
   *rc?.d*)
     INIT_NAME=$(basename $(readlink $0))
@@ -85,6 +88,8 @@ case $0 in
   ;;
 esac
 
+## Explicit $PATH is needed fro during boot
+## It also adds a modicum of extra security
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export PATH
 
@@ -96,7 +101,11 @@ mysqlclientbin=
 user=mysql
 socket=
 
-# mysqlctl vars
+# mysqlctl default vars
+# Both start and stop actions have timeouts
+# because otherwise scripts which call us may hang
+# indefinitely if mysql doesn't start or stop
+# and that's bad.
 start_timeout=1800
 stop_timeout=1800
 flushes=3
@@ -177,6 +186,7 @@ start_mysql() {
   while [[ $i -lt $start_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ -f $pid_file ]] ; then
+      ## /var/lock/subsys is for redhat type init systems
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         touch /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
@@ -211,6 +221,7 @@ stop_mysql() {
     $mysqlclientbin --defaults-file=$MYCTL_CNF --socket=$socket -e "SET GLOBAL innodb_fast_shutdown=$innodb_shutdown"
   fi
 
+  ## Flush logs $flushes times to ensure that binlog data is synced to disk.
   $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket stop-slave
   while [[ $flushes -gt 0 ]] ; do
     $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket flush-logs
@@ -229,6 +240,7 @@ stop_mysql() {
   while [[ $i -lt $stop_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ ! -f $pid_file ]] ; then
+      ## /var/lock/subsys is for redhat type init systems
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         rm -f /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
