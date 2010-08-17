@@ -3,7 +3,7 @@
 
 Name: mysqlctl
 Summary: Better mysql init script
-Version: 0.03
+Version: 0.04
 Vendor: PalominoDB
 Release: 1
 License: BSD
@@ -44,7 +44,10 @@ so it can be used as an init script.
 %{__install} -D -m 0600 sample-myctl.cnf %{buildroot}/%{_sysconfdir}/myctl.cnf
 
 %{__mkdir} -p %{buildroot}/%{_initrddir}
+%{__mkdir} -p %{buildroot}/%{_datadir}/%{name}
 %{__ln_s} %{_sbindir}/mysqlctl %{buildroot}/%{_initrddir}/%{dist}-mysql
+
+%{__install} -m 0644 hook_scripts/* %{buildroot}/%{_datadir}/%{name}/
 
 %clean
 
@@ -56,6 +59,8 @@ so it can be used as an init script.
 %{_sbindir}/mysqlctl
 %attr(0600,root,root)
 %config %{_sysconfdir}/myctl.cnf
+%attr(0644,root,root)
+%dir %{_datadir}/%{name}
 
 %files init-%{dist}
 %{_initrddir}/%{dist}-mysql
