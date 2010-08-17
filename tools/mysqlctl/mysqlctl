@@ -100,6 +100,7 @@ mysqladminbin=
 mysqlclientbin=
 user=mysql
 socket=
+basedir=
 
 # mysqlctl default vars
 # Both start and stop actions have timeouts
@@ -116,7 +117,7 @@ if [[ ! -f $MYCTL_CNF ]] ; then
   exit 7
 fi
 
-for l in `my_print_defaults mysqld`; do
+for l in `my_print_defaults mysqld mysqld_safe`; do
   case $l in
     --pid-file=*)
       pid_file=$(echo $l | sed -e 's/^[^=]*=//')
@@ -129,6 +130,9 @@ for l in `my_print_defaults mysqld`; do
       ;;
     --socket=*)
       socket=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
+    --basedir=*)
+      basedir=$(echo $l | sed -e 's/^[^=]*=//')
       ;;
   esac
 done
@@ -158,14 +162,24 @@ for l in `my_print_defaults --defaults-file=$MYCTL_CNF mysqlctl`; do
   esac
 done
 
-if [[ -z "$basedir" ]] ; then
+## If basedir is defined then add
+## $basedir/{bin,sbin} to the path so that we
+## might find mysqld and utilties
+if [[ -n "$basedir" ]] ; then
   PATH=${PATH}:$basedir/bin:$basedir/sbin
   export PATH
 fi
 
-mysqld_safebin=$(which mysqld_safe)
-mysqladminbin=$(which mysqladmin)
-mysqlclientbin=$(which mysql)
+## Set default paths if not set in the config.
+if [[ -z "$mysqld_safebin" ]]; then
+  mysqld_safebin=$(which mysqld_safe)
+fi
+if [[ -z "$mysqladminbin" ]]; then
+  mysqladminbin=$(which mysqladmin)
+fi
+if [[ -z "$mysqlclientbin" ]]; then
+  mysqlclientbin=$(which mysql)
+fi
 
 start_mysql() {
   if [[ -f $pid_file ]] ; then
