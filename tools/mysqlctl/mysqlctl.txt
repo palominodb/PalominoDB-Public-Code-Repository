@@ -65,7 +65,7 @@ Currently supported tunables are:
     How long to wait for mysql to start. +
     Default: 1800
 
- `stop_timeout`::
+`stop_timeout`::
     How long to wait for mysql to stop
     mysql May still stop After this time,
     but this script will not wait indefinitely. +
@@ -92,6 +92,16 @@ Currently supported tunables are:
     +stale_pidfile+, +started+, +timed_out+. And, possible values for
     +hook_stop+ are: +stale_pidfile+, +socket_but_no_pidfile+,
     +already_stopped+, +flush_logs_failed+, +stopped+, +timed_out+.
+
+The following are considered advanced tunables and should be left alone
+without good reason to modify them:
+
+`ulimit_locked`::
+    This makes mysqlctl increase (or decrease!) the maximum amount of memory
+    child processes may lock into RAM. See the ulimit manpage for more
+    details.
+    By default this is set to 'unlimited' and that is sane and correct for
+    many installations.
 
 Exit codes
 ----------

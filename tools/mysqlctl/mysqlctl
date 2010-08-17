@@ -111,6 +111,7 @@ start_timeout=1800
 stop_timeout=1800
 flushes=3
 flush_sleep=5
+ulimit_locked=unlimited
 
 if [[ ! -f $MYCTL_CNF ]] ; then
   echo Unable to find $MYCTL_CNF
@@ -191,6 +192,11 @@ if [[ -z "$mysqladminbin" ]]; then
 fi
 if [[ -z "$mysqlclientbin" ]]; then
   mysqlclientbin=$(which mysql)
+fi
+
+## Deal with some ulimit values
+if [[ -n "$ulimit_locked" ]]; then
+  ulimit -l $ulimit_locked
 fi
 
 start_mysql() {
@@ -366,6 +372,15 @@ Currently supported tunables are:
 
   - hook_script       Script to call with the success or failure
                       of the start and stop actions.
+
+Advanced tuneables:
+  These options are available in the config file, but, are best
+  left to their default values, since they only need changing in
+  special circumstances.
+
+  - ulimit_locked     Tune the ulimit for locked memory for mysql.
+                      Currently set: $ulimit_locked
+                      See the ulimit manpage for more.
 
 
 References:
