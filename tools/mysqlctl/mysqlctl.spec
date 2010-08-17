@@ -59,8 +59,8 @@ so it can be used as an init script.
 %{_sbindir}/mysqlctl
 %attr(0600,root,root)
 %config %{_sysconfdir}/myctl.cnf
-%attr(0644,root,root)
-%dir %{_datadir}/%{name}
+%defattr(0644,root,root)
+%{_datadir}/%{name}/
 
 %files init-%{dist}
 %{_initrddir}/%{dist}-mysql
