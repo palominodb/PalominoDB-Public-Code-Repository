@@ -133,11 +133,6 @@ for l in `my_print_defaults mysqld`; do
   esac
 done
 
-if [[ -z $pid_file ]] ; then
-  echo Missing --pid-file in defaults.
-  exit 3
-fi
-
 if [[ -z $socket ]] ; then
   echo Missing --socket in defaults.
   exit 3
@@ -146,6 +141,10 @@ fi
 if [[ -z $datadir ]] ; then
   echo Missing --datadir in defaults.
   exit 3
+fi
+
+if [[ -z $pid_file ]] ; then
+  pid_file=$datadir/$(hostname).pid
 fi
 
 # collect defaults from $MYCTL_CNF
