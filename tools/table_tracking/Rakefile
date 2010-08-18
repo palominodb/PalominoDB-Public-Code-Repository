@@ -6,11 +6,18 @@ require 'yaml'
 
 $: << "#{Dir.pwd}/lib"
 
+$DEV_CONFIGURED = false
 require 'ttt/db'
+begin
+  ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
+  TTT::Db.open(ttt_config)
+  $DEV_CONFIGURED = true
+rescue Exception => e
+  print "Dev setup not configured. Please create dev-config.yml"
+ensure
+  $DEV_CONFIGURED = false
+end
 
-ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-
-TTT::Db.open(ttt_config)
 ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
 ActiveRecord::Base.colorize_logging = false
 
@@ -58,14 +65,18 @@ Gem::PackageTask.new(spec) do |pkg|
 end
 
 task :clean do
-  rm 'test-db.sqlite3' rescue nil
+  if $DEV_CONFIGURED
+    rm 'test-db.sqlite3' rescue nil
+  end
 end
 Spec::Rake::SpecTask.new do |t|
-  t.spec_files = FileList['test/lib/*.rb']
-  t.spec_files += FileList['test/[0-9]*.rb']
-  t.rcov =  true
-  t.spec_opts = ['--format', 'specdoc']
-  t.rcov_opts = ['-t', '--exclude', '/Library' ]
+  if $DEV_CONFIGURED
+    t.spec_files = FileList['test/lib/*.rb']
+    t.spec_files += FileList['test/[0-9]*.rb']
+    t.rcov =  true
+    t.spec_opts = ['--format', 'specdoc']
+    t.rcov_opts = ['-t', '--exclude', '/Library' ]
+  end
 end
 
 task :test => [:clean, :spec]
