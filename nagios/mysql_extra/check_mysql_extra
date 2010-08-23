@@ -66,9 +66,9 @@ Options:
   -c, --connections-critical=INTEGER
     Maximum number of connections before a critical state is triggered
   -W, --slowquery-warning=INTEGER
-    Maximum number of connections before a warning state is triggered
+    Maximum number of seconds before a warning state is triggered
   -C, --slowquery-critical=INTEGER
-    Maximum number of connections before a critical state is triggered
+    Maximum number of seconds before a critical state is triggered
   -s, --show-slow-queries
     Actually display running slow queries
   -t, --timeout=INTEGER
