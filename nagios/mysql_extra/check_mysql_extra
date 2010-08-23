@@ -50,6 +50,7 @@ sub print_slow_queries (@);
 my %o;
 
 sub print_help(;$) {
+  my $err = ($_[0] ? "Error: $_[0]" : "");
   print <<EOF;
 Copyright (c) 2009-2010, PalominoDB, Inc.
 
@@ -85,7 +86,7 @@ Options:
   -V, --version
      Show version information
 
-Error: $_[0]
+$err
 EOF
   exit(UNKNOWN);
 }
