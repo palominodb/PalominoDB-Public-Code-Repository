@@ -148,7 +148,8 @@ sub myisamchk_path {
 }
 
 sub mk_myisam {
-  my ($self, $note) = @_;
+  my ($self, $note, $no_replicate) = @_;
+  $no_replicate = 1 if(not defined $no_replicate);
   if($note) {
     $note = "/* $note */ ";
   }
@@ -159,8 +160,11 @@ sub mk_myisam {
   my ($schema, $table) = ($self->{schema}, $self->{table});
   my $eng = $self->engine();
   my $typ = $self->format();
+  my ($log_bin) = $self->{dbh}->selectrow_array('SELECT @@sql_log_bin');
   if($eng ne "myisam" and $typ ne 'compressed') {
+    $self->{dbh}->do("SET sql_log_bin=0") if($no_replicate);
     $self->{dbh}->do($note ."ALTER TABLE `$schema`.`$table` ENGINE=MyISAM") or croak("Could not make table myisam");
+    $self->{dbh}->do("SET sql_log_bin=$log_bin") if($no_replicate);
     return 1;
   }
   return 1;
