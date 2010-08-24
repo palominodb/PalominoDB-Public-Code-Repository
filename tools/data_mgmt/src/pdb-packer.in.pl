@@ -114,7 +114,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.032;
+our $VERSION = 0.034;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -213,7 +213,11 @@ sub main {
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
     $pl->d('tables:', join(',', @tbls) );  
-    my $cfg  = MysqlInstance->from_dsn($d)->config();
+    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config')};
+    unless($status eq 'EXIT') {
+      $pl->e($d->get('h'), "did not return host config correctly. Got:", Dumper($cfg));
+      next;
+    }
     $pl->d('Host config:', Dumper($cfg));
     $pl->d('Host datadir:', $cfg->{'mysqld'}->{'datadir'});
     foreach my $t (@tbls) {
