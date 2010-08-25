@@ -12,7 +12,7 @@ use IniFile;
 our $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
 our $port = $cnf->{'mysqld'}->{'port'};
 our $socket = $cnf->{'mysqld'}->{'socket'};
-our $dsnstr = "h=localhost,u=msandbox,p=msandbox,P=$port,S=$socket";
+our $dsnstr = "h=localhost,u=root,p=msandbox,P=$port,S=$socket";
 
 sub new {
   my ($class, $args) = @_;
@@ -21,6 +21,15 @@ sub new {
 
   $args->{dsn} = DSNParser->default()->parse($dsnstr);
   $args->{dbh}  = $args->{dsn}->get_dbh();
+  # Create a user with no super privilege
+  $args->{dbh}->do(q|
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE,
+    DROP, RELOAD, SHUTDOWN, PROCESS, FILE, INDEX, ALTER,
+    SHOW DATABASES, CREATE TEMPORARY TABLES, LOCK TABLES,
+    EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT,
+    CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE
+      ON *.* TO 'nosuper'@'%' IDENTIFIED BY 'superpw' 
+  |);
 
   return $args;
 }
