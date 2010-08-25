@@ -114,7 +114,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.034;
+our $VERSION = 0.035;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -301,7 +301,7 @@ sub main {
         eval {
           $r = pack_table($cfg->{'mysqld'}->{'datadir'}, $d, $t) unless($pretend);
         };
-        $pl->d('Pack result:', 'Out:', $r->[0], 'Code:', $r->[1]);
+        $pl->d('Pack result:', 'Out:', $r->[0], 'Code:', $r->[1], 'Eval:', $@);
         if($r and $r->[0] and $r->[0] =~ /already/) {
           $pl->d('  ..table already compressed.');
         }
@@ -374,7 +374,7 @@ sub pack_table {
   }
   if($tp->engine() eq 'myisam' and $tp->format() eq 'compressed') {
     unless($force) {
-      return [0, 'Table '. $dsn->get('t') . ' already compressed.'];
+      return [$dsn->get('t') .' is already compressed.', 0];
     }
   }
   if($dsn->get('h') ne 'localhost') {
