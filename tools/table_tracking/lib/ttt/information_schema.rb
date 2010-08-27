@@ -44,7 +44,7 @@ module TTT
         }.merge(cfg["dsn_connection"])
       )
       cfg['dsn_connection']['wait_timeout'] ||= 10000
-      self.connection.execute("SET wait_timeout=" + cfg['dsn_connection']['wait_timeout'])
+      self.connection.execute("SET wait_timeout=" + cfg['dsn_connection']['wait_timeout'].to_s)
     end
     def self.get_connected_host
       @@connected_host
