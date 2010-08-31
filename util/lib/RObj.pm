@@ -171,9 +171,19 @@ sub new {
   my ($class, $host, $user, $ssh_key) = @_;
   my $s = RObj::Base->new;
   bless $s, $class;
-  $s->{host} = $host;
-  $s->{user} = $user;
-  $s->{ssh_key} = $ssh_key;
+  
+  # If the first argument is a DSN, go ahead
+  # and setup the RObj appropriately
+  if(ref($host) and ref($host) eq 'DSN') {
+    $s->{host} = $host->get('h');
+    $s->{user} = $host->get('sU');
+    $s->{ssh_key} = $host->get('sK');
+  }
+  else {
+    $s->{host} = $host;
+    $s->{user} = $user;
+    $s->{ssh_key} = $ssh_key;
+  }
   $s->{code} = ();
   $s->{recvq} = ();
   return $s;
