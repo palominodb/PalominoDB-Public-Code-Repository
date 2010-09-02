@@ -65,6 +65,10 @@ sub STORABLE_attach {
   return $class->_create($f);
 }
 
+## This stub prevents AUTOLOAD and others
+## from messing with us under some circumstances
+sub DESTROY {}
+
 sub get {
   my ($self, $k) = @_;
   return $self->{$k}->{'value'};
