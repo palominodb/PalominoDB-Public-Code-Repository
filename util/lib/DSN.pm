@@ -146,6 +146,10 @@ sub _merge {
         $h1->{$k} = $h2->{$k};
       }
     }
+    elsif(ref($h2->{$k}) eq 'ARRAY') {
+      $h1->{$k} = [];
+      push @{$h1->{$k}}, $_ for(@{$h2->{$k}});
+    }
     else {
       $h1->{$k} ||= {};
       _merge($h1->{$k}, $h2->{$k}, $over, $h1);
