@@ -16,13 +16,22 @@
 # on the MySQL server
 
 use strict;
+use warnings FATAL => 'all';
+# ###########################################################################
+# ProcessLog package GIT_VERSION
+# ###########################################################################
+# ###########################################################################
+# End ProcessLog package
+# ###########################################################################
 
+package main;
 use File::Path;
 use File::Basename;
 use File::Temp qw/ :POSIX /;
 use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
+use ProcessLog;
 use POSIX;
 
 
@@ -52,7 +61,8 @@ my $INNOBACKUPEX="innobackupex-1.5.1";
 my $VERSION="1.8b7_palomino";
 my $MIN_XTRA_VERSION=1.0;
 
-my $logDir = "/var/log/mysql-zrm";
+#my $logDir = "/var/log/mysql-zrm";
+my $logDir = ".";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
@@ -124,8 +134,8 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
   }
 }
 
-open LOG, ">>$logFile" or die "Unable to create log file";
-LOG->autoflush(1);
+my $PL = ProcessLog->new('socket-server', $logFile);
+$PL->quiet(1);
 
 if($^O eq "linux") {
   $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
@@ -136,7 +146,7 @@ elsif($^O eq "freebsd") {
   $TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-  &printAndDie("Unable to determine which tar options to use!");
+  &printAndDie("Unable to determine which tar options to use!\n");
 }
 
 # This will only allow and a-z A-Z 0-9 _ - / . = " ' ; + * and space.
@@ -156,14 +166,16 @@ sub my_exit(){
   exit( $_[0] );
 }
 
-sub printLog()
-{
-  print LOG $_[0];
+sub printLog {
+  my @args = @_;
+  chomp(@args);
+  $PL->m(@args);
 }
 
-sub printAndDie()
-{
-  &printLog( "ERROR: $_[0]" );
+sub printAndDie {
+  my @args = @_;
+  chomp(@args);
+  $PL->e(@args);
   &my_exit( 1 );
 }
 
@@ -328,7 +340,7 @@ sub writeTarStream()
     $fileList = " -T $tmpFile";
   }
 
-  &printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList");
+  &printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList\n");
   unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ){
     &printAndDie( "tar failed $!\n" );
   }
@@ -349,7 +361,7 @@ sub writeTarStream()
 #$_[0] dirname to strea the data to
 sub readTarStream()
 {
-  &printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]");
+  &printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]\n");
   unless(open( TAR_H, "|$TAR $TAR_READ_OPTIONS $_[0] 2>/dev/null" ) ){
     &printAndDie( "tar failed $!\n" );
   }
@@ -385,7 +397,7 @@ sub removeBackupData()
   my @sp = split /\s/, $params;
   my $id = $sp[0];
   shift @sp;
-  my $dir = join( /\s/, @sp );
+  my $dir = join( " ", @sp );
   my $orig = $dir;
   if( $id eq "LINKS" ){
     $dir .= "/ZRM_LINKS";
@@ -630,3 +642,4 @@ if( $action eq "copy from" ){
 &printLog( "Client clean exit\n" );
 &my_exit( 0 );
 
+1;
