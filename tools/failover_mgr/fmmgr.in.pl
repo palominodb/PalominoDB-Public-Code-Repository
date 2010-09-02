@@ -228,11 +228,11 @@ sub main {
 
   # Create a processlog and make a global ref to it.
   $pl = ProcessLog->new($0, $logfile);
-  no strict 'refs';
-  no warnings 'once';
-  *::PLOG = \$pl;
-  use warnings FATAL => 'all';
-  use strict;
+  {
+    no strict 'refs';
+    no warnings 'once';
+    *::PLOG = \$pl;
+  }
 
   # Announce tool name, version, and hash
   $pl->m("fmmgr v$VERSION build: SCRIPT_GIT_VERSION");
@@ -301,16 +301,7 @@ sub main {
 
   # Load plugins as necessary
   foreach my $p (@plugins) {
-    $pl->d('Trying to load plugin:', $p);
-    if( Plugin::load($p) ) {
-      my $popts = {};
-      GetOptions($popts, $p->options());
-      $p->new($popts);
-    }
-    else {
-      $pl->e('Could not find', $p, 'plugin.');
-      return 1;
-    }
+    return 1 if load_plugin($p);
   }
 
 
@@ -331,6 +322,21 @@ sub main {
   
   # Actually run the Failover
   return $mode->run();
+}
+
+sub load_plugin {
+  my $p = shift;
+  $::PLOG->d('Trying to load plugin:', $p);
+  if( Plugin::load($p) ) {
+    my $popts = {};
+    GetOptions($popts, $p->options());
+    $p->new($popts);
+  }
+  else {
+    $::PLOG->e('Could not find', $p, 'plugin.');
+    return 1;
+  }
+  return 0;
 }
 
 if(!caller) { exit(main(@ARGV)); }
