@@ -27,7 +27,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 4bb5a6302f358fcf73e3824a06c75e5783e97adf
+# RObj::Base package 46a548fb861b9b9afcc80c9bb0603b479ac091da
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -36,7 +36,6 @@ use 5.0008;
 use English qw(-no_match_vars);
 use Storable qw(thaw nfreeze);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use Carp;
 
 use Data::Dumper;
@@ -78,28 +77,18 @@ sub read_message {
   if($self->{Msg_Buffer} =~ /^ok$/m) {
     ROBJ_NET_DEBUG >=2 && print STDERR "recv: Found message delimiter\n";
     my @lines = split /\n/, $self->{Msg_Buffer};
-    my ($b64, $sha1) = ("", "");
+    my $b64 = "";
     for (@lines) {
       ROBJ_NET_DEBUG >=2 && print STDERR "recv: parsing: $_\n";
-      if(/^ok$/ and sha1_hex($b64) eq $sha1) {
+      if(/^ok$/) {
         ROBJ_NET_DEBUG >=2 && print STDERR "recv: found complete object\n";
         eval {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}\n"];
         }
         $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^ok$/ and sha1_hex($b64) ne $sha1) {
-        ROBJ_NET_DEBUG >=2 && print STDERR "recv: found invalid object\n";
-        push @res, ['INVALID OBJECT', "${b64}$sha1\n"];
-        $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^[a-f0-9]{40}$/) {
-        $sha1 = $_ if($sha1 eq "");
       }
       elsif(/^[A-Za-z0-9+\/=]+$/) {
         $b64 .= "$_\n";
@@ -123,10 +112,9 @@ sub write_message {
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
   }
-  $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
-  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
-  return syswrite($fh, $buf ."\nok\n");
+  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): ${buf}ok\n";
+  return syswrite($fh, $buf ."ok\n");
 }
 
 sub sys_error {
@@ -143,9 +131,20 @@ package main;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
+# This BEGIN block exists to catch errors during
+# the setup of the remote object. Namely, importing
+# the necessary modules.
+# It turns the STDERR messages from 'use' failures
+# into messages back to the controlling process.
+BEGIN {
+  $SIG{__DIE__} = sub {
+    my $ro = RObj::Base->new;
+    $ro->write_message(\*STDOUT, @_);
+    exit(RObj::Base::COMPILE_FAILURE);
+  };
+}
 use Storable qw(nfreeze thaw);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use IO::Handle;
 use English qw(-no_match_vars);
 
@@ -183,10 +182,7 @@ sub R_read {
 }
 
 use constant CODE => '__CODE__';
-use constant CODE_DIGEST => '__SHA1__';
 $0 = "Remote perl object from ". ($ENV{'SSH_CLIENT'} || 'localhost');
-
-R_die(TRANSPORT_FAILURE, "Code digest does not match") unless(sha1_hex(CODE) eq CODE_DIGEST);
 
 my $code = thaw(decode_base64(CODE));
 
@@ -196,30 +192,31 @@ my $code = thaw(decode_base64(CODE));
 # We do it so that subs defined remotely appear in the symbol table
 # as 'real' subroutines that needn't be called with dereferencing
 # or other annoying things.
-no strict 'refs';
-foreach my $cr (@{$code}) {
-  my $name = $cr->[0];
-  if($name =~ /^_use_/ ) {
-    &{eval "sub $cr->[1]"}();
-    if($@) {
-      R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+{
+  no strict 'refs';
+  foreach my $cr (@{$code}) {
+    my $name = $cr->[0];
+    if($name =~ /^_use_/ ) {
+      &{eval "sub $cr->[1]"}();
+      if($@) {
+        R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+      }
+      next;
     }
-    next;
-  }
-  if($name =~ /::BEGIN/) {
-    eval "$name $cr->[1]";
-    if($@) {
-      R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+    if($name =~ /::BEGIN/) {
+      eval "$name $cr->[1]";
+      if($@) {
+        R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+      }
+      next;
     }
-    next;
+    my $subref = eval "sub $cr->[1];";
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
+    }
+    *{$name} = $subref;
   }
-  my $subref = eval "sub $cr->[1];";
-  if($@) {
-    R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
-  }
-  *{$name} = $subref;
 }
-use strict;
 
 $| = 1;
 
