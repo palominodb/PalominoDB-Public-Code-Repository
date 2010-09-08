@@ -155,7 +155,7 @@ $Storable::Deparse = 1;
 use warnings FATAL => 'all';
 
 sub new {
-  my ($class, $host, $user, $ssh_key) = @_;
+  my ($class, $host, $user, $ssh_key, $pw_auth) = @_;
   my $s = RObj::Base->new;
   bless $s, $class;
   
@@ -173,6 +173,7 @@ sub new {
   }
   $s->{code} = ();
   $s->{recvq} = ();
+  $s->{password_auth} = $pw_auth;
   return $s;
 }
 
@@ -183,6 +184,7 @@ sub copy {
   $s->{host} = $self->{host};
   $s->{user} = $self->{user};
   $s->{ssh_key} = $self->{ssh_key};
+  $s->{password_auth} = $self->{password_auth};
   $s->{code} = ();
   $s->{recvq} = ();
   return $s;
@@ -272,6 +274,15 @@ sub debug {
   $self->{debug} = $to;
 }
 
+sub password_auth {
+  my ($self, $allow) = @_;
+  my $old_set = $self->{password_auth};
+  if(defined $allow) {
+    $self->{password_auth} = $allow;
+  }
+  return $old_set;
+}
+
 sub start {
   my ($self, @rparams) = @_;
   if(!@rparams) {
@@ -281,7 +292,8 @@ sub start {
   my ($ssh_out, $ssh_err, $ssh_in, $exitv, $out, $err);
   $self->{ssh_pid} = open3($ssh_in, $ssh_out, $ssh_err,
     'ssh', $self->{ssh_key} ? ('-i', $self->{ssh_key}) : (),
-    '-l', $self->{user}, $self->{host}, '-o', 'BatchMode=yes',
+    '-l', $self->{user}, $self->{host},
+    '-o', $self->{password_auth} ? ('BatchMode=yes') : ('BatchMode=no'),
     $self->{debug} ?
       qq(PERLDB_OPTS="RemotePort=$self->{debug}" perl -d)
       : 'perl');
