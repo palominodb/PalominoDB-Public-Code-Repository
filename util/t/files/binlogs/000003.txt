@@ -1,0 +1,110 @@
+[
+# header
+{
+  'event_lengths' => [
+    0,
+    0,
+    13,
+    0,
+    8,
+    0,
+    18,
+    0,
+    4,
+    4,
+    4,
+    4,
+    18,
+    0,
+    0,
+    83,
+    0,
+    4,
+    26,
+    8,
+    0,
+    0,
+    0,
+    8,
+    8,
+    8,
+    2
+      ],
+    'len' => 102,
+    'flags' => 0,
+    'next_position' => 106,
+    'server_version' => '5.1.47-log',
+    'header_length' => 19,
+    'server_id' => 1,
+    'type' => 15
+},
+#0
+{
+  'len' => 76,
+  'next_position' => 182,
+  'collation_connection' => 8,
+  'flags2' => 16384,
+  'catalog_code' => 'std',
+  'exec_time' => 0,
+  'thread_id' => 5,
+  'flags' => 8,
+  'timezone' => 'SYSTEM',
+  'sql_mode' => 0,
+  'error_code' => 0,
+  'stmt' => 'BEGIN',
+  'database' => 'test',
+  'server_id' => 1,
+  'character_set_client' => 8,
+  'collation_server' => 8,
+  'type' => 2
+},
+#1
+{
+  'len' => 28,
+  'flags' => 0,
+  'next_position' => 210,
+  'intvar_type' => 2,
+  'server_id' => 1,
+  'intvar_value' => 1,
+  'type' => 5
+},
+#2
+{
+  'len' => 131,
+  'next_position' => 341,
+  'collation_connection' => 8,
+  'flags2' => 16384,
+  'catalog_code' => 'std',
+  'exec_time' => 0,
+  'thread_id' => 5,
+  'flags' => 16,
+  'timezone' => 'SYSTEM',
+  'sql_mode' => 0,
+  'error_code' => 0,
+  'stmt' => 'INSERT INTO binlog_test (x2, x3) VALUES (\'bob villa\', NOW())',
+  'database' => 'test',
+  'server_id' => 1,
+  'character_set_client' => 8,
+  'collation_server' => 8,
+  'type' => 2
+},
+#3
+{
+  'len' => 27,
+  'flags' => 0,
+  'next_position' => 368,
+  'server_id' => 1,
+  'type' => 16,
+  'xid' => 52
+},
+#4
+{
+  'len' => 55,
+  'rotate_file' => 'mysql_sandbox5147-bin.000004',
+  'flags' => 0,
+  'next_position' => 423,
+  'server_id' => 1,
+  'rotate_pos' => 4,
+  'type' => 4
+}
+]

@@ -1,0 +1,98 @@
+[
+# header
+{
+  'event_lengths' => [
+    0,
+    0,
+    13,
+    0,
+    8,
+    0,
+    18,
+    0,
+    4,
+    4,
+    4,
+    4,
+    18,
+    0,
+    0,
+    83,
+    0,
+    4,
+    26,
+    8,
+    0,
+    0,
+    0,
+    8,
+    8,
+    8,
+    2
+      ],
+    'len' => 102,
+    'flags' => 0,
+    'next_position' => 106,
+    'server_version' => '5.1.47-log',
+    'header_length' => 19,
+    'server_id' => 1,
+    'type' => 15
+},
+#0
+{
+  'len' => 68,
+  'next_position' => 174,
+  'collation_connection' => 8,
+  'flags2' => 16384,
+  'catalog_code' => 'std',
+  'exec_time' => 0,
+  'thread_id' => 5,
+  'flags' => 8,
+  'sql_mode' => 0,
+  'error_code' => 0,
+  'database' => 'test',
+  'stmt' => 'BEGIN',
+  'server_id' => 1,
+  'character_set_client' => 8,
+  'collation_server' => 8,
+  'type' => 2
+},
+#1
+{
+  'len' => 89,
+  'next_position' => 263,
+  'collation_connection' => 8,
+  'flags2' => 16384,
+  'catalog_code' => 'std',
+  'exec_time' => 0,
+  'thread_id' => 5,
+  'flags' => 16,
+  'sql_mode' => 0,
+  'error_code' => 0,
+  'database' => 'test',
+  'stmt' => 'TRUNCATE TABLE binlog_test',
+  'server_id' => 1,
+  'character_set_client' => 8,
+  'collation_server' => 8,
+  'type' => 2
+},
+#2
+{
+  'len' => 27,
+  'flags' => 0,
+  'next_position' => 290,
+  'server_id' => 1,
+  'type' => 16,
+  'xid' => 56
+},
+#3
+{
+  'len' => 55,
+  'rotate_file' => 'mysql_sandbox5147-bin.000006',
+  'flags' => 0,
+  'next_position' => 345,
+  'server_id' => 1,
+  'rotate_pos' => 4,
+  'type' => 4
+}
+]
