@@ -61,7 +61,7 @@ chop($script_ver);
 $input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
 $input =~ s/\bGIT_SCRIPT_VERSION\b/$script_ver/g;
 
-(@modules) = $input =~ /^# ([A-Z0-9a-z_]+(?:::[A-Z0-9a-z_]+)*) package (?:[a-f0-9]{40}|GIT_VERSION)/mg;
+(@modules) = $input =~ /^# ([A-Z0-9a-z_]+(?:::[A-Z0-9a-z_]+)*) package (?:[a-f0-9]{40}|GIT_VERSION|FSL_VERSION)/mg;
 
 foreach my $m (@modules) {
   SEARCH_PATH: foreach my $mpath (@module_paths) {
