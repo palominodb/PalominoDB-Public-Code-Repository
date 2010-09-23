@@ -5,12 +5,12 @@ Name: mysqlctl
 Summary: Better mysql init script
 Version: 0.04
 Vendor: PalominoDB
-Release: 1
+Release: 2
 License: BSD
 Group: Application/System
 Source: http://bastion.palominodb.com/releases/SRC/mysqlctl-%{version}.tar.gz
 URL: http://blog.palominodb.com
-Requires: bash >= 3.2, mysql-client >= 5.0
+Requires: bash >= 3.2, mysql
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 %description
