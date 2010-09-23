@@ -67,7 +67,7 @@ if($@) {
 }
 use Sys::Hostname;
 use Sys::Syslog;
-use Digest::SHA qw(sha1_hex);
+use Digest::MD5 qw(md5_hex);
 use Time::HiRes qw(time);
 use File::Spec;
 use Fcntl qw(:seek);
@@ -95,7 +95,7 @@ sub new {
   my ($script_name, $logpath, $email_to) = @_;
   my $self = {};
 
-  $self->{run_id} = sha1_hex(time . rand() . $script_name);
+  $self->{run_id} = md5_hex(time . rand() . $script_name);
 
   $self->{script_name} = $script_name;
   $self->{log_path} = $logpath;
