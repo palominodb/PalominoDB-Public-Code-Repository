@@ -33,6 +33,7 @@ use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
 use Data::Dumper;
+use File::Spec;
 
 use ProcessLog;
 
@@ -49,6 +50,9 @@ sub new {
   return $self;
 }
 
+# prevent AUTOLOAD from capturing this
+sub DESTROY {}
+
 # Returns the backup directory this ZRMBackup object represents
 sub backup_dir {
   my ($self) = @_;
@@ -62,6 +66,43 @@ sub open_last_backup {
   my ($self) = @_;
   return ZRMBackup->new($self->{pl}, $self->last_backup);
 };
+
+# Returns a list of all the backups back to the most recent full.
+# Two optional parameters can be passed to manipulate the path
+# to the last backup, in case the backup tree has been moved.
+sub find_full {
+  my ($self, $strip, $rel_base) = @_;
+  my @backups;
+  unshift @backups, $self;
+  while($backups[0] && $backups[0]->backup_level != 0) {
+    $self->{pl}->d("unadjusted lookup:", $backups[0]->last_backup);
+    my @path = File::Spec->splitdir($backups[0]->last_backup);
+    my $path;
+    if($strip =~ /^\d+$/) {
+      for(my $i=0; $i<$strip; $i++) { shift @path; }
+    }
+    else {
+      $_ = $backups[0]->last_backup;
+      s/^$strip//;
+      @path = File::Spec->splitdir($_);
+    }
+    if($rel_base) {
+      unshift @path, $rel_base;
+    }
+    $path = File::Spec->catdir(@path);
+    $self->{pl}->d("adjusted lookup:", $path);
+    unshift @backups, ZRMBackup->new($$self{pl}, $path);
+  }
+  # If a backup points to a non-existant
+  # previous backup, then the loop above terminates
+  # due to $backups[0] == undef
+  # this shifts that off again.
+  shift @backups unless($backups[0]);
+  if($backups[0]->backup_level != 0) {
+    croak('No full backup present in chain');
+  }
+  return @backups;
+}
 
 # Returns ($tar_return_code, $fh_of_tar_errors) in list context;
 # and, $tar_return_code in scalar context.
@@ -189,7 +230,6 @@ sub _load_index() {
 our $AUTOLOAD;
 sub AUTOLOAD {
   my ($self) = @_;
-  ref($self) or die("Not an instance of ZRMBackup.");
   my $name = $AUTOLOAD;
   $name =~ s/.*:://;
   $self->{pl}->d("AUTOLOAD:", $name, '->', $self->{idx}{$name});

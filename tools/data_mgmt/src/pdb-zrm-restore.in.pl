@@ -44,6 +44,13 @@ use warnings;
 # ###########################################################################
 
 # ###########################################################################
+# MysqlBinlogParser package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End MysqlBinlogParser package
+# ###########################################################################
+
+# ###########################################################################
 # IniFile package GIT_VERSION
 # ###########################################################################
 # ###########################################################################
@@ -72,17 +79,14 @@ use Data::Dumper;
 use Pod::Usage;
 use DBI;
 use File::Spec qw(splitdir);
+use File::Path;
+use Sys::Hostname;
 
 use IniFile;
 use ProcessLog;
 use ZRMBackup;
 use Path;
 use Which;
-
-my $mysqlbinlog_path;
-my $mysql_path;
-my $innobackupex_path;
-my $mysqld_path;
 
 my $pl;
 
@@ -94,12 +98,12 @@ sub main {
   $o{'log-file'} = '/dev/null';
 
   # Locate our various external programs.
-  $mysqlbinlog_path = Which::which('mysqlbinlog');
-  $mysql_path = Which::which('mysql');
-  $innobackupex_path = Which::which('innobackupex-1.5.1');
-  $mysqld_path = Which::which('mysqld_safe');
+  $o{'mysqlbinlog'} = Which::which('mysqlbinlog');
+  $o{'mysql'} = Which::which('mysql');
+  $o{'innobackupex'} = Which::which('innobackupex-1.5.1');
+  $o{'mysqld'} = Which::which('mysqld_safe');
 
-  my @backups;
+  my @backups = ();
   my %cfg;
   my $datadir;
   GetOptions(\%o,
@@ -113,12 +117,16 @@ sub main {
     'mysql-password=s',
     'reslave|r',
     'mysqld=s',
+    'mysql=s',
+    'mysqlbinlog=s',
     'innobackupex=s',
     'slave-user=s',
     'slave-password=s',
     'master-host=s',
     'rel-base|b=s',
-    'strip|p=i'
+    'strip|p=s',
+    'point-in-time|t=s',
+    'create-dirs'
   );
 
   $pl = ProcessLog->new($0, $o{'log-file'}, undef);
@@ -137,6 +145,9 @@ sub main {
   if(not exists $o{'strip'} and exists $o{p}) {
     $o{'strip'} = $o{p};
   }
+  if(not exists $o{'point-in-time'} and exists $o{t}) {
+    $o{'point-in-time'} = $o{p};
+  }
   if(!$o{'identify-dirs'} and !$o{'defaults-file'}) {
     $pl->e('Must have --defaults-file or --identify-dirs at a minimum. Try --help.');
     return 1;
@@ -149,22 +160,17 @@ sub main {
   }
 
   # Collect all the backup set information straight away.
-  unshift @backups, ZRMBackup->new($pl, $ARGV[0]);
-  while($backups[0] && $backups[0]->backup_level != 0) {
-    my @path = File::Spec->splitdir($backups[0]->last_backup);
-    my $path;
-    if($o{'strip'}) {
-      for(my $i=0; $i<$o{'strip'}; $i++) { shift @path; }
-    }
-    if($o{'rel-base'}) {
-      unshift @path, $o{'rel-base'};
-    }
-    $path = File::Spec->catdir(@path);
-    unshift @backups, ZRMBackup->new($pl, $path);
+  eval {
+    my $backup = ZRMBackup->new($pl, $ARGV[0]);
+    @backups = $backup->find_full($o{'strip'}, $o{'rel-base'});
+  };
+  if($@ and $@ =~ /No full backup/) {
+    $pl->e("Unable to find full backup for this backup-set.");
+    return 1;
   }
-  shift @backups unless($backups[0]); # Remove that pesky undef
-  if(scalar @backups == 0) {
-    $pl->e("No backup directories found.");
+  elsif($@) {
+    chomp($@);
+    $pl->e("Could not find any backups: $@");
     return 1;
   }
 
@@ -174,7 +180,6 @@ sub main {
       print $b->backup_dir, "\n";
     }
   }
-  $pl->e("Unable to find full backup for this backup-set.") unless($backups[0]->backup_level == 0);
   return 0 if($o{'identify-dirs'});
 
   # We must be doing an actual restore.
@@ -185,6 +190,17 @@ sub main {
 
   %cfg = read_config($o{'defaults-file'});
   $datadir = $cfg{'mysqld'}{'datadir'};
+
+  if($o{'create-dirs'}) {
+    eval {
+      mkpath($datadir);
+    };
+    if($@) {
+      $pl->e("Unable to create all directories for $datadir.", $@);
+      return 1;
+    }
+  }
+
   unless( -d $datadir ) {
     $pl->e("Datadir doesn't exist.");
     return 1;
@@ -218,7 +234,7 @@ sub main {
   if( -f "$datadir/xtrabackup_logfile" ) {
     $pl->m("Applying xtrabackup log.");
     unless($o{'dry-run'}) {
-      my %r = %{$pl->x(sub { system(@_) }, "cd $datadir ; innobackupex-1.5.1 --defaults-file=$o{'defaults-file'} --apply-log .")};
+      my %r = %{$pl->x(sub { system(@_) }, "cd $datadir ; $o{'innobackupex'} --defaults-file=$o{'defaults-file'} --apply-log .")};
       if($r{rcode} != 0) {
         $pl->e("Error applying xtrabackup log:");
         $_ = $r{fh};
@@ -274,9 +290,13 @@ sub main {
           $pl->d('First binlog after backup point.');
           $binlog_opts = "--offset $pos";
         }
+        if($o{'point-in-time'}) {
+          $pl->d("Adding --stop-datetime='". $o{'point-in-time'} ."' due to --point-in-time on commandline.");
+          $binlog_opts .= " --stop-datetime='$o{'point-in-time'}'";
+        }
 
         $pl->m('Applying:', $_);
-        system("$mysqlbinlog_path $binlog_opts $_ | $mysql_path --defaults-file=$o{'defaults-file'}");
+        system("$o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
         if(($? >> 8) > 0) {
           stop_mysqld(\%o, \%cfg);
           $pl->e('Error applying binlog.');
@@ -393,6 +413,14 @@ sub read_config {
   unless(%cfg) {
     $pl->e("Unable to open defaults file: $file. Error: $!");
   }
+  unless($cfg{'mysqld'}{'pid-file'}) {
+    if($cfg{'mysqld_safe'}{'pid-file'}) {
+      $cfg{'mysqld'}{'pid-file'} = $cfg{'mysqld_safe'}{'pid-file'};
+    }
+    else {
+      $cfg{'mysqld'}{'pid-file'} = $cfg{'mysqld'}{'datadir'} .'/'. hostname() . '.pid';
+    }
+  }
   return %cfg;
 }
 
@@ -458,6 +486,11 @@ Estimate the space required by the restore and wait for enter to be pressed.
 Use mysqld options from this file. In particular, pdb-zrm-restore
 needs this option to determine WHERE to restore.
 
+=item --create-dirs
+
+pdb-zrm restore will create the path specified by mysql.datadir
+in found in L<--defaults-file>.
+
 =item --rel-base,-b
 
 If you've copied the backup data from another host,
@@ -478,16 +511,31 @@ Default: (none)
 
 =item --strip,-p
 
-This flag strips N path components off the front of the backup-set
-directories. See the below example.
+If the value looks like a number, then this flag strips N path components
+off the front of the backup-set directories. See the below example.
 
   backup-set dir from index: /mysqlbackups/<backup-set>/<datestamp>
   Using --strip 1: /<backup-set>/<datestamp>
+
+Otherwise, it's assumed to be a leading path (starting with '/') to be
+stripped off. See below:
+
+  backup-set dir from index: /some/deep/path/<backup-set>/<datestamp>
+  Using --strip /some/deep/path: /<backup-set>/<datestamp>
 
 This flag is always applied BEFORE L<--rel-base> so that you can
 readjust the lookup path for backups to suit your needs.
 
 Default: 0
+
+=item --point-in-time,-t
+
+Apply binlogs up to an exact date. If there isn't a binlog
+entry for the specific time given, logs will be applied until
+as close as possible, but not past that time.
+
+The date given must be in the format: C<YYYY-MM-DD HH:mm:SS>
+Quoting to protect the space from the shell is likely necessary.
 
 =item --mysql-user,-u
 
