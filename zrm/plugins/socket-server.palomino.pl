@@ -27,7 +27,7 @@ use warnings FATAL => 'all';
 package main;
 use File::Path;
 use File::Basename;
-use File::Temp qw/ :POSIX /;
+use File::Temp qw(:POSIX);
 use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
@@ -77,6 +77,7 @@ my $nagios_host = "nagios.example.com";
 my $nsca_client = "/usr/sbin/send_nsca";
 my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
 my $wait_timeout = 8*3600; # 8 Hours
+my $must_set_wait_timeout = 0;
 my $mycnf_path = "/etc/my.cnf";
 my $mysql_socket_path = undef;
 my $innobackupex_opts = "";
@@ -130,6 +131,9 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
     }
     elsif($var eq "innobackupex_opts") {
       $innobackupex_opts = $val;
+    }
+    elsif($var eq "must_set_wait_timeout") {
+      $must_set_wait_timeout = $val;
     }
   }
 }
@@ -241,11 +245,22 @@ sub doRealHotCopy()
   };
   if( $@ ) {
     &printLog("Unable to open DBI handle. Error: $@\n");
+    if($must_set_wait_timeout) {
+      &printAndDie("ERROR", "Unable to open DBI handle. $@\n");
+    }
   }
 
   if($dbh) {
     $prev_wait = $dbh->selectrow_arrayref("SHOW GLOBAL VARIABLES LIKE 'wait_timeout'")->[1];
-    $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
+    eval {
+      $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
+    };
+    if( $@ ) {
+      &printLog("Unable to set wait_timeout. $@\n");
+      if($must_set_wait_timeout) {
+        &printAndDie("ERROR", "Unable to set wait_timeout. $@\n");
+      }
+    }
     &printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
@@ -270,7 +285,7 @@ sub doRealHotCopy()
       &printLog("Copy aborted. Closed innobackupex.\n");
       sendNagiosAlert("WARNING: Copy was interrupted!", 1);
       unlink("/tmp/innobackupex-log");
-      &printAndDie("Finished cleaning up. Bailing out!\n");
+      &printAndDie("ERROR", "Finished cleaning up. Bailing out!\n");
     }
     my @r = $fhs->can_read(5);
     foreach my $fh (@r) {
