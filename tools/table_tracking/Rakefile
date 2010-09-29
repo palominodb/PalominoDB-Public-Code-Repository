@@ -7,15 +7,14 @@ require 'yaml'
 $: << "#{Dir.pwd}/lib"
 
 $DEV_CONFIGURED = false
-require 'ttt/db'
 begin
+  require 'ttt/db'
   ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
   TTT::Db.open(ttt_config)
   $DEV_CONFIGURED = true
 rescue Exception => e
-  print "Dev setup not configured. Please create dev-config.yml"
-ensure
-  $DEV_CONFIGURED = false
+  print "Dev setup not configured. Please create dev-config.yml\n"
+  print e
 end
 
 ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
@@ -25,7 +24,7 @@ task :default => :test
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "1.5.1"
+  s.version = "1.5.2"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
   s.homepage = "http://blog.palominodb.com/blog/"
@@ -67,6 +66,8 @@ end
 task :clean do
   if $DEV_CONFIGURED
     rm 'test-db.sqlite3' rescue nil
+  else
+    print "clean: Dev not configured properly\n"
   end
 end
 Spec::Rake::SpecTask.new do |t|
@@ -76,6 +77,8 @@ Spec::Rake::SpecTask.new do |t|
     t.rcov =  true
     t.spec_opts = ['--format', 'specdoc']
     t.rcov_opts = ['-t', '--exclude', '/Library' ]
+  else
+    print "spec: Dev not configured properly\n"
   end
 end
 
