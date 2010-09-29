@@ -43,10 +43,14 @@ TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
       :run_time => rd.runtime,
       :updated_at => t.update_time
     )
+    # Remove AUTO_INCREMENT options from the create syntax per
+    # ticket [9babce26e5e802dbc14737404cb73d84d605ef71]
+    # CREATE TABLE foo ( ... ) ENGINE=InnoDB AUTO_INCREMENT=7946150 DEFAULT CHARSET=utf8
+    newt.create_syntax.gsub!(/AUTO_INCREMENT=\d+\s+/, "")
     oldt = rd.stat.find_last_by_table(rd.host, t)
     if oldt.nil? or oldt.create_syntax.nil? then
       newt.save
-      rd<<newt.id
+      rd << newt.id
       rd.logger.info "[new] #{newt.inspect}"
     elsif newt.created_at != oldt.created_at and newt.create_syntax != oldt.create_syntax then
       newt.save
