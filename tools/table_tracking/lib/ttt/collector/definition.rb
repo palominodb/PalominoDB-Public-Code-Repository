@@ -52,7 +52,7 @@ TTT::Collector.new(TTT::TableDefinition, "'create syntax' tracking") do |rd|
       newt.save
       rd << newt.id
       rd.logger.info "[new] #{newt.inspect}"
-    elsif newt.created_at != oldt.created_at and newt.create_syntax != oldt.create_syntax then
+    elsif newt.create_syntax != oldt.create_syntax then
       newt.save
       rd.stat_updated(newt.id, oldt.id)
       rd.logger.info "[changed] #{oldt.inspect}"

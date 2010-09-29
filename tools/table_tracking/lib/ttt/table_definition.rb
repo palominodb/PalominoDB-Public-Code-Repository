@@ -46,7 +46,7 @@ module TTT
 
     def tchanged?
       last=previous_version()
-      last.nil? or last.deleted? or last.created_at != created_at
+      last.nil? or last.deleted? or last.create_syntax() != create_syntax()
     end
 
     def self.create_unreachable_entry(host,runtime)
