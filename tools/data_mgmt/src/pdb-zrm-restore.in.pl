@@ -80,6 +80,7 @@ use Pod::Usage;
 use DBI;
 use File::Spec qw(splitdir);
 use File::Path;
+use File::Basename;
 use Sys::Hostname;
 
 use IniFile;
@@ -126,7 +127,8 @@ sub main {
     'rel-base|b=s',
     'strip|p=s',
     'point-in-time|t=s',
-    'create-dirs'
+    'create-dirs',
+    'skip-extract'
   );
 
   $pl = ProcessLog->new($0, $o{'log-file'}, undef);
@@ -194,6 +196,7 @@ sub main {
   if($o{'create-dirs'}) {
     eval {
       mkpath($datadir);
+      mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
     };
     if($@) {
       $pl->e("Unable to create all directories for $datadir.", $@);
@@ -220,9 +223,16 @@ sub main {
 
   # Remove the datadir, just in case it was
   # being used like a scratch area.
-  $pl->m("Removing contents of $datadir.");
   unless($o{'dry-run'}) {
-    Path::dir_empty($datadir);
+    unless($o{'skip-extract'}) {
+      $pl->m("Removing contents of $datadir.");
+      Path::dir_empty($datadir);
+      $pl->m("Removing contents of $cfg{'mysqld'}{'log-bin'}.");
+      Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
+    }
+    else {
+      $pl->i("Skipping emptying $datadir due to --skip-extract");
+    }
   }
 
   # Extract the backups
@@ -278,9 +288,9 @@ sub main {
       my ($binlog, $pos) = split(/\s+/, $l);
       my ($first_fname, $first_logno) = split( '\.', $binlog);
       my $binlog_pattern = $backups[-1]->incremental();
+      my @logs = ();
+      my $binlog_opts = '';
       for(sort(<$datadir/$binlog_pattern>)) {
-
-        my $binlog_opts = '';
         my ($fname, $logno) = split('\.', $_);
         if(int($first_logno) > int($logno)) {
           $pl->d('Skipping binlog:', $_);
@@ -288,20 +298,23 @@ sub main {
         }
         if(int($first_logno) == int($logno)) {
           $pl->d('First binlog after backup point.');
-          $binlog_opts = "--offset $pos";
-        }
-        if($o{'point-in-time'}) {
-          $pl->d("Adding --stop-datetime='". $o{'point-in-time'} ."' due to --point-in-time on commandline.");
-          $binlog_opts .= " --stop-datetime='$o{'point-in-time'}'";
+          $binlog_opts = "--start-position=$pos";
         }
 
-        $pl->m('Applying:', $_);
-        system("$o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
-        if(($? >> 8) > 0) {
-          stop_mysqld(\%o, \%cfg);
-          $pl->e('Error applying binlog.');
-          return 1;
-        }
+        push @logs, $_;
+      }
+      if($o{'point-in-time'}) {
+        $pl->d("Adding --stop-datetime='". $o{'point-in-time'} ."' due to --point-in-time on commandline.");
+        $binlog_opts .= " --stop-datetime='$o{'point-in-time'}'";
+      }
+      $pl->m('Applying:', @logs);
+      $_ = join(' ', @logs);
+      $pl->d("exec: $o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
+      system("$o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
+      if(($? >> 8) > 0) {
+        stop_mysqld(\%o, \%cfg);
+        $pl->e('Error applying binlog.');
+        return 1;
       }
     }
     stop_mysqld(\%o, \%cfg);
@@ -321,11 +334,20 @@ sub start_mysqld {
   my %cfg = %$cfg;
   my $pid = fork;
   if($pid == 0) {
+
+    $pl->i('attempting to chown', $cfg{'mysqld'}{'datadir'}, 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+    system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} $cfg{'mysqld'}{'datadir'}");
+
+    if($cfg{'mysqld'}{'log-bin'}) {
+      $pl->i('attempting to chown', dirname($cfg{'mysqld'}{'log-bin'}), 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+      system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} ". dirname($cfg{'mysqld'}{'log-bin'}));
+    }
+
     my @path = File::Spec->splitdir($o{'mysqld'});
     pop @path; pop @path;
     my $mysqld_basedir = File::Spec->catdir(@path);
     $pl->i('mysqld basedir:', $mysqld_basedir);
-    $pl->i('starting mysqld with:', $o{'mysqld'}, '--defaults-file', $o{'defaults-file'}, '--skip-grant-tables', '--skip-networking');
+    $pl->i('starting mysqld with:', $o{'mysqld'}, '--defaults-file='. $o{'defaults-file'}, '--skip-grant-tables', '--skip-networking');
     chdir $mysqld_basedir;
     unless($o{'dry-run'}) {
       exec "$o{'mysqld'} --defaults-file=$o{'defaults-file'} --skip-grant-tables --skip-networking"
@@ -386,6 +408,10 @@ sub read_pidfile {
 sub extract_backups {
   my ($o, $ddir, @backups) = @_;
   my %o = %$o;
+  if($o{'skip-extract'}) {
+    $pl->i("Skipping backup extraction due to --skip-extract");
+    return 0;
+  }
   $pl->m("Extracting backups to $ddir");
   my ($r, $fh) = (0, undef);
   foreach my $bk (@backups) {
@@ -490,6 +516,12 @@ needs this option to determine WHERE to restore.
 
 pdb-zrm restore will create the path specified by mysql.datadir
 in found in L<--defaults-file>.
+
+=item --skip-extract
+
+Instead of doing the whole extraction cycle, just apply the xtrabackup log,
+and replay binlogs identified by the backup sets. This prevents pdb-zrm-restore
+from emptying the contents of the datadir. Mysql must still not be running.
 
 =item --rel-base,-b
 
