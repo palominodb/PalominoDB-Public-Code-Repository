@@ -113,7 +113,18 @@ sub find_full {
 # Requires tar to be in path.
 sub extract_to {
   my ($self, $xdir) = @_;
-  my @args = ("tar","-xzf", $self->backup_dir . "/backup-data", "-C", $xdir);
+  my @args = ();
+  if($self->compress =~ /gzip/) {
+    @args = ("tar","-xzf", $self->backup_dir . "/backup-data", "-C", $xdir);
+  }
+  elsif($self->compress =~ /bzip2/) {
+     @args = ("tar","-xjf", $self->backup_dir . "/backup-data", "-C", $xdir);
+  }
+  else {
+    # hope that the tool accepts the -d like needed by MySQL-zrm
+    # and that the tool exists on the current machine
+    @args = ($self->compress ." -d ". $self->backup_dir ."/backup-data". " | tar -C $xdir -xf -");
+  }
   my $r = $self->{pl}->x(sub { system(@_) }, @args);
   return wantarray ? ($r->{rcode}, $r->{fh}) : $r->{rcode};
 }
