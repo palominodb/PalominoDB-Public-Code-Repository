@@ -64,7 +64,6 @@ my $TAR_READ_OPTIONS = "";
 my $CP="cp -pr";
 
 my $MYSQL_BINPATH="/usr/bin";
-my $MYSQLHOTCOPY="mysqlhotcopy";
 
 my $VERSION = "1.8b7_palomino";
 my $srcHost = "localhost";
@@ -82,6 +81,11 @@ my $pl; # ProcessLog
 $SIG{'PIPE'} = sub { $pl->end; die "Pipe broke"; };
 $SIG{'TERM'} = sub { close SOCK; $pl->end; die "TERM broke\n"; };
 
+$config{'socket-copy-logfile'} = '/var/log/mysql-zrm/socket-copy.log';
+$config{'socket-copy-email'} = undef;
+$config{'tar-force-ownership'} = 1;
+$config{'apply-xtrabackup-log'} = 0;
+
 if($^O eq "linux") {
   $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
   $TAR_READ_OPTIONS = "--same-owner -xphsC";
@@ -91,7 +95,7 @@ elsif($^O eq "freebsd") {
   $TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-  &printAndDie("Unable to determine which tar options to use!");
+  #&printAndDie("Unable to determine which tar options to use!");
 }
 
 sub printAndDie {
@@ -216,68 +220,6 @@ sub doLocalTar()
   }
 }
 
-# Parses the command line ofr the mysqlhotcopy parameters
-sub getMySQLHotCopyParameters()
-{
-  my $y = shift @ARGV;
-  my @x = split( /=/, $y );
-  my $l = @x;
-  if( $l > 1 ){
-    $MYSQL_BINPATH = $x[1];
-  }
-  $destDir= pop @ARGV;
-  my %opt;
-  GetOptions( \%opt,
-    "host=s",
-    "user=s",
-    "password=s",
-    "socket=s",
-    "port=s",
-    "quiet" );
-  $params = "";
-  for( keys%opt ){
-    if( $_ ne "quiet" ){
-      $params .= " --$_=\"$opt{$_}\"";
-    }else{
-      $params .= " --$_";
-    }
-  }
-  foreach( @ARGV ){
-    $params .= " $_";
-  }
-  if( $opt{"host"} ){
-    $host = $opt{"host"};
-  }
-
-  if( ! $host || $host eq "localhost" ){
-    my_exit( system( "$MYSQL_BINPATH/mysqlhotcopy $params $destDir" ) );
-  }
-  $action = "mysqlhotcopy";
-}
-
-#gets parameters for remove backup data
-sub getRemoveBackupParams()
-{
-  my $y = shift @ARGV;
-  my %opt;
-  GetOptions( \%opt,
-    "host=s",
-    "backup-dir=s",
-    "type-of-dir=s",
-    "backup-id=i" );
-  $host = $opt{"host"};
-  my $dir = $opt{"backup-dir"};
-  my $id;
-  if( defined $opt{"backup-id"} ){
-    $id = $opt{"backup-id"};
-  }else{
-    $id = $opt{"type-of-dir"};
-  }
-  $params = "$id $dir";
-
-  $action = "remove-backup-data";
-}
-
 sub getSnapshotParams()
 {
   my $y = shift @ARGV;
@@ -299,9 +241,9 @@ sub getInputs()
   }
 
   if( $ARGV[0]=~/^--mysqlhotcopy/ ){
-    getMySQLHotCopyParameters();
+    $action = "mysqlhotcopy";
   }elsif( $ARGV[0]=~/^remove-backup-data/ ){
-    getRemoveBackupParams();
+    $action = "remove-backup-data";
   }elsif( $ARGV[0]=~/^--snapshot-command/ ){
     getSnapshotParams();
   }else{
@@ -342,7 +284,7 @@ sub readTarStream()
 {
   my $tmpfile = tmpnam();
   my $tar_cmd = "|$TAR $TAR_READ_OPTIONS $destDir 2>$tmpfile";
-  $pl-m("read-tar-stream:\n\t$tar_cmd\n");
+  $pl->m("read-tar-stream:\n\t$tar_cmd\n");
   unless( open( TAR_H, "$tar_cmd" ) ){
     &printAndDie("tar failed $!");
   }
@@ -386,7 +328,6 @@ sub readInnoBackupStream()
   }
   $tar_cmd .= "$destDir 2>$tmpfile";
   $pl->m("read-inno-tar-stream:", $tar_cmd);
-  #print "read-inno-tar-stream:\n\t$tar_cmd\n";
 
   unless( open( TAR_H, "$tar_cmd" ) ){
     &printAndDie("tar failed $!");
@@ -424,7 +365,7 @@ sub readInnoBackupStream()
     &printAndDie("tar pipe failed");
   }
 
-  if( $config{'apply-xtrabackup-logs'} == 1 ) {
+  if( $config{'apply-xtrabackup-log'} == 1 ) {
     $pl->m("Applying logs..");
     my %r = $pl->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
     my $fh = $r{fh};
@@ -460,17 +401,17 @@ sub writeTarStream()
 # pointed to by $ZRM_CONF in the enviornment
 sub parseConfFile()
 {
-  my $fileName = $ENV{'ZRM_CONF'};
-  unless( open( FH, "$fileName" ) ){
-    die "Unable to open config file. This should only meant to be invoked from mysql-zrm\n";
+  unless( exists $ENV{ZRM_CONF} and open( FH, $ENV{ZRM_CONF} ) ){
+    die "Unable to open config file. The ZRM_CONF environment variable isn't set.\n";
   }
   my @tmparr = <FH>;
   close( FH );
   chomp( @tmparr );
   foreach( @tmparr ){
-    my @v = split( /=/, $_ );
+    next if(/^\s*$/);
+    my @v = split( /=/, $_, 2 );
     my $v1 = shift @v;
-    my $v2 = join( "=", @v );
+    my $v2 = shift @v;
     $config{$v1} = $v2;
   }
 }
@@ -478,7 +419,6 @@ sub parseConfFile()
 # Setup the parameters that are relevant from the conf
 sub setUpConfParams()
 {
-  $pl->m('setup-config-parameters');
   if( $config{"socket-remote-port"} ){
     $REMOTE_PORT = $config{"socket-remote-port"};
   }
@@ -486,7 +426,6 @@ sub setUpConfParams()
     $REMOTE_MYSQL_BINPATH = $config{"remote-mysql-binpath"};
   }
   if( defined $ENV{'SNAPSHOT_CONF'} ){
-    $pl->m('read-snapshot-config');
     my $fName = $ENV{'SNAPSHOT_CONF'};
     unless( open( TMP, $fName ) ){
       return;
@@ -499,32 +438,6 @@ sub setUpConfParams()
     foreach(@snapshotParamList){
       $snapshotConfString .= "$_=$config{$_}\n";
     }
-    $pl->m('snapshot-param-list:', Dumper(\@snapshotParamList));
-    $pl->m('snapshot-param-string:', $snapshotConfString);
-  }
-}
-
-sub doCreateLinks()
-{
-  unless( open( TP, $params ) ){
-    die "unable to open input file\n";
-  }
-  my @l = <TP>;
-  close TP;
-  chomp( @l );
-  unlink $params;
-  my $n = @l;
-  print SOCK "$n\n";
-  foreach( @l ){
-    print SOCK "$_\n";
-  }
-
-  my $status = <SOCK>;
-  my $r = <SOCK>;
-  if( $r eq "SUCCESS" ){
-    print STDOUT "$r\n";
-  }else{
-    print STDERR "$r\n";
   }
 }
 
@@ -544,7 +457,7 @@ sub doSnapshotCommand()
   my $status = <SOCK>;
   chomp( $status );
   $pl->m('  result:', $status);
-  my $num = <SOCK>;
+  $num = <SOCK>;
   chomp($num);
   my $i;
   for( $i = 0 ; $i < $num; $i++ ){
@@ -584,15 +497,10 @@ sub doCopyBetween()
 
 }
 
+
+
 &parseConfFile();
 &setUpConfParams();
-
-unless( exists $config{'socket-copy-logfile'} ) {
-  $config{'socket-copy-logfile'} = '/var/log/mysql-zrm/socket-copy.log';
-}
-unless( exists $config{'socket-copy-email'} ) {
-  $config{'socket-copy-email'} = undef;
-}
 
 $pl = ProcessLog->new('socket-copy', $config{'socket-copy-logfile'}, $config{'socket-copy-email'});
 $pl->quiet(1); # Hide messages from the console.
@@ -611,27 +519,26 @@ if( $config{"tar-force-ownership"} == 0 or $config{"tar-force-ownership"} =~ /[N
 }
 
 &getInputs();
-&connectToHost();
-&sendArgsToRemoteHost();
-if( $action eq "copy from" ){
-  &readInnoBackupStream();
-}elsif( $action eq "mysqlhotcopy" ){
-  &printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
-}elsif( $action eq "copy between" ){
-  &doCopyBetween();
-}elsif( $action eq "copy to" ){
-  my @suf;
-  my $file = basename( $srcFile, @suf );
-  my $dir = dirname( $srcFile );
-  &writeTarStream( $dir, $file );
-}elsif( $action eq "create-link" ){
-  &doCreateLinks( );
-}elsif( $action eq "snapshot" ){
-  &doSnapshotCommand( $params );
-}elsif( $action ne "remove-backup-data" ){
-  die "Unknown action";
+if(defined $host) {
+  &connectToHost();
+  &sendArgsToRemoteHost();
+  if( $action eq "copy from" ){
+    &readInnoBackupStream();
+  }elsif( $action eq "mysqlhotcopy" ){
+    &printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
+  }elsif( $action eq "copy between" ){
+    &doCopyBetween();
+  }elsif( $action eq "copy to" ){
+    my @suf;
+    my $file = basename( $srcFile, @suf );
+    my $dir = dirname( $srcFile );
+    &writeTarStream( $dir, $file );
+  }elsif( $action eq "snapshot" ){
+    &doSnapshotCommand( $params );
+  }
+  close( SOCK );
+  select( undef, undef, undef, 0.250 );
 }
-close( SOCK );
-select( undef, undef, undef, 0.250 );
+
 my_exit(0);
 1;

@@ -29,7 +29,9 @@ open LOG, ">>/var/log/mysql-zrm/socket-server.log" or die "Unable to open snapsh
 
 sub printLog()
 {
-  print LOG "$0:" . $_[0];
+  @_ = map { "$_" } @_;
+  chomp(@_);
+  print LOG "$0:" . $_[0]. "\n";
 }
 
 
@@ -44,9 +46,7 @@ sub getSnapshotDeviceDetails()
   print "snapshot-device=/dev/null\n";
   print "device-mount-point=null\n";
   print "filesystem-type=null\n";
-  my $str = &getCommonDetails( $_[0], $_[1], $_[0] );
-  my @ret = split /\n/, $str;
-  print $ret[1], "\n";
+  print "relative-copy-dir=0;0;0\n";
   print "snapshot-mount-point=/tmp/zrm-innosnap\n";
 }
 
