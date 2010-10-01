@@ -78,10 +78,10 @@ sub find_full {
     $self->{pl}->d("unadjusted lookup:", $backups[0]->last_backup);
     my @path = File::Spec->splitdir($backups[0]->last_backup);
     my $path;
-    if($strip =~ /^\d+$/) {
+    if($strip and $strip =~ /^\d+$/) {
       for(my $i=0; $i<$strip; $i++) { shift @path; }
     }
-    else {
+    elsif($strip) {
       $_ = $backups[0]->last_backup;
       s/^$strip//;
       @path = File::Spec->splitdir($_);
