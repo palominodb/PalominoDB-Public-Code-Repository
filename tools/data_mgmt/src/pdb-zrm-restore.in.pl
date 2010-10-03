@@ -128,7 +128,8 @@ sub main {
     'strip|p=s',
     'point-in-time|t=s',
     'create-dirs',
-    'skip-extract'
+    'skip-extract',
+    'force|f',
   );
 
   $pl = ProcessLog->new($0, $o{'log-file'}, undef);
@@ -149,6 +150,9 @@ sub main {
   }
   if(not exists $o{'point-in-time'} and exists $o{t}) {
     $o{'point-in-time'} = $o{p};
+  }
+  if(not exists $o{'force'} and exists $o{f}) {
+    $o{'force'} = $o{f};
   }
   if(!$o{'identify-dirs'} and !$o{'defaults-file'}) {
     $pl->e('Must have --defaults-file or --identify-dirs at a minimum. Try --help.');
@@ -277,8 +281,7 @@ sub main {
   if($backups[-1]->backup_level == 1) {
     start_mysqld(\%o, \%cfg);
 
-    # XXX Get binlog positions, and pipe into mysql command
-    # XXX This trusts shell sorting.
+    # Get binlog positions, and pipe into mysql command
     $pl->m("Applying binlogs.");
     unless($o{'dry-run'}) {
       $pl->m('Reading position information from', $datadir . '/xtrabackup_binlog_info');
@@ -290,6 +293,7 @@ sub main {
       my $binlog_pattern = $backups[-1]->incremental();
       my @logs = ();
       my $binlog_opts = '';
+      my $mysql_opts = '';
       for(sort(<$datadir/$binlog_pattern>)) {
         my ($fname, $logno) = split('\.', $_);
         if(int($first_logno) > int($logno)) {
@@ -307,10 +311,14 @@ sub main {
         $pl->d("Adding --stop-datetime='". $o{'point-in-time'} ."' due to --point-in-time on commandline.");
         $binlog_opts .= " --stop-datetime='$o{'point-in-time'}'";
       }
+      if($o{'force'}) {
+        $pl->d("Forcing binlog apply, even in the face of errors.");
+        $mysql_opts = "--force";
+      }
       $pl->m('Applying:', @logs);
       $_ = join(' ', @logs);
-      $pl->d("exec: $o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
-      system("$o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'}");
+      $pl->d("exec: $o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'} $mysql_opts");
+      system("$o{'mysqlbinlog'} $binlog_opts $_ | $o{'mysql'} --defaults-file=$o{'defaults-file'} $mysql_opts");
       if(($? >> 8) > 0) {
         stop_mysqld(\%o, \%cfg);
         $pl->e('Error applying binlog.');
@@ -568,6 +576,10 @@ as close as possible, but not past that time.
 
 The date given must be in the format: C<YYYY-MM-DD HH:mm:SS>
 Quoting to protect the space from the shell is likely necessary.
+
+=item --force,-f
+
+Continue even after errors when applying binlogs.
 
 =item --mysql-user,-u
 
