@@ -1,11 +1,11 @@
 Name: zrm-innobackupex
 Summary: innobackupex copy plugin for ZRM
-Version: 0.75
+Version: 0.75.1
 Vendor: PalominoDB
 Release: 1
 License: Private
 Group: Application/System
-Source: http://palominodb.com/src/zrm-innobackupex-%{version}.tgz
+Source: http://palominodb.com/src/zrm-innobackupex-%{version}.tar.gz
 URL: http://blog.palominodb.com
 Requires: xtrabackup >= 1.0, xinetd
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
@@ -27,9 +27,6 @@ be installed on database servers.
 %setup -q
 
 %build
-
-%{__rm} plugins/pre-backup.pdb.pl
-%{__rm} plugins/post-backup.pdb.pl
 
 %install
 

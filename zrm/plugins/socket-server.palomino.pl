@@ -36,7 +36,7 @@ use strict;
 use warnings FATAL => 'all';
 use File::Path;
 use File::Basename;
-use File::Temp qw(:POSIX);
+use File::Temp;
 use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
@@ -44,16 +44,13 @@ use ProcessLog;
 use Which;
 use POSIX;
 use Tie::File;
+use Fcntl qw(:flock);
 
+# client supplied header data
+my %hdr = ();
 
-# Set remote-mysql-binpath in mysql-zrm.conf if mysql client binaries are
-# in a different location
-my $MYSQL_BINPATH = "/usr/bin";
-
-# File pointed to here is expected to contain the alternate path
-# where plugins are installed.
-# If file is not found the path /usr/share/mysql-zrm/plugins is used
-my $SNAPSHOT_INSTALL_CONF_FILE = "/etc/mysql-zrm/plugin-path";
+# Default location for xtrabackup-agent to place any temporary files necessary.
+my $GLOBAL_TMPDIR = "/tmp";
 
 delete @ENV{'IFS', 'CDPATH', 'ENV', 'BASH_ENV'};
 $ENV{PATH}="/usr/local/bin:/opt/csw/bin:/usr/bin:/usr/sbin:/bin:/sbin";
@@ -62,18 +59,19 @@ my $TAR_WRITE_OPTIONS = "";
 my $TAR_READ_OPTIONS = "";
 my $LS = "ls";
 
-my $TMPDIR;
+
 my $tmp_directory;
 my $action;
 my $params;
 
 my $INNOBACKUPEX="innobackupex-1.5.1";
 
-my $VERSION="1.8b7_palomino";
+my $VERSION="0.75.1";
+my $REMOTE_VERSION = undef;
 my $MIN_XTRA_VERSION=1.0;
 
 my $logDir = "/var/log/mysql-zrm";
-my $logFile = "$logDir/socket-server.log";
+my $logFile = "$logDir/xtrabackup-agent.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
 # Set to 1 inside the SIGPIPE handler so that we can cleanup innobackupex gracefully.
@@ -168,20 +166,21 @@ elsif($^O eq "freebsd") {
   $TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-  #&printAndDie("Unable to determine which tar options to use!\n");
+  printAndDie("Unable to determine which tar options to use!\n");
 }
 
+# This validates all incoming data, to ensure it's sane.
 # This will only allow and a-z A-Z 0-9 _ - / . = " ' ; + * and space.
-# Modify this if any other characters are to be allowed.
-sub checkIfTainted(){
+sub checkIfTainted {
   if( $_[0] =~ /^([-\*\w\/"\'.\:;\+\s=\^\$]+)$/) {
     return $1;
-  }else{
-    &printAndDie("Bad data in $_[0]\n");
+  }
+  else {
+    printAndDie("Bad data in $_[0]\n");
   }
 }
 
-sub my_exit(){
+sub my_exit {
   if( $tmp_directory ){
     rmtree $tmp_directory, 0, 0;
   }
@@ -201,31 +200,120 @@ sub printAndDie {
   &my_exit( 1 );
 }
 
-sub getInputs()
-{
-  my @inp;
-  my $x = <STDIN>;
-  chomp( $x );
-  $x = &checkIfTainted($x);
-  if( $x ne $VERSION ){
-    &printAndDie( "Version of remote copy plugin does not match\n" );
+# Compares version numbers in a pseudo-semversioning sort of way.
+# Major revision changes are always incompatible.
+# Minor revision changes are only compatible if the server
+# is more new than the client.
+# Revision changes should not affect compatibility.
+# They exist to provide specific work arounds, if needed.
+sub isClientCompatible {
+  # Local Major/Minor/Revision parts.
+  my ($L_Maj, $L_Min, $L_Rev) = split(/\./, $VERSION);
+  my ($R_Maj, $R_Min, $R_Rev) = split(/\./, $REMOTE_VERSION);
+  return 0 if($L_Maj != $R_Maj);
+  return 1 if($L_Min >= $R_Min);
+}
+
+sub isLegacyClient {
+  return $REMOTE_VERSION eq "1.8b7_palomino";
+}
+
+# Reads a key=value block from the incoming stream.
+# The format of a key=value block is as follows:
+# <number of lines(N) to follow>\n
+# <key=value\n>{N}
+#
+# N, is allowed to be 0.
+# This function returns a hashref of the read key=value pairs.
+#
+sub readKvBlock {
+  my $fh = shift;
+  my (%kv, $i, $N) = ((), 0, 0);
+  chomp($N = <$fh>);
+  checkIfTainted($N);
+  if($N !~ /^\d+$/) {
+    printAndDie("Bad input: $_");
   }
-  for( my $i = 0; $i < 4; $i++ ){
-    $x = <STDIN>;
-    push @inp, $x;
+  for($i = 0; $i < $N; $i++) {
+    chomp($_ = <$fh>);
+    checkIfTainted($_);
+    my ($k, $v) = split(/=/, $_, 2);
+    $kv{$k} = $v;
   }
-  chomp( @inp );
-  $action = &checkIfTainted($inp[0]);
-  $params = &checkIfTainted($inp[1]);
-  $TMPDIR = &checkIfTainted($inp[2]);
-  $MYSQL_BINPATH = &checkIfTainted($inp[3]);
+  return \%kv;
+}
+
+# Given a realhash, this returns a string in the format:
+# <N>\n
+# <key>=<value>\n{N}
+#
+# Where 'N' is the number of keys in the hash.
+#
+sub makeKvBlock {
+  my %Kv = @_;
+  my $out = scalar(keys %Kv). "\n";
+  foreach my $k (keys %Kv) {
+    $out .= "$k=$Kv{$k}\n";
+  }
+  return $out;
+}
+
+# The header is composed of newline delimited data.
+# Starting with version 0.75.1, the format is as follows:
+#
+#   <client version>\n
+#   <key=value block>
+#
+# See readKvBlock() for format details of <key=value block>.
+#
+# When the server has read and validated the key=value block,
+# it replies with 'READY'.
+#
+# For version 1.8b7_palomino (the legacy version):
+# The format is like so:
+#
+#   <client version>\n
+#   <action>\n
+#   <params>\n
+#   <tmpdir path>\n
+#   <mysql binpath>\n
+#
+# There is no communication back from server to client in this version.
+#
+sub getHeader {
+  $REMOTE_VERSION = <STDIN>;
+  chomp($REMOTE_VERSION);
+  $REMOTE_VERSION = checkIfTainted($REMOTE_VERSION);
+
+  if( isLegacyClient() ) {
+    my @inp;
+    &printLog("Client is a legacy version.");
+    for( my $i = 0; $i < 4; $i++ ){
+      $_ = <STDIN>;
+      push @inp, $_;
+    }
+    chomp(@inp);
+    $action = checkIfTainted($inp[0]);
+    $params = checkIfTainted($inp[1]);
+    $GLOBAL_TMPDIR = checkIfTainted($inp[2]);
+    return;
+  }
+  if(!isClientCompatible()) {
+    printAndDie("Incompatible client version.");
+  }
+  %hdr = %{readKvBlock(\*STDIN)};
+  unless(exists $hdr{'action'}) {
+    printAndDie("Missing required header key 'action'.");
+  }
+  $action = $hdr{'action'};
+  print "READY\n";
 }
 
 sub restore_wait_timeout {
   my ($dbh, $prev_wait) = @_;
 
   if($dbh and $prev_wait){
-    &printLog("Re-setting wait_timeout to $prev_wait\n");
+    printLog("Re-setting wait_timeout to $prev_wait\n");
     $dbh->do("SET GLOBAL wait_timeout=$prev_wait");
   }
   else {
@@ -234,8 +322,7 @@ sub restore_wait_timeout {
   undef;
 }
 
-sub doRealHotCopy()
-{
+sub doRealHotCopy {
   my ($start_tm, $backup_sz) = (time(), 0);
   record_backup("full", $start_tm);
   if($stop_copy == 1) {
@@ -247,7 +334,7 @@ sub doRealHotCopy()
   $params =~ s/--quiet//;
   my $new_params = "";
   foreach my $i (split(/\s+/, $params)) {
-    &printLog("param: $i\n");
+    printLog("param: $i\n");
     next if($i !~ /^--/);
     next if($i =~ /^--host/);
     $new_params .= "$i ";
@@ -255,7 +342,7 @@ sub doRealHotCopy()
 
   my ($fhs, $buf);
   POSIX::mkfifo("/tmp/innobackupex-log", 0700);
-  &printLog("Created FIFOS..\n");
+  printLog("Created FIFOS..\n");
 
   my $dbh = undef;
   my $prev_wait = undef;
@@ -264,10 +351,10 @@ sub doRealHotCopy()
     $dbh = DBI->connect("DBI:mysql:host=localhost". $mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : "", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
   };
   if( $@ ) {
-    &printLog("Unable to open DBI handle. Error: $@\n");
+    printLog("Unable to open DBI handle. Error: $@\n");
     if($must_set_wait_timeout) {
       record_backup("full", $start_tm, time(), $backup_sz, "failure", "$@");
-      &printAndDie("ERROR", "Unable to open DBI handle. $@\n");
+      printAndDie("ERROR", "Unable to open DBI handle. $@\n");
     }
   }
 
@@ -277,54 +364,54 @@ sub doRealHotCopy()
       $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
     };
     if( $@ ) {
-      &printLog("Unable to set wait_timeout. $@\n");
+      printLog("Unable to set wait_timeout. $@\n");
       if($must_set_wait_timeout) {
         record_backup("full", $start_tm, time(), $backup_sz, "failure", "unable to set wait_timeout");
-        &printAndDie("ERROR", "Unable to set wait_timeout. $@\n");
+        printAndDie("ERROR", "Unable to set wait_timeout. $@\n");
       }
     }
-    &printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
+    printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
 
   open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path $innobackupex_opts --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
   &printLog("Opened InnoBackupEX.\n");
   open(INNO_LOG, "</tmp/innobackupex-log");
-  &printLog("Opened Inno-Log.\n");
+  printLog("Opened Inno-Log.\n");
   $fhs = IO::Select->new();
   $fhs->add(\*INNO_TAR);
   $fhs->add(\*INNO_LOG);
-  $SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
-  $SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
+  $SIG{'PIPE'} = sub { printLog( "caught broken pipe\n" ); $stop_copy = 1; };
+  $SIG{'TERM'} = sub { printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
   while( $fhs->count() > 0 ) {
     if($stop_copy == 1) {
       restore_wait_timeout($dbh, $prev_wait);
-      &printLog("Copy aborted. Closing innobackupex.\n");
+      printLog("Copy aborted. Closing innobackupex.\n");
       $fhs->remove(\*INNO_TAR);
       $fhs->remove(\*INNO_LOG);
       close(INNO_TAR);
       close(INNO_LOG);
-      &printLog("Copy aborted. Closed innobackupex.\n");
+      printLog("Copy aborted. Closed innobackupex.\n");
       sendNagiosAlert("WARNING: Copy was interrupted!", 1);
       unlink("/tmp/innobackupex-log");
       record_backup("full", $start_tm, time(), $backup_sz, "failure", "copy interrupted");
-      &printAndDie("ERROR", "Finished cleaning up. Bailing out!\n");
+      printAndDie("ERROR", "Finished cleaning up. Bailing out!\n");
     }
     my @r = $fhs->can_read(5);
     foreach my $fh (@r) {
       if($fh == \*INNO_LOG) {
         if( sysread( INNO_LOG, $buf, 10240 ) ) {
-          &printLog($buf);
+          printLog($buf);
           if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
             record_backup("full", $start_tm, time(), $backup_sz, "failure", $1);
             restore_wait_timeout($dbh, $prev_wait);
             sendNagiosAlert("CRITICAL: $1", 2);
             unlink("/tmp/innobackupex-log");
-            &printAndDie($_);
+            printAndDie($_);
           }
         }
         else {
-          &printLog("closed log handle\n");
+          printLog("closed log handle\n");
           $fhs->remove($fh);
           close(INNO_LOG);
         }
@@ -337,11 +424,11 @@ sub doRealHotCopy()
           print STDOUT $x;
         }
         else {
-          &printLog("closed tar handle\n");
+          printLog("closed tar handle\n");
           $fhs->remove($fh);
           close(INNO_TAR);
           if($^O eq "freebsd") {
-            &printLog("closed log handle\n");
+            printLog("closed log handle\n");
             $fhs->remove(\*INNO_LOG);
             close(INNO_LOG);
           }
@@ -363,40 +450,55 @@ sub sendNagiosAlert {
   my $status = shift;
   my $host = hostname;
   $status =~ s/'/\\'/g; # Single quotes are bad in this case.
-  &printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
+  printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
   $_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
 }
 
 #$_[0] dirname
 #$_[1] filename
-sub writeTarStream()
-{
+sub writeTarStream {
   my ($start_tm, $backup_sz) = (time(), 0);
   my $fileList = $_[1];
   my $lsCmd = "";
 
   my $tmpFile = getTmpName();
 
-  if( $_[1] =~ /\*/){
+  if( $_[1] =~ /\*/) {
     $lsCmd = "cd $_[0]; $LS -1 $_[1] > $tmpFile 2>/dev/null;";
     my $r = system( $lsCmd );
     $fileList = " -T $tmpFile";
   }
 
-  &printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList\n");
-  unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ){
+  printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList\n");
+  unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ) {
     record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "$!");
-    &printAndDie( "tar failed $!\n" );
+    printAndDie( "tar failed $!\n" );
   }
   binmode( TAR_H );
   my $buf;
-  while( read( TAR_H, $buf, 10240 ) ){
+  while( read( TAR_H, $buf, 10240 ) ) {
     my $x = pack( "u*", $buf );
     $backup_sz += length($buf);
     print pack( "N", length( $x ) );
     print $x;
+    last if($stop_copy);
   }
   close( TAR_H );
+  printLog("tar exitval:", ($? >> 8));
+  if(($? >> 8) == 2) {
+    record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "no such file/directory: $fileList");
+    if( $lsCmd ){
+      unlink( $tmpFile );
+    }
+    printAndDie("no such file(s) or director(ies): $fileList");
+  }
+  elsif(($? >> 8) > 0) {
+    record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "unknown failure retrieving: $fileList");
+    if( $lsCmd ){
+      unlink( $tmpFile );
+    }
+    printAndDie("unknown failure retrieving: $fileList");
+  }
 
   if( $lsCmd ){
     unlink( $tmpFile );
@@ -404,12 +506,11 @@ sub writeTarStream()
   record_backup("incremental", $start_tm, time(), $backup_sz, "success", $fileList);
 }
 
-#$_[0] dirname to strea the data to
-sub readTarStream()
-{
-  &printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]\n");
+#$_[0] dirname to stream the data to
+sub readTarStream {
+  printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]\n");
   unless(open( TAR_H, "|$TAR $TAR_READ_OPTIONS $_[0] 2>/dev/null" ) ){
-    &printAndDie( "tar failed $!\n" );
+    printAndDie( "tar failed $!\n" );
   }
 
   my $buf;
@@ -423,30 +524,21 @@ sub readTarStream()
     print TAR_H unpack( "u", $buf );
   }
   unless( close(TAR_H) ){
-    &printAndDie( "close of pipe failed\n" );
+    printAndDie( "close of pipe failed\n" );
   }
   close( TAR_H );
 }
 
-sub getTmpName()
-{
-  if( ! -d $TMPDIR ){
-    &printAndDie( "$TMPDIR not found. Please create this first.\n" );
+sub getTmpName {
+  if( ! -d $GLOBAL_TMPDIR ){
+    printAndDie( "$GLOBAL_TMPDIR not found. Please create this first.\n" );
   }
-  &printLog( "TMP directory being used is $TMPDIR\n" );
-  return File::Temp::tempnam( $TMPDIR, "" );
+  printLog( "TMP directory being used is $GLOBAL_TMPDIR\n" );
+  return File::Temp::tempnam( $GLOBAL_TMPDIR, "" );
 }
 
-sub validateSnapshotCommand()
-{
+sub validateSnapshotCommand {
   my $file = basename( $_[0] );
-  if( -f $SNAPSHOT_INSTALL_CONF_FILE ){
-    if( open( TMP, $SNAPSHOT_INSTALL_CONF_FILE ) ){
-      $snapshotInstallPath = <TMP>;
-      close TMP;
-      chomp( $snapshotInstallPath );
-    }
-  }
   my $cmd = "$snapshotInstallPath/$file";
   if( -f $cmd ){
     return $cmd;
@@ -454,188 +546,199 @@ sub validateSnapshotCommand()
   return "";
 }
 
-sub printToServer()
-{
-  my @data = @_;
-  my $status = shift @data;
-  my $cnt = @data;
-  &printLog( "status=$status cnt=$cnt" , join("\n", @data));
-  print "$status\n";
-  print "$cnt\n";
-  my $i;
-  for( $i = 0; $i < $cnt; $i++ ){
-    print "$data[$i]\n";
+sub printToServer {
+  my ($status, $msg) = @_;
+  $msg =~ s/\n/\\n/g;
+  if( isLegacyClient() ) {
+    printLog( "status=$status cnt=1" , $msg);
+    print "$status\n";
+    print "1\n";
+    print "$msg\n"
+    return;
   }
+  print makeKvBlock(status => $status, msg => $msg);
 }
 
-#$_[0] name of file
-sub printFileToServer()
-{
-  my @x = "";
-  if( open( TMP, $_[1] ) ){
-    @x = <TMP>;
-    close TMP;
-    chomp( @x );
-    &printToServer( $_[0], @x );
-  }
-}
-
-sub readOneLine()
-{
+sub readOneLine {
   my $line = <STDIN>;
   chomp( $line );
-  $line = &checkIfTainted( $line );
+  $line = checkIfTainted( $line );
   return $line;
 }
 
-sub doSnapshotCommand()
-{
-  my $cmd = &readOneLine();
-  &printLog('snapshot cmd:', $cmd);
-  my $num = &readOneLine();
+sub doSnapshotCommand {
+  if( isLegacyClient() ) {
+    my @confData;
+    my $cmd = readOneLine();
+    my $num = readOneLine();
 
-  my @confData;
-  my $i;
-  for( $i = 0; $i < $num;$i++ ){
-    my $str = &readOneLine();
-    push @confData, $str;
-  }
+    for( my $i = 0; $i < $num; $i++ ) {
+      push @confData, readOneLine();
+    }
 
-  my $command = &validateSnapshotCommand( $cmd );
-  if( $command eq "" ){
-    &printToServer( "ERROR", "Snapshot Plugin $cmd not found" );
-    &printAndDie( "Snapshot Plugin $cmd not found\n" );
-  }
-  my $file = tmpnam();
-  $file = basename( $file );
-  $file = "$tmp_directory/$file";
-  if( ! open( TMP, ">$file" ) ){
-    &printToServer( "ERROR", "Unable to open temp file $file" );
-    &printAndDie( "Unable to open temp file $file\n" );
-  }
-  foreach( @confData ){
-    print TMP "$_\n";
-  }
-  close TMP;
-  $ENV{'ZRM_CONF'} = $file;
-  my $f = tmpnam();
-  my $ofile = basename($f);
-  $f = tmpnam();
-  my $efile = basename($f);
-  $command .= " $params > $tmp_directory/$ofile 2>$tmp_directory/$efile";
-  my $r = system( $command );
-  if( $r == 0 ){
-    &printFileToServer( "SUCCESS", "$tmp_directory/$ofile" );
-  }else{
-    &printFileToServer( "ERROR", "$tmp_directory/$efile" );
+    my $command = validateSnapshotCommand( $cmd );
+    if( $command eq "" ) {
+      printToServer( "ERROR", "Snapshot Plugin $cmd not found" );
+      printAndDie( "Snapshot Plugin $cmd not found" );
+    }
+    my $tmpf = File::Temp->new(DIR => $GLOBAL_TMPDIR);
+    if(not defined $tmpf) {
+      printToServer("ERROR", "Unable to open a temporary file in $GLOBAL_TMPDIR");
+      printAndDie("Unable to open temporary file in $GLOBAL_TMPDIR");
+    }
+
+    foreach( @confData ){
+      print $tmpf "$_\n";
+    }
+    $ENV{'ZRM_CONF'} = "$tmpf";
+    $command .= " $params 2>&1";
+    printLog("snapshot cmd: $command");
+    $_ = qx/$command/;
+    if( $? == 0 ) {
+      printToServer( "SUCCESS", $_ );
+    }
+    else {
+      printToServer( "ERROR", $_ );
+    }
   }
 }
 
-sub doCopyBetween()
-{
-  $ENV{'TMPDIR'} = $TMPDIR;
-  my $port = &readOneLine();
-  my $f = tmpnam();
-  $f = basename( $f );
-  $f = "$tmp_directory/$f";
-  unless( open( T, ">$f" ) ){
-    &printToServer( "ERROR", "Unable to open temp file $f" );
-    &printAndDie( "Unable to open temp file $f\n" );
+sub doCopyBetween {
+  printToServer("ERROR", "Unsupported action");
+}
+
+sub open_stats_db {
+  my $do_lock = shift || LOCK_EX;
+  my (@all_stats, $i) = ((), 0);
+  my $st = tie @all_stats, 'Tie::File', $stats_db or printAndDie("ERROR", "unable to open the stats database $stats_db");
+  if($do_lock) {
+    for(1...3) {
+      eval {
+        local $SIG{ALRM} = sub { die('ALARM'); };
+        alarm(5);
+        $st->flock($do_lock);
+        alarm(0);
+      };
+      if($@ and $@ =~ /ALARM/) {
+        $PL->e("on attempt", $_, "unable to flock $stats_db after 5 seconds.");
+      }
+      else {
+        undef($st);
+        return \@all_stats;
+      }
+    }
   }
-  print T "$port\n";
-  close T;
-  $ENV{'ZRM_CONF'}=$f;
-  $f = tmpnam();
-  my $ofile = basename($f);
-  $f = tmpnam();
-  my $efile = basename($f);
-  my $cmd = "/usr/share/mysql-zrm/plugins/socket-copy.palomino.pl $params > $tmp_directory/$ofile 2>$tmp_directory/$efile";
-  &printLog( "$cmd\n" );
-  my $r = system( $cmd );
-  if( $r == 0 ){
-    &printFileToServer( "SUCCESS", "$tmp_directory/$ofile" );
-  }else{
-    &printFileToServer( "ERROR", "$tmp_directory/$efile" );
-  }
+  undef($st);
+  untie(@all_stats);
+  return undef;
 }
 
 sub record_backup {
   my ($type, $start_tm, $end_tm, $sz, $status, $info) = @_;
-  my (@all_stats, $i, $upd) = ((), 0, 0);
+  my ($all_stats, $i, $upd) = ((), 0, 0);
+  my $cnt = 0;
   if(not defined $type or not defined $start_tm) {
     die("Programming error. record_backup() needs at least two parameters.");
   }
   $end_tm = '-' if(not defined $end_tm);
   $sz = '-' if(not defined $sz);
-  $status = '-' if(not defined $status);
+  $status = $$ if(not defined $status);
   $info = '-' if(not defined $info);
 
+  $all_stats = open_stats_db(LOCK_EX);
+  if(not defined $all_stats) {
+    untie(@$all_stats);
+    printAndDie("ERROR", "unable to get an exclusive lock on the stats db $stats_db");
+  }
 
-  tie @all_stats, 'Tie::File', $stats_db or &printAndDie("ERROR", "unable to open the stats database $stats_db");
-  for($i = 0; $i < @all_stats; $i++) {
-    my $stat = $all_stats[$i];
+  for($i = 0; $i < @$all_stats; $i++) {
+    my $stat = $$all_stats[$i];
     my ($stype, $sstart, $send, $ssize, $sstatus, $sinfo) = split(/\t/, $stat);
-    if($stype eq $type and $start_tm == $sstart) {
-      $all_stats[$i] = join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
+    if(!$upd and $stype eq $type and $start_tm == $sstart) {
+      $$all_stats[$i] = join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
       $upd = 1;
-      last;
+      next;
+    }
+    if($stype eq $type) {
+      if($cnt > 30) {
+        delete $$all_stats[$i];
+      }
+      else {
+        $cnt++;
+      }
     }
   }
   unless($upd) {
-    push @all_stats, join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
+    unshift @$all_stats, join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
   }
+  untie(@$all_stats);
 }
 
 sub doMonitor {
-  my ($type, $cnt) = split(/\s+/, $params);
-  my (@all_stats, $i) = ((), 0);
-  tie @all_stats, 'Tie::File', $stats_db or &printAndDie("ERROR", "unable to open the stats database $stats_db");
-  foreach my $stat (@all_stats) {
+  my ($newer_than, $max_items) = (0, 0);
+  my ($all_stats, $i) = ((), 0);
+  if(not defined $params) { # modern client: > 0.75.1 
+    $newer_than = $hdr{newer_than};
+    $max_items = $hdr{max_items};
+  }
+  else { # legacy 1.8b7_palomino
+    ($newer_than, $max) = split(/\s+/, $params);
+  }
+
+  $all_stats = open_stats_db(LOCK_SH);
+  if(not defined $all_stats) {
+    untie(@$all_stats);
+    printAndDie("ERROR", "unable to get a lock on the stats db $stats_db");
+  }
+
+  foreach my $stat (@$all_stats) {
     my ($stype, $sstart, $send, $ssize, $sstatus, $info) = split(/\t/, $stat);
-    if($stype eq $type) {
+    if($sstart >= $newer_than) {
       print STDOUT $stat, "\n";
       $i++;
     }
-    if($i == $cnt) {
+    if($i == $max) {
       last;
     }
   }
+  untie(@$all_stats);
 }
 
-&printLog( "Client started\n" );
+printLog("Server($VERSION) started.");
 STDIN->autoflush(1);
 STDOUT->autoflush(1);
-&getInputs();
+getHeader();
+printLog("Client Version: $REMOTE_VERSION" );
 
 # xtrabackup  Ver 0.9 Rev 83 for 5.0.84 unknown-linux-gnu (x86_64)
 eval {
   unless(Which::which('xtrabackup') and Which::which('innobackupex-1.5.1')) {
-    &printToServer("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
+    printToServer("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
   }
   $_ = qx/xtrabackup --version 2>&1/;
   if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
     if($MIN_XTRA_VERSION > $1) {
-      &printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+      printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
     }
   }
   else {
-    &printAndDie("ERROR", "xtrabackup did not return a valid version string");
+    printAndDie("ERROR", "xtrabackup did not return a valid version string");
   }
 };
 if($@) {
   chomp($@);
-  &printAndDie("ERROR", "xtrabackup not present or otherwise not executable. $@");
+  printAndDie("ERROR", "xtrabackup not present or otherwise not executable. $@");
 }
 
 
 if( $action eq "copy from" ){
   if(-f "/tmp/zrm-innosnap/running" ) {
-    &printLog(" Redirecting to innobackupex. \n");
+    printLog(" Redirecting to innobackupex. \n");
     open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
     $_ = <FAKESNAPCONF>; # timestamp
     chomp($_);
     if((time - int($_)) >= 300) {
-      &printLog("  Caught stale inno-snapshot - deleting.\n");
+      printLog("  Caught stale inno-snapshot - deleting.\n");
       unlink("/tmp/zrm-innosnap/running");
     }
     else {
@@ -648,42 +751,37 @@ if( $action eq "copy from" ){
       $params .= " --password=$_ ";
       $mysql_pass=$_;
 
-      $tmp_directory=&getTmpName();
+      $tmp_directory=getTmpName();
       my $r = mkdir( $tmp_directory );
       if( $r == 0 ){
-        &printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+        printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
       }
-      &doRealHotCopy( $tmp_directory );
+      doRealHotCopy( $tmp_directory );
     }
   }
   else {
     my @suf;
     my $file = basename( $params, @suf );
     my $dir = dirname( $params );
-    &writeTarStream( $dir, $file );
+    writeTarStream( $dir, $file );
   }
 }elsif( $action eq "copy between" ){
-  $tmp_directory=&getTmpName();
-  my $r = mkdir( $tmp_directory );
-  if( $r == 0 ){
-    &printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
-  }
-  &doCopyBetween();
+  printToServer("ERROR", "Unsupported action.");
 }elsif( $action eq "copy to" ){
   if( ! -d $params ){
-    &printAndDie( "$params not found\n" );
+    printAndDie( "$params not found\n" );
   }
-  &readTarStream( $params );
+  readTarStream( $params );
 }elsif( $action eq "snapshot" ){
-  $tmp_directory=&getTmpName();
+  $tmp_directory=getTmpName();
   my $r = mkdir( $tmp_directory, 0700 );
-  &doSnapshotCommand( $tmp_directory );
+  doSnapshotCommand( $tmp_directory );
 }elsif( $action eq "monitor" ) {
   doMonitor();
 }else{
   $PL->i("Unknown action: $action, ignoring.");
 }
-&printLog( "Client clean exit\n" );
-&my_exit( 0 );
+printLog( "Server exit" );
+my_exit( 0 );
 
 1;

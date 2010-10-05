@@ -65,7 +65,7 @@ my $CP="cp -pr";
 
 my $MYSQL_BINPATH="/usr/bin";
 
-my $VERSION = "1.8b7_palomino";
+my $VERSION = "0.75.1";
 my $srcHost = "localhost";
 my $destHost = "localhost";
 my $destDir;
@@ -95,7 +95,47 @@ elsif($^O eq "freebsd") {
   $TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-  #&printAndDie("Unable to determine which tar options to use!");
+  printAndDie("Unable to determine which tar options to use!");
+}
+
+# Reads a key=value block from the incoming stream.
+# The format of a key=value block is as follows:
+# <number of lines(N) to follow>\n
+# <key=value\n>{N}
+#
+# N, is allowed to be 0.
+# This function returns a hashref of the read key=value pairs.
+#
+sub readKvBlock {
+  my $fh = shift;
+  my (%kv, $i, $N) = ((), 0, 0);
+  chomp($N = <$fh>);
+  checkIfTainted($N);
+  if($N !~ /^\d+$/) {
+    printAndDie("Bad input: $_");
+  }
+  for($i = 0; $i < $N; $i++) {
+    chomp($_ = <$fh>);
+    checkIfTainted($_);
+    my ($k, $v) = split(/=/, $_, 2);
+    $kv{$k} = $v;
+  }
+  return \%kv;
+}
+
+# Given a realhash, this returns a string in the format:
+# <N>\n
+# <key>=<value>\n{N}
+#
+# Where 'N' is the number of keys in the hash.
+#
+sub makeKvBlock {
+  my %Kv = @_;
+  my $out = scalar(keys %Kv). "\n";
+  foreach my $k (keys %Kv) {
+    $out .= "$k=$Kv{$k}\n";
+  }
+  return $out;
 }
 
 sub printAndDie {
@@ -110,8 +150,7 @@ sub my_exit {
 }
 
 # Parses the command line for all of the copy parameters
-sub getCopyParameters()
-{
+sub getCopyParameters {
   my %opt;
   my $ret = GetOptions( \%opt,
     "source-host=s",
@@ -146,7 +185,7 @@ sub getCopyParameters()
   }
 
   if( $srcHost eq "localhost" && $destHost eq "localhost" ){
-    &doLocalTar();
+    doLocalTar();
     my_exit(0);
   }
 
@@ -179,8 +218,7 @@ sub getCopyParameters()
   $pl->m("socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir");
 }
 
-sub doLocalTar()
-{
+sub doLocalTar {
   my $cmd;
   my $tarCmd = $^O eq "linux" ? "$TAR --same-owner -psC " : "$TAR -pC";
 
@@ -216,12 +254,11 @@ sub doLocalTar()
     unlink $d;
   }
   if( $r > 0 ){
-    &printAndDie("Could not copy data $!");
+    printAndDie("Could not copy data $!");
   }
 }
 
-sub getSnapshotParams()
-{
+sub getSnapshotParams {
   my $y = shift @ARGV;
   my %opt;
   GetOptions( \%opt,
@@ -233,8 +270,7 @@ sub getSnapshotParams()
 }
 
 # This will parse the command line arguments
-sub getInputs()
-{
+sub getInputs {
   my $len = @ARGV;
   if( $len == 0 ){
     die "This plugin is meant to be invoked from mysql-zrm only\n";
@@ -253,9 +289,8 @@ sub getInputs()
 
 
 #This will opne the connection to the remote host
-sub connectToHost()
-{
-  $pl->m('connect-to-host:\thost:', $host, '\tport:', $REMOTE_PORT);
+sub connectToHost {
+  $pl->m("connect-to-host:\thost:", $host, "\tport:", $REMOTE_PORT);
   my $iaddr = inet_aton($host) or die "no host: $host";
   my $paddr = sockaddr_in($REMOTE_PORT, $iaddr);
   my $proto = getprotobyname('tcp');
@@ -268,25 +303,25 @@ sub connectToHost()
 }
 
 # This will send the required arguments to the remote host
-sub sendArgsToRemoteHost()
-{
-  my $tmp=File::Spec->tmpdir();
-  $pl->m('send-args-to-host:\n', join("\n  ", ($VERSION, $action, $params, $tmp, $REMOTE_MYSQL_BINPATH)));
+sub sendArgsToRemoteHost {
+  my $tmp = File::Spec->tmpdir();
+  my $args = makeKvBlock('action' => $action, 'tmpdir' => $tmp, %config);
+  $pl->m("send-args-to-host:\n", $args);
   print SOCK "$VERSION\n";
-  print SOCK "$action\n";
-  print SOCK "$params\n";
-  print SOCK "$tmp\n";
-  print SOCK "$REMOTE_MYSQL_BINPATH\n";
+  print SOCK $args;
+  $_ = <SOCK>;
+  if(!/READY/) {
+    printAndDie("Socket server did not come up properly. Expected: READY, Got: $_");
+  }
 }
 
 # This will read the data from the socket and pipe the output to tar
-sub readTarStream()
-{
+sub readTarStream {
   my $tmpfile = tmpnam();
   my $tar_cmd = "|$TAR $TAR_READ_OPTIONS $destDir 2>$tmpfile";
   $pl->m("read-tar-stream:\n\t$tar_cmd\n");
   unless( open( TAR_H, "$tar_cmd" ) ){
-    &printAndDie("tar failed $!");
+    printAndDie("tar failed $!");
   }
   binmode( TAR_H );
 
@@ -311,13 +346,12 @@ sub readTarStream()
     unlink $tmpfile;
   }
   unless( close(TAR_H) ){
-    &printAndDie('tar pipe failed');
+    printAndDie('tar pipe failed');
   }
 }
 
 # This will read the data from the socket and pipe the output to tar
-sub readInnoBackupStream()
-{
+sub readInnoBackupStream {
   my $tar_cmd = "|$TAR ";
   my $tmpfile = tmpnam();
   if( $config{'tar-force-ownership'} == 0 ) {
@@ -330,7 +364,7 @@ sub readInnoBackupStream()
   $pl->m("read-inno-tar-stream:", $tar_cmd);
 
   unless( open( TAR_H, "$tar_cmd" ) ){
-    &printAndDie("tar failed $!");
+    printAndDie("tar failed $!");
   }
   binmode( TAR_H );
 
@@ -362,7 +396,7 @@ sub readInnoBackupStream()
     unlink $tmpfile;
   }
   unless( close(TAR_H) ){
-    &printAndDie("tar pipe failed");
+    printAndDie("tar pipe failed");
   }
 
   if( $config{'apply-xtrabackup-log'} == 1 ) {
@@ -373,17 +407,18 @@ sub readInnoBackupStream()
     if($r{rcode} != 0) {
       $pl->i("Applying the innobackup logs failed.");
     }
-    if($r{error}) { &printAndDie("Error executing innobackupex."); }
+    if($r{error}) {
+      printAndDie("Error executing innobackupex.");
+    }
   }
 }
 
 #This will tar the directory and write output to the socket
 #$_[0] dirname
 #$_[1] filename
-sub writeTarStream()
-{
+sub writeTarStream {
   unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $_[1] 2>/dev/null|" ) ){
-    &printAndDie( "tar failed $!\n" );
+    printAndDie( "tar failed $!\n" );
   }
   binmode( TAR_H );
   my $buf;
@@ -399,8 +434,7 @@ sub writeTarStream()
 # This reads the conf file that is prepared by mysql-zrm.
 # Please note this does not do any validation of the config file
 # pointed to by $ZRM_CONF in the enviornment
-sub parseConfFile()
-{
+sub parseConfFile {
   unless( exists $ENV{ZRM_CONF} and open( FH, $ENV{ZRM_CONF} ) ){
     die "Unable to open config file. The ZRM_CONF environment variable isn't set.\n";
   }
@@ -417,8 +451,7 @@ sub parseConfFile()
 }
 
 # Setup the parameters that are relevant from the conf
-sub setUpConfParams()
-{
+sub setUpConfParams {
   if( $config{"socket-remote-port"} ){
     $REMOTE_PORT = $config{"socket-remote-port"};
   }
@@ -441,8 +474,7 @@ sub setUpConfParams()
   }
 }
 
-sub doSnapshotCommand()
-{
+sub doSnapshotCommand {
   $pl->m("do-snapshot:\tplugin:",$config{'snapshot-plugin'});
   print SOCK $config{"snapshot-plugin"}."\n";
   my $num = @snapshotParamList;
@@ -459,6 +491,9 @@ sub doSnapshotCommand()
   $pl->m('  result:', $status);
   $num = <SOCK>;
   chomp($num);
+  if($num !~ /^\d+$/) {
+    printAndDie("$num");
+  }
   my $i;
   for( $i = 0 ; $i < $num; $i++ ){
     my $r = <SOCK>;
@@ -497,10 +532,8 @@ sub doCopyBetween()
 
 }
 
-
-
-&parseConfFile();
-&setUpConfParams();
+parseConfFile();
+setUpConfParams();
 
 $pl = ProcessLog->new('socket-copy', $config{'socket-copy-logfile'}, $config{'socket-copy-email'});
 $pl->quiet(1); # Hide messages from the console.
@@ -518,27 +551,27 @@ if( $config{"tar-force-ownership"} == 0 or $config{"tar-force-ownership"} =~ /[N
   }
 }
 
-&getInputs();
+getInputs();
 if(defined $host) {
-  &connectToHost();
-  &sendArgsToRemoteHost();
-  if( $action eq "copy from" ){
-    &readInnoBackupStream();
-  }elsif( $action eq "mysqlhotcopy" ){
-    &printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
-  }elsif( $action eq "copy between" ){
-    &doCopyBetween();
-  }elsif( $action eq "copy to" ){
-    my @suf;
-    my $file = basename( $srcFile, @suf );
-    my $dir = dirname( $srcFile );
-    &writeTarStream( $dir, $file );
-  }elsif( $action eq "snapshot" ){
-    &doSnapshotCommand( $params );
-  }
-  close( SOCK );
-  select( undef, undef, undef, 0.250 );
+  connectToHost();
+  sendArgsToRemoteHost();
 }
+if( $action eq "copy from" ){
+  readInnoBackupStream();
+}elsif( $action eq "mysqlhotcopy" ){
+  printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
+}elsif( $action eq "copy between" ){
+  doCopyBetween();
+}elsif( $action eq "copy to" ){
+  my @suf;
+  my $file = basename( $srcFile, @suf );
+  my $dir = dirname( $srcFile );
+  writeTarStream( $dir, $file );
+}elsif( $action eq "snapshot" ){
+  doSnapshotCommand( $params );
+}
+close( SOCK );
+select( undef, undef, undef, 0.250 );
 
 my_exit(0);
 1;
