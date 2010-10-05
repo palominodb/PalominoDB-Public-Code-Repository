@@ -200,10 +200,12 @@ sub main {
   if($o{'create-dirs'}) {
     eval {
       mkpath($datadir);
-      mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
+      if(exists $cfg{'mysqld'}{'log-bin'}) {
+        mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     };
     if($@) {
-      $pl->e("Unable to create all directories for $datadir.", $@);
+      $pl->e("Unable to create directories:", $datadir, $cfg{'mysqld'}{'log-bin'}, "\n", "exception:", $@);
       return 1;
     }
   }
@@ -229,10 +231,12 @@ sub main {
   # being used like a scratch area.
   unless($o{'dry-run'}) {
     unless($o{'skip-extract'}) {
-      $pl->m("Removing contents of $datadir.");
+      $pl->m("Removing contents of mysqld.datadir:", $datadir);
       Path::dir_empty($datadir);
-      $pl->m("Removing contents of $cfg{'mysqld'}{'log-bin'}.");
-      Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
+      if($cfg{'mysqld'}{'log-bin'}) {
+        $pl->m("Removing contents of mysqld.log-bin:", dirname($cfg{'mysqld'}{'log-bin'}));
+        Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     }
     else {
       $pl->i("Skipping emptying $datadir due to --skip-extract");
