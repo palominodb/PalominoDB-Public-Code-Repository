@@ -370,7 +370,14 @@ UPDATE_ROW_TOP:
     }
     elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
       no strict 'refs';
-      push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col});
+      push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col}, $col, $row);
+      # perlsubs called via the module interface
+      # should signal that they deleted the row by returning an empty hashref.
+      # The code will fall through to the update, which should simply do nothing,
+      # since the row is now missing.
+      if(ref($vals[-1]) eq 'HASH') {
+        last COLUMN;
+      }
       next COLUMN;
     }
 
@@ -400,7 +407,7 @@ UPDATE_ROW_TOP:
   ProcessLog::_PdbDEBUG >= 2 && $pl->d("SQL:", "UPDATE `$db`.`$cur_tbl` SET ". join("=?, ", sort keys %$tbl_config) ."=? WHERE `$idx_col`=?");
   ProcessLog::_PdbDEBUG >= 2 && $pl->d("SQL Bind:", @vals, $row->{$idx_col});
   eval {
-    $sth->execute(@vals, $row->{$idx_col}) unless($dry_run);
+    $sth->execute(@vals, $row->{$idx_col}) unless($dry_run or ref($vals[-1]) eq 'HASH');
   };
   if($@ and $@ =~ /.*Duplicate entry/) {
     if($max_retries and $retries < $max_retries) {
@@ -585,9 +592,12 @@ C<random> generates several randomly sized random strings per row and selects on
 
 C<module:> is the most flexible, it allows you to load an arbitrary perl module
 and then use the C<method> parameter to call a subroutine in it. The sub will
-recieve a handle to the database connection, and the column data.
+recieve a handle to the database connection, the column data,
+the name of the column, and a hashref of the row data.
 
 The perl subroutine is expected to return the new value for the column.
+If the subroutine deletes the row in question, it should return a hashref so
+that the rest of the main loop is skipped.
 
 =item C<method>
 
