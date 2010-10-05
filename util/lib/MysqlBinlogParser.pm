@@ -38,6 +38,7 @@ package MysqlBinlogParser;
 use strict;
 use warnings FATAL => 'all';
 use MIME::Base64;
+use Fcntl qw(:seek);
 use Carp;
 
 ## These constants describe attributes useful for reading a binlog event
@@ -245,6 +246,16 @@ sub _read_header {
     croak('Binlogs in v3 format not supported');
   }
 
+}
+
+## seek to a position in the binlog
+## presently does no validation of supplied position
+sub seek {
+  my ($self, $pos) = @_;
+  unless(CORE::seek($$self{fh}, SEEK_SET, $pos)) {
+    croak($!);
+  }
+  return 0;
 }
 
 ## Low-level read routine which just returns an event with its binary payload.
