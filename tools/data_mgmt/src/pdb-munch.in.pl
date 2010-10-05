@@ -587,6 +587,8 @@ C<module:> is the most flexible, it allows you to load an arbitrary perl module
 and then use the C<method> parameter to call a subroutine in it. The sub will
 recieve a handle to the database connection, and the column data.
 
+The perl subroutine is expected to return the new value for the column.
+
 =item C<method>
 
 One of: random, roundrobin, or the name of a perl subroutine.
