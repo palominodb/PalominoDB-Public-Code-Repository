@@ -4,14 +4,14 @@ TLIB_PATH = ../../util/t/lib
 TOOLS_RELEASE = 0.08
 HARNESS_PERL_SWITCHES='-MDevel::Cover=+ignore,.+\.t'
 
-all: dirs pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge pdb-munch
+all: bin pdb-archiver pdb-parted pdb-packer pdb-master pdb-zrm-restore pdb-sandbox-merge pdb-munch
 
 test:
 	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
 	cover
 
-dirs:
-	-mkdir bin
+bin:
+	mkdir bin
 
 pdb-archiver:
 	perl -I$(TOOL_PATH) $(TOOL_PATH)/make_dist $(LIB_PATH) src/pdb-archiver.in.pl bin/pdb-archiver
