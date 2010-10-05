@@ -33,6 +33,11 @@ use English qw(-no_match_vars);
 use Getopt::Long qw(:config no_ignore_case);
 require 'insert_module';
 
+BEGIN {
+  die("Need PDB_CODE_ROOT set in the environment to the base of a checkout") unless($ENV{PDB_CODE_ROOT});
+}
+
+my $manifest_ver = "";
 my $input = "";
 my @module_paths;
 my @modules;
@@ -50,16 +55,18 @@ my $infile = shift @ARGV;
 my $outfile = shift @ARGV;
 
 {
+  local $/ = undef;
+
   open my $file, "<$infile";
-  $/ = undef;
   $input = <$file>;
   close $file;
-}
-my $script_ver = qx@../../util/gitver.sh $infile@;
-chop($script_ver);
 
-$input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
-$input =~ s/\bGIT_SCRIPT_VERSION\b/$script_ver/g;
+  open $file, "<$ENV{PDB_CODE_ROOT}/manifest.uuid";
+  chomp($manifest_ver = <$file>);
+  close $file;
+}
+
+$input =~ s/\bMANIFEST_BUILD\b/$manifest_ver/g;
 
 (@modules) = $input =~ /^# ([A-Z0-9a-z_]+(?:::[A-Z0-9a-z_]+)*) package (?:[a-f0-9]{40}|GIT_VERSION|FSL_VERSION)/mg;
 
