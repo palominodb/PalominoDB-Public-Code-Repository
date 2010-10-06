@@ -192,6 +192,15 @@ sub main {
     $pl->e("Unable to load $c{spec}.");
     return 1;
   }
+
+  ## Load the config file into a hash
+  ## This is done before loading custom perl modules so that
+  ## this data is available when they load.
+  %conf = IniFile::read_config($c{config});
+  if(not %conf) {
+    $pl->e("Unable to load $c{config}");
+    return 1;
+  }
   
   ## Verify each datatype in the spec.
   foreach my $type (keys %spec) {
@@ -232,12 +241,7 @@ sub main {
     }
   }
   
-  ## Load the config file into a hash
-  %conf = IniFile::read_config($c{config});
-  if(not %conf) {
-    $pl->e("Unable to load $c{config}");
-    return 1;
-  }
+
   
   ProcessLog::_PdbDEBUG >= 3 && $pl->d("Spec:", Dumper(\%spec));
   ProcessLog::_PdbDEBUG >= 3 && $pl->d("Config:", Dumper(\%conf));
