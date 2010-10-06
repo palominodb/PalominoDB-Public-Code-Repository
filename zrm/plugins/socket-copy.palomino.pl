@@ -367,13 +367,13 @@ sub readInnoBackupStream()
 
   if( $config{'backup-level'} == 0 and $config{'apply-xtrabackup-log'} == 1 ) {
     $pl->m("Applying logs..");
-    my %r = $pl->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
-    my $fh = $r{fh};
+    my $r = $pl->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
+    my $fh = $$r{fh};
     while(<$fh>) { $pl->m($_); }
-    if($r{rcode} != 0) {
+    if($$r{rcode} != 0) {
       $pl->i("Applying the innobackup logs failed.");
     }
-    if($r{error}) { &printAndDie("Error executing innobackupex."); }
+    if($$r{error}) { &printAndDie("Error executing innobackupex."); }
   }
 }
 
