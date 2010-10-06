@@ -241,15 +241,13 @@ sub main {
     }
   }
   
-
-  
   ProcessLog::_PdbDEBUG >= 3 && $pl->d("Spec:", Dumper(\%spec));
   ProcessLog::_PdbDEBUG >= 3 && $pl->d("Config:", Dumper(\%conf));
   
   ## Get connection information out of the config file
-  $dsn = $dsnp->parse($conf{connection}{dsn});
+  $dsn = $dsnp->parse($conf{'__connection__'}{'dsn'});
   $db  = $dsn->get('D');
-  delete $conf{connection};
+  delete $conf{'__connection__'};
   $tbl_indexer = TableIndexes->new($dsn);
   
   load_resume($c{resume}) if($c{resume});
@@ -374,7 +372,7 @@ UPDATE_ROW_TOP:
     }
     elsif($spec{$$tbl_config{$col}}->{source} eq "module") {
       no strict 'refs';
-      push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col}, $col, $row);
+      push @vals, &{$spec{$$tbl_config{$col}}->{method}}($dbh, $row->{$col}, $idx_col, $col, $row);
       # perlsubs called via the module interface
       # should signal that they deleted the row by returning an empty hashref.
       # The code will fall through to the update, which should simply do nothing,
@@ -528,7 +526,7 @@ In order to start pdb-munch for a new
 The config file defines which host to connect to, and what columns in which
 tables to modify. Example:
 
-  [connection]
+  [__connection__]
   dsn =   h=testdb,u=root,p=pass,D=testdb
   
   ;; Tables
@@ -540,7 +538,7 @@ tables to modify. Example:
   name = name
   email = email_righthand
   
-The C<connection> section has only one parameter: C<dsn>, it specifies
+The C<__connection__> section has only one parameter: C<dsn>, it specifies
 the connection information. It's a list of key-value pairs separated by
 commas. Description of keys:
 
@@ -596,8 +594,8 @@ C<random> generates several randomly sized random strings per row and selects on
 
 C<module:> is the most flexible, it allows you to load an arbitrary perl module
 and then use the C<method> parameter to call a subroutine in it. The sub will
-recieve a handle to the database connection, the column data,
-the name of the column, and a hashref of the row data.
+recieve a handle to the database connection, the column data, the name of the
+index column, the name of the current column, and a hashref of the row data.
 
 The perl subroutine is expected to return the new value for the column.
 If the subroutine deletes the row in question, it should return a hashref so
