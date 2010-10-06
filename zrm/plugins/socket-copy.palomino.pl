@@ -365,7 +365,7 @@ sub readInnoBackupStream()
     &printAndDie("tar pipe failed");
   }
 
-  if( $config{'apply-xtrabackup-log'} == 1 ) {
+  if( $config{'backup-level'} == 0 and $config{'apply-xtrabackup-log'} == 1 ) {
     $pl->m("Applying logs..");
     my %r = $pl->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
     my $fh = $r{fh};
