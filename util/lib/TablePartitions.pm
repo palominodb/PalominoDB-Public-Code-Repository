@@ -186,9 +186,6 @@ sub has_maxvalue_data {
       if($fn) {
         $descr = "$cfn($descr)";
       }
-      else {
-        die("No support for maxvalue calculation unless using to_days or unix_timestamp for dates");
-      }
     }
   }
   else {
