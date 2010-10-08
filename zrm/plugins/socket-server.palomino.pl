@@ -72,7 +72,7 @@ my $INNOBACKUPEX="innobackupex-1.5.1";
 my $VERSION="1.8b7_palomino";
 my $MIN_XTRA_VERSION=1.0;
 
-my $logDir = "/var/log/mysql-zrm";
+my $logDir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
 my $logFile = "$logDir/socket-server.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
@@ -561,7 +561,8 @@ sub doCopyBetween()
 
 sub record_backup {
   my ($type, $start_tm, $end_tm, $sz, $status, $info) = @_;
-  my (@all_stats, $i, $upd) = ((), 0, 0);
+  my @all_stats = ();
+  my ($i, $upd) = (0, 0);
   if(not defined $type or not defined $start_tm) {
     die("Programming error. record_backup() needs at least two parameters.");
   }
@@ -574,6 +575,7 @@ sub record_backup {
   tie @all_stats, 'Tie::File', $stats_db or &printAndDie("ERROR", "unable to open the stats database $stats_db");
   for($i = 0; $i < @all_stats; $i++) {
     my $stat = $all_stats[$i];
+    next if($stat =~ /^$/);
     my ($stype, $sstart, $send, $ssize, $sstatus, $sinfo) = split(/\t/, $stat);
     if($stype eq $type and $start_tm == $sstart) {
       $all_stats[$i] = join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
@@ -584,15 +586,18 @@ sub record_backup {
   unless($upd) {
     push @all_stats, join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
   }
+  untie(@all_stats);
 }
 
 sub doMonitor {
-  my ($type, $cnt) = split(/\s+/, $params);
-  my (@all_stats, $i) = ((), 0);
+  my ($start_tm, $cnt) = split(/\s+/, $params);
+  my @all_stats  = ();
+  my $i = 0;
+  printLog("stats db: $stats_db");
   tie @all_stats, 'Tie::File', $stats_db or &printAndDie("ERROR", "unable to open the stats database $stats_db");
   foreach my $stat (@all_stats) {
     my ($stype, $sstart, $send, $ssize, $sstatus, $info) = split(/\t/, $stat);
-    if($stype eq $type) {
+    if($sstart <= $start_tm) {
       print STDOUT $stat, "\n";
       $i++;
     }
@@ -600,6 +605,7 @@ sub doMonitor {
       last;
     }
   }
+  untie(@all_stats);
 }
 
 &printLog( "Client started\n" );
