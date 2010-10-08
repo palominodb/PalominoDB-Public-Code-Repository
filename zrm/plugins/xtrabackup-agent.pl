@@ -31,7 +31,7 @@ use warnings FATAL => 'all';
 # End Which package
 # ###########################################################################
 
-package main;
+package XtraBackupAgent;
 use strict;
 use warnings FATAL => 'all';
 use File::Path;
@@ -47,7 +47,7 @@ use Tie::File;
 use Fcntl qw(:flock);
 
 # client supplied header data
-my %hdr = ();
+my %HDR = ();
 
 # Default location for xtrabackup-agent to place any temporary files necessary.
 my $GLOBAL_TMPDIR = "/tmp";
@@ -57,8 +57,12 @@ $ENV{PATH}="/usr/local/bin:/opt/csw/bin:/usr/bin:/usr/sbin:/bin:/sbin";
 my $TAR = "tar";
 my $TAR_WRITE_OPTIONS = "";
 my $TAR_READ_OPTIONS = "";
-my $LS = "ls";
 
+# For testing purposes, it's nice to be able to have the agent
+# communicate over alternate filehandles.
+# Normally these refer to STDIN and STDOUT, respectively.
+my $Input_FH;
+my $Output_FH;
 
 my $tmp_directory;
 my $action;
@@ -66,7 +70,7 @@ my $params;
 
 my $INNOBACKUPEX="innobackupex-1.5.1";
 
-my $VERSION="0.75.1";
+our $VERSION="0.75.1";
 my $REMOTE_VERSION = undef;
 my $MIN_XTRA_VERSION=1.0;
 
@@ -80,6 +84,7 @@ $SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
 $SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
 
 
+my $PL;
 my $stats_db       = "$logDir/stats.db";
 my $stats_history_len = 100;
 my $nagios_service = "MySQL Backups";
@@ -154,19 +159,19 @@ if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
   }
 }
 
-my $PL = ProcessLog->new('socket-server', $logFile);
-$PL->quiet(1);
 
 if($^O eq "linux") {
   $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
   $TAR_READ_OPTIONS = "--same-owner -xphsC";
 }
-elsif($^O eq "freebsd") {
+elsif($^O eq "freebsd" or $^O eq "darwin") {
   $TAR_WRITE_OPTIONS = " -cph -f - -C";
   $TAR_READ_OPTIONS = " -xp -f - -C";
 }
 else {
-  printAndDie("Unable to determine which tar options to use!\n");
+  # Assume GNU compatible tar
+  $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
+  $TAR_READ_OPTIONS = "--same-owner -xphsC";
 }
 
 # This validates all incoming data, to ensure it's sane.
@@ -281,7 +286,7 @@ sub makeKvBlock {
 # There is no communication back from server to client in this version.
 #
 sub getHeader {
-  $REMOTE_VERSION = <STDIN>;
+  $REMOTE_VERSION = <$Input_FH>;
   chomp($REMOTE_VERSION);
   $REMOTE_VERSION = checkIfTainted($REMOTE_VERSION);
 
@@ -289,7 +294,7 @@ sub getHeader {
     my @inp;
     &printLog("Client is a legacy version.");
     for( my $i = 0; $i < 4; $i++ ){
-      $_ = <STDIN>;
+      $_ = <$Input_FH>;
       push @inp, $_;
     }
     chomp(@inp);
@@ -301,12 +306,12 @@ sub getHeader {
   if(!isClientCompatible()) {
     printAndDie("Incompatible client version.");
   }
-  %hdr = %{readKvBlock(\*STDIN)};
-  unless(exists $hdr{'action'}) {
+  %HDR = %{readKvBlock(\*$Input_FH)};
+  unless(exists $HDR{'action'}) {
     printAndDie("Missing required header key 'action'.");
   }
-  $action = $hdr{'action'};
-  print "READY\n";
+  $action = $HDR{'action'};
+  print $Output_FH "READY\n";
 }
 
 sub restore_wait_timeout {
@@ -420,8 +425,8 @@ sub doRealHotCopy {
         if( sysread( INNO_TAR, $buf, 10240 ) ) {
           $backup_sz += length($buf);
           my $x = pack( "u*", $buf );
-          print STDOUT pack( "N", length( $x ) );
-          print STDOUT $x;
+          print $Output_FH pack( "N", length( $x ) );
+          print $Output_FH $x;
         }
         else {
           printLog("closed tar handle\n");
@@ -457,33 +462,35 @@ sub sendNagiosAlert {
 #$_[0] dirname
 #$_[1] filename
 sub writeTarStream {
+  my ($stream_from, $file) = @_;
   my ($start_tm, $backup_sz) = (time(), 0);
-  my $fileList = $_[1];
+  my $fileList = $file;
   my $lsCmd = "";
+  my $tar_fh;
 
   my $tmpFile = getTmpName();
 
   if( $_[1] =~ /\*/) {
-    $lsCmd = "cd $_[0]; $LS -1 $_[1] > $tmpFile 2>/dev/null;";
+    $lsCmd = "cd $stream_from; ls -1 $file > $tmpFile 2>/dev/null;";
     my $r = system( $lsCmd );
     $fileList = " -T $tmpFile";
   }
 
-  printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $_[0] $fileList\n");
-  unless(open( TAR_H, "$TAR $TAR_WRITE_OPTIONS $_[0] $fileList 2>/dev/null|" ) ) {
+  printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $stream_from $fileList\n");
+  unless(open( $tar_fh, "$TAR $TAR_WRITE_OPTIONS $stream_from $fileList 2>/dev/null|" ) ) {
     record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "$!");
     printAndDie( "tar failed $!\n" );
   }
-  binmode( TAR_H );
+  binmode( $tar_fh );
   my $buf;
-  while( read( TAR_H, $buf, 10240 ) ) {
+  while( read( $tar_fh, $buf, 10240 ) ) {
     my $x = pack( "u*", $buf );
     $backup_sz += length($buf);
-    print pack( "N", length( $x ) );
-    print $x;
+    print $Output_FH pack( "N", length( $x ) );
+    print $Output_FH $x;
     last if($stop_copy);
   }
-  close( TAR_H );
+  close( $tar_fh );
   printLog("tar exitval:", ($? >> 8));
   if(($? >> 8) == 2) {
     record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "no such file/directory: $fileList");
@@ -508,8 +515,10 @@ sub writeTarStream {
 
 #$_[0] dirname to stream the data to
 sub readTarStream {
-  printLog("readTarStream: $TAR $TAR_READ_OPTIONS $_[0]\n");
-  unless(open( TAR_H, "|$TAR $TAR_READ_OPTIONS $_[0] 2>/dev/null" ) ){
+  my ($extract_to) = @_;
+  my $tar_fh;
+  printLog("readTarStream: $TAR $TAR_READ_OPTIONS $extract_to\n");
+  unless(open( $tar_fh, "|$TAR $TAR_READ_OPTIONS $extract_to 2>/dev/null" ) ){
     printAndDie( "tar failed $!\n" );
   }
 
@@ -518,15 +527,15 @@ sub readTarStream {
   # This will be packed in network order
   # Then read that much data which is uuencoded
   # Then write the unpacked data to tar
-  while( read( STDIN, $buf, 4 ) ){
+  while( read( $Input_FH, $buf, 4 ) ){
     $buf = unpack( "N", $buf );
-    read STDIN, $buf, $buf;
-    print TAR_H unpack( "u", $buf );
+    read $Input_FH, $buf, $buf;
+    print $tar_fh unpack( "u", $buf );
   }
-  unless( close(TAR_H) ){
+  unless( close($tar_fh) ){
     printAndDie( "close of pipe failed\n" );
   }
-  close( TAR_H );
+  close( $tar_fh );
 }
 
 sub getTmpName {
@@ -553,14 +562,14 @@ sub printToServer {
     printLog( "status=$status cnt=1" , $msg);
     print "$status\n";
     print "1\n";
-    print "$msg\n"
+    print "$msg\n";
     return;
   }
   print makeKvBlock(status => $status, msg => $msg);
 }
 
 sub readOneLine {
-  my $line = <STDIN>;
+  my $line = <$Input_FH>;
   chomp( $line );
   $line = checkIfTainted( $line );
   return $line;
@@ -677,12 +686,12 @@ sub record_backup {
 sub doMonitor {
   my ($newer_than, $max_items) = (0, 0);
   my ($all_stats, $i) = ((), 0);
-  if(not defined $params) { # modern client: > 0.75.1 
-    $newer_than = $hdr{newer_than};
-    $max_items = $hdr{max_items};
+  if(not defined $params) { # modern client >= 0.75.1 
+    $newer_than = $HDR{newer_than};
+    $max_items = $HDR{max_items};
   }
-  else { # legacy 1.8b7_palomino
-    ($newer_than, $max) = split(/\s+/, $params);
+  else { # legacy client == 1.8b7_palomino
+    ($newer_than, $max_items) = split(/\s+/, $params);
   }
 
   $all_stats = open_stats_db(LOCK_SH);
@@ -697,91 +706,106 @@ sub doMonitor {
       print STDOUT $stat, "\n";
       $i++;
     }
-    if($i == $max) {
+    if($i == $max_items) {
       last;
     }
   }
   untie(@$all_stats);
 }
 
-printLog("Server($VERSION) started.");
-STDIN->autoflush(1);
-STDOUT->autoflush(1);
-getHeader();
-printLog("Client Version: $REMOTE_VERSION" );
-
-# xtrabackup  Ver 0.9 Rev 83 for 5.0.84 unknown-linux-gnu (x86_64)
-eval {
-  unless(Which::which('xtrabackup') and Which::which('innobackupex-1.5.1')) {
-    printToServer("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
-  }
-  $_ = qx/xtrabackup --version 2>&1/;
-  if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
-    if($MIN_XTRA_VERSION > $1) {
-      printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+sub checkXtraBackupVersion {
+  # xtrabackup  Ver 0.9 Rev 83 for 5.0.84 unknown-linux-gnu (x86_64)
+  eval {
+    unless(Which::which('xtrabackup') and Which::which('innobackupex-1.5.1')) {
+      printToServer("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
     }
-  }
-  else {
-    printAndDie("ERROR", "xtrabackup did not return a valid version string");
-  }
-};
-if($@) {
-  chomp($@);
-  printAndDie("ERROR", "xtrabackup not present or otherwise not executable. $@");
-}
-
-
-if( $action eq "copy from" ){
-  if(-f "/tmp/zrm-innosnap/running" ) {
-    printLog(" Redirecting to innobackupex. \n");
-    open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
-    $_ = <FAKESNAPCONF>; # timestamp
-    chomp($_);
-    if((time - int($_)) >= 300) {
-      printLog("  Caught stale inno-snapshot - deleting.\n");
-      unlink("/tmp/zrm-innosnap/running");
+    $_ = qx/xtrabackup --version 2>&1/;
+    if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
+      if($MIN_XTRA_VERSION > $1) {
+        printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+      }
     }
     else {
-      $_ = <FAKESNAPCONF>; # user
-      chomp($_);
-      $params .= " --user=$_ ";
-      $mysql_user=$_;
-      $_ = <FAKESNAPCONF>; # password
-      chomp($_);
-      $params .= " --password=$_ ";
-      $mysql_pass=$_;
-
-      $tmp_directory=getTmpName();
-      my $r = mkdir( $tmp_directory );
-      if( $r == 0 ){
-        printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
-      }
-      doRealHotCopy( $tmp_directory );
+      printAndDie("ERROR", "xtrabackup did not return a valid version string");
     }
+  };
+  if($@) {
+    chomp($@);
+    printAndDie("ERROR", "xtrabackup not present or otherwise not executable. $@");
   }
-  else {
-    my @suf;
-    my $file = basename( $params, @suf );
-    my $dir = dirname( $params );
-    writeTarStream( $dir, $file );
-  }
-}elsif( $action eq "copy between" ){
-  printToServer("ERROR", "Unsupported action.");
-}elsif( $action eq "copy to" ){
-  if( ! -d $params ){
-    printAndDie( "$params not found\n" );
-  }
-  readTarStream( $params );
-}elsif( $action eq "snapshot" ){
-  $tmp_directory=getTmpName();
-  my $r = mkdir( $tmp_directory, 0700 );
-  doSnapshotCommand( $tmp_directory );
-}elsif( $action eq "monitor" ) {
-  doMonitor();
-}else{
-  $PL->i("Unknown action: $action, ignoring.");
 }
-printLog( "Server exit" );
-my_exit( 0 );
+
+sub processRequest {
+  ($Input_FH, $Output_FH, $logFile) = @_;
+
+  $PL = ProcessLog->new('socket-server', $logFile);
+  $PL->quiet(1);
+
+  printLog("Server($VERSION) started.");
+  $Input_FH->autoflush(1);
+  $Output_FH->autoflush(1);
+  getHeader();
+  printLog("Client Version: $REMOTE_VERSION" );
+
+  checkXtraBackupVersion();
+
+  if( $action eq "copy from" ){
+    if(-f "/tmp/zrm-innosnap/running" ) {
+      printLog(" Redirecting to innobackupex. \n");
+      open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
+      $_ = <FAKESNAPCONF>; # timestamp
+      chomp($_);
+      if((time - int($_)) >= 300) {
+        printLog("  Caught stale inno-snapshot - deleting.\n");
+        unlink("/tmp/zrm-innosnap/running");
+      }
+      else {
+        $_ = <FAKESNAPCONF>; # user
+        chomp($_);
+        $params .= " --user=$_ ";
+        $mysql_user=$_;
+        $_ = <FAKESNAPCONF>; # password
+        chomp($_);
+        $params .= " --password=$_ ";
+        $mysql_pass=$_;
+        
+        $tmp_directory=getTmpName();
+        my $r = mkdir( $tmp_directory );
+        if( $r == 0 ){
+          printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+        }
+        doRealHotCopy( $tmp_directory );
+      }
+    }
+    else {
+      my @suf;
+      my $file = basename( $params, @suf );
+      my $dir = dirname( $params );
+      writeTarStream( $dir, $file );
+    }
+  }elsif( $action eq "copy between" ){
+    printToServer("ERROR", "Unsupported action.");
+  }elsif( $action eq "copy to" ){
+    if( ! -d $params ){
+      printAndDie( "$params not found\n" );
+    }
+    readTarStream( $params );
+  }elsif( $action eq "snapshot" ){
+    $tmp_directory=getTmpName();
+    my $r = mkdir( $tmp_directory, 0700 );
+    doSnapshotCommand( $tmp_directory );
+  }elsif( $action eq "monitor" ) {
+    doMonitor();
+  }else{
+    $PL->i("Unknown action: $action, ignoring.");
+  }
+  printLog( "Server exit" );
+  my_exit( 0 );
+}
+
+# if someone didn't "require xtrabackup-agent.pl" us, then
+# we can assume we're supposed to process a request and exit.
+if(!caller) { processRequest(\*STDIN, \*STDOUT, $logFile); }
 
 1;
+  
