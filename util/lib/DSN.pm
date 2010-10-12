@@ -91,16 +91,38 @@ sub str {
 
 sub get_dbi_str {
   my ($self) = @_;
+  my %set_implied = ();
   my %dsn_conv = (
     'h' => 'host',
-    'P' => 'port', 'F' => 'mysql_read_default_file',
+    'P' => 'port',
+    'F' => 'mysql_read_default_file',
     'G' => 'mysql_read_default_group',
     'S' => 'mysql_socket',
-    'D' => 'database'
+    'D' => 'database',
+    'SSL_key' => 'mysql_ssl_client_key',
+    'SSL_cert' => 'mysql_ssl_client_cert',
+    'SSL_CA' => 'mysql_ssl_ca_file',
+    'SSL_CA_path' => 'mysql_ssl_ca_path',
+    'SSL_cipher' => 'mysql_ssl_cipher'
   );
+  # options that are implied by the presense of another
+  # only one instance of an implied option will be added to the
+  # dbi string
+  my %opt_implied = (
+    'SSL_key' => 'mysql_ssl=1',
+    'SSL_cert' => 'mysql_ssl=1',
+    'SSL_CA' => 'mysql_ssl=1',
+    'SSL_CA_path' => 'mysql_ssl=1',
+    'SSL_cipher' => 'mysql_ssl=1'
+  );
+    
   my $dbh_str = 'DBI:mysql:';
 
   for(sort keys(%$self)) {
+    if(exists($opt_implied{$_}) and $self->has($_) and !$set_implied{$opt_implied{$_}}) {
+      $dbh_str .= $opt_implied{$_};
+      $set_implied{$opt_implied{$_}} = 1;
+    }
     $dbh_str .= $dsn_conv{$_} .'='. ($self->get($_) || '') .';'
     if(exists($dsn_conv{$_}) and $self->has($_));
   }
@@ -287,6 +309,31 @@ sub default {
     },
     'sK' => {
       'desc' => 'SSH Key',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_key' => {
+      'desc' => 'SSL client key',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_cert' => {
+      'desc' => 'SSL client certificate',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_CA' => {
+      'desc' => 'SSL client CA file',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_CA_path' => {
+      'desc' => 'SSL client CA path',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_cipher' => {
+      'desc' => 'SSL cipher',
       'default' => '',
       'mandatory' => 0
     }
