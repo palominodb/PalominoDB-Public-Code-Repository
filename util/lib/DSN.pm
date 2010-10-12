@@ -120,7 +120,7 @@ sub get_dbi_str {
 
   for(sort keys(%$self)) {
     if(exists($opt_implied{$_}) and $self->has($_) and !$set_implied{$opt_implied{$_}}) {
-      $dbh_str .= $opt_implied{$_};
+      $dbh_str .= $opt_implied{$_} . ';';
       $set_implied{$opt_implied{$_}} = 1;
     }
     $dbh_str .= $dsn_conv{$_} .'='. ($self->get($_) || '') .';'
@@ -354,7 +354,7 @@ sub parse {
   }
   foreach my $k ( keys %$dsn ) {
     if($dsn->{$k}->{'mandatory'} and ! exists($dsn->{$k}->{'value'})) {
-      croak('Missing key: '. $k .' in dsn');
+      croak('Missing key: '. $k .' ['. ($self->{'keys'}->{$k}->{'desc'}||'no description') .'] in dsn');
     }
   }
   return $dsn;
