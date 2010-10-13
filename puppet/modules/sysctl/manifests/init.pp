@@ -5,13 +5,15 @@ class sysctl {
     default => $sysctl_dest,
   }
 
-  file { "$dest":
+  file { 'sysctl.conf':
+    path   => $dest,
     ensure => "file",
     owner  => "root",
-    group  => "$operatingsystem ? {
+    group  => $operatingsystem ? {
       freebsd => "wheel",
       default => "root",
     },
     source => "puppet:///git-config/os/$ipaddress/sysctl.conf",
   }
 }
+

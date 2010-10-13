@@ -21,6 +21,13 @@ class mysql::user {
     shell  => $shell,
   }
 
+  file { "$homedir":
+    ensure => 'directory',
+    owner  => 'mysql',
+    group  => 'mysql',
+    mode   => '0755',
+  }
+
   file { "$homedir/.ssh":
     ensure => 'directory',
     owner => 'mysql',
