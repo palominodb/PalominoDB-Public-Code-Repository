@@ -190,6 +190,33 @@ sub copy {
   return $s;
 }
 
+sub _pong_end {
+  R_print('ok');
+  return 0;
+}
+
+# ping the remote end to ensure connectivity
+#
+# $cksub should be a subroutine that sends
+# 'pong' on success - and anything else on error.
+# this subroutine will croak() with any errors.
+#
+# if $cksub is not given, then a default
+# 'connectivity' test is done.
+sub check {
+  my ($self, $cksub) = @_;
+  my $r = $self->copy;
+  $r->add_main($cksub || \&_pong_end);
+  eval {
+    my @r = $r->do();
+    unless($r[0] eq 'ok') {
+      croak($r[0]);
+    }
+  };
+  croak('failed check: '. $@) if($@);
+  return 0;
+}
+
 # This is the subroutine that will
 # Be called as the entry point for your RObj.
 sub add_main {
