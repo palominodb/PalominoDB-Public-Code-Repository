@@ -27,7 +27,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 46a548fb861b9b9afcc80c9bb0603b479ac091da
+# RObj::Base package aa1709ed384a22901b394e2f9932fea40bdd143f
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -191,8 +191,7 @@ sub copy {
 }
 
 sub _pong_end {
-  R_print('ok');
-  return 0;
+  return 'ok';
 }
 
 # ping the remote end to ensure connectivity
@@ -205,16 +204,18 @@ sub _pong_end {
 # 'connectivity' test is done.
 sub check {
   my ($self, $cksub) = @_;
-  my $r = $self->copy;
-  $r->add_main($cksub || \&_pong_end);
+  my @r;
+  my $ro = $self->copy;
+  $ro->add_main($cksub || \&_pong_end);
   eval {
-    my @r = $r->do();
-    unless($r[0] eq 'ok') {
-      croak($r[0]);
+    @r = $ro->do();
+    unless($r[1] eq 'ok') {
+      croak($r[1]);
     }
   };
+  chomp($@);
   croak('failed check: '. $@) if($@);
-  return 0;
+  return @r;
 }
 
 # This is the subroutine that will
@@ -379,7 +380,7 @@ sub _wrap {
   $code = encode_base64(nfreeze($code));
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 4f23a6d95bb5a982cfefea26448d30de1146d592
+# RObj::E package 16052f4073dcad2a87af7462cc3783b03ecf2635
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -511,7 +512,7 @@ sub R_die {
 sub R_exit {
   my ($exit_code) = @_;
   R_print('EXIT', $exit_code);
-  exit($exit_code);
+  exit(OK);
 }
 
 sub R_print {

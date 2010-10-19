@@ -9,22 +9,16 @@ BEGIN {
 
 sub nondefault_fail_check {
   if( -d "/noway" ) {
-    R_print("ok");
+    return 'ok';
   }
-  else {
-    R_print("/noway is not a directory!\n");
-  }
-  return OK;
+  return "/noway is not a directory!\n";
 }
 
 sub nondefault_pass_check {
   if( -d "/etc" ) {
-    R_print("ok");
+    return 'ok';
   }
-  else {
-    R_print("/etc not a directory!");
-  }
-  return OK;
+  return "/etc is not a directory?";
 }
 
 SKIP: {
@@ -63,19 +57,19 @@ SKIP: {
   is_deeply(\@r, ['EXIT', OK], 'get exit');
 
   eval {
-    $ro->check();
+    diag('check result:', join(' ', $ro->check()));
   };
   diag($@ or "no exception");
   unlike($@, qr/^failed check:/, 'default check() returns successfully');
 
   eval {
-    $ro->check(\&nondefault_pass_check);
+     diag('check result:', join(' ', $ro->check(\&nondefault_pass_check)));
   };
   diag($@ or "no exception");
   unlike($@, qr/^failed check:/, 'non-default check() returns successfully');
 
   eval {
-    $ro->check(\&nondefault_fail_check);
+     diag('check result:', join(' ', $ro->check(\&nondefault_fail_check)));
   };
   diag($@ or "no exception");
   like($@, qr/^failed check:/, 'non-default check() fails correctly');

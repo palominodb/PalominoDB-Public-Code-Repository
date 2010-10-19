@@ -167,7 +167,7 @@ sub R_die {
 sub R_exit {
   my ($exit_code) = @_;
   R_print('EXIT', $exit_code);
-  exit($exit_code);
+  exit(OK);
 }
 
 sub R_print {
@@ -177,7 +177,6 @@ sub R_print {
 sub R_read {
   my @recv;
   1 while( !(@recv = $ro->read_message(\*STDIN)) and $ro->sys_error() == 0 );
-  #R_print('ACK');
   return @recv;
 }
 
