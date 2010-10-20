@@ -640,15 +640,32 @@ correctly, subs can even be used locally which simplifies testing.
 
 =over 8
 
-=item C<new($host, $user, [$ssh_key])>
+=item C<new($host_or_dsn, $user[, $ssh_key, $pw_auth])>
 
 Create a new RObj which will connect to C<$user@$host> with C<$ssh_key>.
+
+If C<$host_or_dsn> is a DSN object, then, all other parameters are optional, since,
+the DSN object will have all the required information.
+
+The C<$pw_auth> parameter specifies whether or not to allow password authentication.
+By default it is disabled since RObj's may connect and disconnect very frequently.
 
 =item C<copy()>
 
 Returns a new RObj sharing the host, user, and ssh_key of the old RObj
 and none of the code. This is for when you need to perform unrelated
 tasks remotely on the same host.
+
+=item C<check([$coderef])>
+
+Perform a 'ping' of the remote system. Serializes a minimal subroutine and waits
+for the response of 'ok'. If that isn't received then some kind of error occured,
+and an exception is raised.
+
+If C<$coderef> is present, then it is used in place of the default ping method.
+Custom subroutines MUST return 'ok', or anything else on error. The contents of the
+string on error are inserted into the exception for presentation or other error
+handling.
 
 =item C<add_main($coderef)>
 
@@ -661,6 +678,17 @@ remote name is 'R_main', but, that could change so don't rely on that behavior.
 In addition to your main method, you must also pass any other methods your
 main method calls. The C<$name> may include a package name to serialize object
 methods.
+
+=item C<add_use($to_pkg, $pkg)>
+
+Ensures that C<$pkg> is required and imported into C<$to_pkg's> namespace.
+
+Example:
+
+  $ro->add_use('MyPackage', 'DBI');
+
+Ensures that DBI is loaded and ready for using in calls to MyPackage on the
+remote end.
 
 =item C<add_package($pkg_name)>
 
