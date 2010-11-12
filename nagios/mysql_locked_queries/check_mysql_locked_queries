@@ -199,7 +199,7 @@ sub check_locked_queries ($$$$$$$$) {
     my @lockedQueries;
 
     while ( $row = $statement->fetchrow_hashref() ) {
-        if ( $row->{State} eq "Locked" && $row->{Command} eq "Query" ) {
+        if ( ($row->{State} || '') eq "Locked" && $row->{Command} eq "Query" ) {
             if ( $row->{Time} >= $critical ) {
                 ++$criticalQueries;
                 push( @lockedQueries, $row );
