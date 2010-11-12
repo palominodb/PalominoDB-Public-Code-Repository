@@ -58,7 +58,7 @@ sub print_help(;$) {
   print <<EOF;
 Copyright (c) 2010, PalominoDB, Inc.
 
-Nagios plugin to get MySQL system and status variables and save to a file
+Nagios plugin to compare MySQL status/system variables in a file to a threshold
 
 Usage: $0 -l <label> -c <comparison and threshold> -e <expr> -f </path/to/variables-files> [options]
 
