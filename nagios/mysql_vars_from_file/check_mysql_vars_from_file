@@ -165,8 +165,11 @@ if ($o{'verbose'}) {print "expr evals to '$compval'\n";}
 $compval=&round2($compval);
 #if ($o{'verbose'}) {print "after rounding, expr evals to $compval\n";}
 
- my $returnval=eval($parsedexpr.$o{'comparison'});
+ my $parsed=eval($parsedexpr);
+ my $returnval=eval($parsed.$o{'comparison'});
  if ($o{'verbose'}) { print "returning a value of $returnval\n"; }
+ if ($returnval ne '') {print "ERROR: ";} else { print "OK: ";}
+  print "$o{'label'} = ".$parsed;
  exit $returnval;
 }
 
