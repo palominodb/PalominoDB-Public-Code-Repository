@@ -133,6 +133,7 @@ sub main {
   );
 
   $pl = ProcessLog->new($0, $o{'log-file'}, undef);
+  $pl->d('ARGV:', @ARGV);
   if(not exists $o{'identify-dirs'} and exists $o{i}) {
     $o{'identify-dirs'} = $o{i};
   }
@@ -200,7 +201,7 @@ sub main {
   if($o{'create-dirs'}) {
     eval {
       mkpath($datadir);
-      if(exists $cfg{'mysqld'}{'log-bin'}) {
+      if(exists $cfg{'mysqld'}{'log-bin'} and $cfg{'mysqld'}{'log-bin'} =~ m|^/|) {
         mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
       }
     };
@@ -233,7 +234,7 @@ sub main {
     unless($o{'skip-extract'}) {
       $pl->m("Removing contents of mysqld.datadir:", $datadir);
       Path::dir_empty($datadir);
-      if($cfg{'mysqld'}{'log-bin'}) {
+      if($cfg{'mysqld'}{'log-bin'} and $cfg{'mysqld'}{'log-bin'} =~ m|^/|) {
         $pl->m("Removing contents of mysqld.log-bin:", dirname($cfg{'mysqld'}{'log-bin'}));
         Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
       }
@@ -347,13 +348,16 @@ sub start_mysqld {
   my $pid = fork;
   if($pid == 0) {
 
-    $pl->i('attempting to chown', $cfg{'mysqld'}{'datadir'}, 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
-    system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} $cfg{'mysqld'}{'datadir'}");
+    if($cfg{'mysqld_safe'}{'user'} and $cfg{'mysqld_safe'}{'group'}) {
+      $pl->i('attempting to chown', $cfg{'mysqld'}{'datadir'}, 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+      system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} $cfg{'mysqld'}{'datadir'}");
 
-    if($cfg{'mysqld'}{'log-bin'}) {
-      $pl->i('attempting to chown', dirname($cfg{'mysqld'}{'log-bin'}), 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
-      system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} ". dirname($cfg{'mysqld'}{'log-bin'}));
+      if($cfg{'mysqld'}{'log-bin'}) {
+        $pl->i('attempting to chown', dirname($cfg{'mysqld'}{'log-bin'}), 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+        system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} ". dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     }
+
 
     my @path = File::Spec->splitdir($o{'mysqld'});
     pop @path; pop @path;

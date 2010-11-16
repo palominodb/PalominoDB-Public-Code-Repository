@@ -8,6 +8,7 @@ use warnings FATAL => 'all';
 use DBI;
 use DSN;
 use IniFile;
+use File::Basename;
 
 our $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
 our $port = $cnf->{'mysqld'}->{'port'};
@@ -32,6 +33,21 @@ sub new {
   |);
 
   return $args;
+}
+
+sub stop {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/stop");
+}
+
+sub start {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/start");
+}
+
+sub fsclear {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/clear");
 }
 
 sub DESTROY {
