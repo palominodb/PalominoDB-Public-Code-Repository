@@ -589,45 +589,6 @@ Quoting to protect the space from the shell is likely necessary.
 
 Continue even after errors when applying binlogs.
 
-=item --mysql-user,-u
-
-User in the restored database that has privileges to setup slaving.
-
-Default: root
-
-=item --mysql-password,-p
-
-Password for the mysql user that has privileges to setup slaving.
-
-Default: (no password)
-
-=item --reslave,-r
-
-Automatically reslaves the restored server according to the contents
-of C<master.info>. If binlogs are applied, then the position will be
-used from those instead of from the original C<master.info>.
-
-=item --slave-user
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the user to slave with.
-
-Default: from C<master.info>
-
-=item --slave-password
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the password to slave with.
-
-Default: from C<master.info>
-
-=item --master-host
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the master host to connect to.
-
-Default: from C<master.info>
-
 =item --mysqld
 
 Use this mysqld binary to start up the server for binlog replay
