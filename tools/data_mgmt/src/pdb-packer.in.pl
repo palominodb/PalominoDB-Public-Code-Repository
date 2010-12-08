@@ -198,7 +198,7 @@ sub main {
       $pl->e('DSN:', $_->str(), 'is missing one of the required keys: t or r');
       return 1;
     }
-    unless($_->get('r') =~ /\(.*?\)/) {
+    if($_->has('r') and $_->get('r') !~ /\(.*?\)/) {
       $pl->e('DSN:', $_->str(), 'r key does not have a capture group.');
       return 1;
     }
@@ -213,7 +213,8 @@ sub main {
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
     $pl->d('tables:', join(',', @tbls) );  
-    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config')};
+    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config', $d->get('F'))};
+    $pl->d('status:', $status, 'cfg:', $cfg);
     unless($status eq 'EXIT') {
       $pl->e($d->get('h'), "did not return host config correctly. Got:", Dumper($cfg));
       next;
@@ -378,7 +379,7 @@ sub pack_table {
     }
   }
   if($dsn->get('h') ne 'localhost') {
-    my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
+    my $ro = RObj->new($dsn);
     # Make sure the RObj has the needed modules
     $ro->add_use('TablePacker', 'DBI');
     $ro->add_package('DSN');
@@ -389,7 +390,7 @@ sub pack_table {
         my ($self) = @_;
         eval {
           local $SIG{__DIE__};
-          $self->pack();
+          $self->pack($force);
           $self->check();
         };
         return $self;
@@ -398,10 +399,11 @@ sub pack_table {
   }
   else {
     eval {
-      $tp->pack();
+      $tp->pack($force);
       $tp->check();
     };
   }
+  print( STDERR 'TablePacker: ', Dumper($tp));
   # Flush the table so that mysql reloads the .FRM file.
   $tp->flush();
   chomp($tp->{errstr}) if($tp->{errstr});
@@ -546,7 +548,8 @@ Default: off
 
 =item B<--force>
 
-Force packing to run, even if mysql thinks the table is already packed.
+Force packing to run, even if mysql thinks the table is already packed,
+or is too small.
 
 =back
 

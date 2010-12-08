@@ -211,14 +211,14 @@ sub methods {
 
 sub remote {
 use RObj;
-  my ($class, $dsn, $action) = @_;
-  my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
+  my ($class, $dsn, $action, @args) = @_;
+  my $ro = RObj->new($dsn);
   $ro->add_package('IniFile');
   $ro->add_package('MysqlInstance::Methods');
   $ro->add_package('MysqlInstance');
   $ro->add_main(sub {
       my $act = shift;
-      my $mi = MysqlInstance->new();
+      my $mi = MysqlInstance->new(@_);
       if($act eq 'stop') {
         $mi->stop();
       }
@@ -235,7 +235,7 @@ use RObj;
         $mi->config();
       }
     });
-  return [$ro->do($action)];
+  return [$ro->do($action, @args)];
 }
 
 1;
