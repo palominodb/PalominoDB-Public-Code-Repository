@@ -55,6 +55,7 @@ switch ($np->opts->mode)
       # this is where we can add rules to skip specific queries or users
       next if($query_hr->{User} =~ /system user/);
       next if($query_hr->{Command} =~ /Binlog Dump/);
+      next unless($query_hr->{Info});
       ###
       my $code = $np->check_threshold(check => $query_hr->{Time}, warning => $np->opts->warning, critical => $np->opts->critical);
       if($code)
@@ -69,7 +70,7 @@ switch ($np->opts->mode)
   {
     foreach my $query_hr (@{$meta_data->{proc_list}})
     {
-      if(defined($query_hr->{State}) && $query_hr->{State} eq 'Locked')
+      if($query_hr->{Command} eq 'Query' && (defined($query_hr->{State}) && $query_hr->{State} eq 'Locked'))
       {
         my $msg = sprintf("Locked query detected: %s", $query_hr->{Info});
         $np->add_message(CRITICAL, $msg);
@@ -314,7 +315,7 @@ sub init_plugin
   {
     case "long-query"
     {
-      $np->shortname('mysql_locked-query') unless($np->opts->shortname);
+      $np->shortname('mysql_long-query') unless($np->opts->shortname);
       unless($np->opts->warning && $np->opts->critical)
       {
         $np->nagios_die("ERROR: run mode 'long-query' requires --warning and --critical params.");
@@ -398,4 +399,3 @@ sub hash_merge
   }
   return \%merge;
 }
-
