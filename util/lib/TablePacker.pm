@@ -197,13 +197,15 @@ sub flush {
 }
 
 sub pack {
-  my ($self) = @_;
+  my ($self, $force) = @_;
   my ($datadir, $schema, $table) =
   ($self->{datadir}, $self->{schema}, $self->{table});
   my $myisampack = ($self->{myisampack} ||= Which::which('myisampack'));
   my ($out, $res);
 
-  $out = qx|$myisampack "${datadir}/${schema}/${table}" 2>&1|;
+  $force = $force ? '--force' : '';
+
+  $out = qx|$myisampack $force "${datadir}/${schema}/${table}" 2>&1|;
   $res = ($? >> 8);
 
   if($res) {
