@@ -117,7 +117,7 @@ sub new {
       print _p(@_) unless $self->{quiet};
     };
   }
-  elsif($logpath eq 'pdb-test-harness') {
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
     $self->{logsub} = sub {
       my $self = shift;
       print STDERR '# ', _p(@_);
@@ -346,6 +346,21 @@ sub e {
   my $fh = $self->{LOG};
   my $t = sprintf("%.3f", time());
   $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+=pod
+
+=head3 C<e($die,@args)>
+
+Error message and die with first argument.
+Useful for errors that may be capturable later.
+
+=cut
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
 }
 
 =pod
