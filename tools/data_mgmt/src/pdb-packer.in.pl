@@ -114,7 +114,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.035;
+our $VERSION = 0.036;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -130,6 +130,7 @@ my $age_format = "_%Y%m%d";
 my $rotate_format = '';
 my $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
 my $force    = 0;
+my $force_small = 0;
 
 sub main {
   # Overwrite ARGV with parameters passed here
@@ -155,7 +156,8 @@ sub main {
     "age=s" => \$age,
     "age-format=s" => \$age_format,
     "rotate-format=s" => \$rotate_format,
-    "force" => \$force
+    "force" => \$force,
+    "force-small" => \$force_small,
   );
 
   unless(scalar @ARGV >= 1) {
@@ -390,7 +392,7 @@ sub pack_table {
         my ($self) = @_;
         eval {
           local $SIG{__DIE__};
-          $self->pack($force);
+          $self->pack($force_small);
           $self->check();
         };
         return $self;
@@ -399,7 +401,7 @@ sub pack_table {
   }
   else {
     eval {
-      $tp->pack($force);
+      $tp->pack($force_small);
       $tp->check();
     };
   }
@@ -548,8 +550,12 @@ Default: off
 
 =item B<--force>
 
-Force packing to run, even if mysql thinks the table is already packed,
-or is too small.
+Force packing to run, even if mysql thinks the table is already packed.
+
+
+=item B<--force-small>
+
+Force packing to run even if the table is too small.
 
 =back
 
