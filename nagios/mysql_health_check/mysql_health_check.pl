@@ -37,7 +37,6 @@ use Storable;
 use Data::Dumper;
 use Carp;
 use File::stat;
-use Math::Round;
 use Switch;
 use Fcntl qw(:flock);
 #############################################################################
@@ -438,3 +437,17 @@ sub hash_merge
   }
   return \%merge;
 }
+
+# stolen from Math::Round
+sub nearest 
+{
+  my $targ = abs(shift);
+  my @res  = map {
+  if ($_ >= 0) { $targ * int(($_ + 0.50000000000008 * $targ) / $targ); }
+     else { $targ * POSIX::ceil(($_ - 0.50000000000008 * $targ) / $targ); }
+  } @_;
+
+  return (wantarray) ? @res : $res[0];
+}
+
+1;
