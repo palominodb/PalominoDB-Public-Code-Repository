@@ -28,7 +28,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 $| = 1;
-our $VERSION = "1.0";
+our $VERSION = "1.1";
 
 use strict;
 use Nagios::Plugin;
@@ -39,6 +39,7 @@ use Carp;
 use File::stat;
 use Math::Round;
 use Switch;
+use Fcntl qw(:flock);
 #############################################################################
 our $VERBOSE = 0;
 
@@ -72,8 +73,13 @@ switch ($np->opts->mode)
     {
       if($query_hr->{Command} eq 'Query' && (defined($query_hr->{State}) && $query_hr->{State} eq 'Locked'))
       {
-        my $msg = sprintf("Locked query detected: %s", $query_hr->{Info});
-        $np->add_message(CRITICAL, $msg);
+        my $code = $np->check_threshold(check => $query_hr->{Time}, warning => $np->opts->warning, critical => $np->opts->critical);
+        if($code)
+        {
+          my $msg = sprintf("Locked query detected: %s", $query_hr->{Info});
+          $np->add_message($code, $msg);
+          last;
+        }
       } 
     }
   }
@@ -187,14 +193,21 @@ sub fetch_server_meta_data
 {
   my %meta_data;
   pdebug("Getting meta data...\n");
-  $meta_data{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
   pdebug("\tSHOW FULL PROCESSLIST...\n");
-  $meta_data{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
+  $meta_data{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
   pdebug("\tSHOW ENGINE INNODB STATUS...\n");
-  $meta_data{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
+  $meta_data{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
   pdebug("\tSHOW GLOBAL VARIABLES...\n");
-  $meta_data{varstatus} = hash_merge($meta_data{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
+  $meta_data{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
   pdebug("\tSHOW GLOBAL STATUS...\n");
+  $meta_data{varstatus} = hash_merge($meta_data{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
+=item
+  # need to add --collect_slave_info option
+  pdebug("\tSHOW MASTER STATUS...\n");
+  $meta_data{master_status} = dbi_exec_for_paired_hash($dbh, q|SHOW MASTER STATUS|);
+  pdebug("\tSHOW SLAVE STATUS...\n");
+  $meta_data{slave_status} = dbi_exec_for_paired_hash($dbh, q|SHOW SLAVE STATUS|);
+=cut
 #  print Dumper(%meta_data);
   return \%meta_data;
 }
@@ -204,37 +217,48 @@ sub fetch_server_meta_data
 #####
 sub get_from_cache
 {
-  my ($cache_dir, $cache_file) = cache_paths();
+  my $cache_info = cache_paths();
   my $data;
 
-  if(-e $cache_file)
+  if(-e $cache_info->{'file'})
   {
-     my $cf_stat = stat($cache_file); 
+     my $cf_stat = stat($cache_info->{'file'}); 
      my $cf_age = time() - $cf_stat->mtime;
-     pdebug("Cache file ($cache_file) is $cf_age second old - max age is " . $np->opts->max_cache_age . ".\n");
-     # if the cache file isn't fresh, nuke it and refresh
-     if($cf_age >= $np->opts->max_cache_age)
+     pdebug("Cache file ($cache_info->{'file'}) is $cf_age second old - max age is " . $np->opts->max_cache_age . ".\n");
+     # if the file is too old, lock, if we can't get a lock, stale data it is becuase another process is refreshing
+     my $has_lock = lock_cache();
+     if($cf_age >= $np->opts->max_cache_age && $has_lock)
      {
-       pdebug("Cache file ($cache_file) is too old refreshing...\n");
-       unlink($cf_age);
-       $data = fetch_server_meta_data(); 
-       write_cache($data);
+       # we can lock, so refresh
+       $data = refresh_cache();
      }
      else
      {
-       pdebug("Using cache file ($cache_file)...\n");
-       $data = retrieve($cache_file);
+       pdebug("Using cache file ($cache_info->{'file'})...\n");
+       $data = retrieve($cache_info->{'file'});
      }
   }
 
   return $data; 
 }
 
+sub refresh_cache
+{
+  my $cache_info = cache_paths();
+  pdebug("Cache file ($cache_info->{'file'}) is too old refreshing...\n");
+  my $data = fetch_server_meta_data();
+  write_cache($data);
+  unlock_cache();
+  return $data;
+}
+
 sub cache_paths
 {
-  my $cache_dir = $np->opts->cache_dir;
-  my $cache_file = sprintf("%s/%s-%s.cache", $cache_dir, $np->opts->hostname, $np->opts->port);
-  return $cache_dir, $cache_file;
+  my %cache_info;
+  $cache_info{'dir'} = $np->opts->cache_dir;
+  $cache_info{'file'} = sprintf("%s/%s-%s.cache", $cache_info{dir}, $np->opts->hostname, $np->opts->port);
+  $cache_info{'tmp_file'} = sprintf("%s/%s-%s.cache.%s", $cache_info{dir}, $np->opts->hostname, $np->opts->port, $$);
+  return \%cache_info;
 }
 
 #####
@@ -244,16 +268,31 @@ sub write_cache
 {
   pdebug("Writing meta data cache to file...\n");
   my $data = shift;
-  my ($cache_dir, $cache_file) = cache_paths();
-  pdebug("Cache paths: $cache_dir, $cache_file\n");
-  unless(-d $cache_dir) { mkdir($cache_dir) || $np->nagios_exit(CRITICAL, "Can't create cache directory : $!") }
-  store($data, $cache_file) || $np->nagios_exit(CRITICAL, "Can't write cache file: $!");
+  my $cache_info = cache_paths();
+  pdebug("Cache paths: $cache_info->{'dir'}, $cache_info->{'file'}\n");
+  unless(-d $cache_info->{dir}) { mkdir($cache_info->{dir}) || $np->nagios_die(CRITICAL, "Can't create cache directory : $!") }
+  store($data, $cache_info->{'tmp_file'}) || $np->nagios_die(CRITICAL, "Can't write cache file: $!");
+  rename($cache_info->{'tmp_file'}, $cache_info->{'file'}) || $np->nagios_die(CRITICAL, "Can't rename cache file: $!");
   return $data;
 }
 
-#####
-#
-#####
+sub lock_cache
+{
+  my $cache_info = cache_paths();
+  open(CACHE_FILE, "<$cache_info->{'file'}") || $np->nagios_die(UNKNOWN, "Can't open cache for locking: $!\n");
+  pdebug("Locking ($cache_info->{'file'})...\n");
+  my $lock_res = flock(CACHE_FILE, LOCK_EX|LOCK_NB); 
+  pdebug("LOCK: ($lock_res)\n");
+  return $lock_res;
+}
+
+
+sub unlock_cache
+{
+  my $cache_info = cache_paths();
+  flock(CACHE_FILE, LOCK_UN);
+  close(CACHE_FILE);
+}
 
 sub cleanup
 {
@@ -350,7 +389,7 @@ sub dbi_fetch_loh
 
 sub dbi_fetch_paired_hash 
 {
-  my ($sth) = shift;
+  my $sth = shift;
   die "query asks for " . $sth->{NUM_OF_FIELDS} . " fields, not 2" if $sth->{NUM_OF_FIELDS} != 2;
   my $key = $sth->{NAME}->[0];
   my %hash;
