@@ -7,7 +7,6 @@ A recent version of perl5.
 
 CPAN Modules: 
 Nagios::Plugin
-Math::Round
 
 (optional) Writable directory for meta data cache from mysql.  Defaults to 
 '/tmp/pdb_nagios_cache'.  Can also run in non-caching mode, see below or 
