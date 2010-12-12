@@ -62,7 +62,7 @@ use IniFile;
 use TablePartitions;
 
 use DBI;
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use DateTime;
 use DateTime::Duration;
@@ -98,7 +98,8 @@ sub main {
     $drop,
     $i_am_sure,
     $do_archive,
-    $older_than
+    $older_than,
+    $email_activity,
   );
 
   GetOptions(
@@ -106,6 +107,7 @@ sub main {
     "pretend" => \$pretend,
     "logfile|L=s" => \$logfile,
     "email-to|E=s" => \$email_to,
+    "email-activity" => \$email_activity,
     "host|h=s" => \$db_host,
     "database|d=s" => \$db_schema,
     "table|t=s" => \$db_table,
@@ -168,6 +170,10 @@ sub main {
     }
   }
 
+  if($email_activity and !$email_to) {
+    pod2usage(-message => "--email-activity can only be used with --email-to.");
+  }
+
   $dsn = "DBI:mysql:$db_schema";
   if($db_host) {
     $dsn .= ";host=$db_host";
@@ -187,12 +193,13 @@ sub main {
 
   my $r = 0;
   if($add) {
-    $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_host, $db_schema, $db_table, $i_am_sure);
+    $r = add_partitions($add, $dbh, $parts, $prefix, $range, $db_host,
+                        $db_schema, $db_table, $i_am_sure, $email_activity);
   }
   elsif($drop) {
     $r = drop_partitions($drop, $dbh, $parts, $range, $older_than,
     $db_host, $db_schema, $db_table, $db_user, $db_pass,
-    $db_file, $i_am_sure, $do_archive);
+    $db_file, $i_am_sure, $do_archive, $email_activity);
   }
 
   $dbh->disconnect;
@@ -202,8 +209,10 @@ sub main {
 }
 
 sub add_partitions {
-  my ($add, $dbh, $parts, $prefix, $range, $db_host, $db_schema, $db_table, $i_am_sure) = @_;
+  my ($add, $dbh, $parts, $prefix, $range, $db_host,
+      $db_schema, $db_table, $i_am_sure, $email_activity) = @_;
 
+  my $email_log = "Adding partitions to $db_host.$db_schema.$db_table:\n";
   my $ret = 1;
   my $last_p = $parts->last_partition;
   my $next_pN = undef;
@@ -300,6 +309,7 @@ sub add_partitions {
     # Loop over the calculated dates and add partitions for each one
     ###########################################################################
     foreach my $date (@part_dates) {
+      $email_log .= "- $prefix". ($next_pN+$i) . " [older than: $date]\n";
       if($reorganize) {
         if($date eq 'MAXVALUE') {
           $parts->add_reorganized_part($prefix . ($next_pN+$i), $date);
@@ -317,14 +327,18 @@ sub add_partitions {
     if($reorganize) {
       $ret = $parts->end_reorganization($pretend);
     }
+    if(@part_dates) {
+      $pl->send_email("Partitions added on $db_host.$db_schema.$db_table", $email_log);
+    }
   }
   return $ret;
 }
 
 sub drop_partitions {
   my ($drop, $dbh, $parts, $range, $older_than, $host, $schema,
-     $table, $user, $pw, $dfile, $i_am_sure, $do_archive) = @_;
+     $table, $user, $pw, $dfile, $i_am_sure, $do_archive, $email_activity) = @_;
 
+  my $email_log = "Dropped partitions from $host.$schema.$table:\n";
   my $today = DateTime->today(time_zone => 'local');
   $pl->e("Refusing to drop more than 1 partition unless --i-am-sure is passed.")
     and return undef
@@ -332,6 +346,7 @@ sub drop_partitions {
 
   # Return value of this subroutine.
   my $r = 1;
+  my $j = 0; # counts the number of dropped partitions
   $pl->m("Dropping $drop partitions.");
   for(my $i=0; $i < $drop ; $i++) {
     my $p = $parts->first_partition;
@@ -349,12 +364,19 @@ sub drop_partitions {
         next;
       }
     }
+    $email_log .= "- $p->{name} [older than: $p_date]";
     if($do_archive) {
       archive_partition($parts, $p, $host, $schema, $table, $user, $pw, $dfile);
+      $email_log .= " (archived)";
     }
     $pl->i("Dropping data older than:", $p_date);
     $r = $parts->drop_partition($p->{name}, $pretend);
+    $email_log .= "\n";
     last unless($r);
+    $j++;
+  }
+  if($j > 0) {
+    $pl->send_email("Partitions dropped on $host.$schema.$table", $email_log);
   }
   return $r;
 }
@@ -462,7 +484,15 @@ See also: L<syslog(3)>, L<syslogd(8)>, L<syslog.conf(5)>
 
 type: email-address
 
-Where to email failures.
+Where to send emails.
+
+This tool can send emails on failure, and whenever it adds, drops, or archive partitions.
+Ordinarily, it will only send emails on failure.
+
+=item --email-activity
+
+If this flag is present, then this will make the tool also email
+whenver it adds, drops, or archives a partition.
 
 =item --host, -h
 
