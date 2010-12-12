@@ -607,6 +607,34 @@ sub success_email {
   $fh->close;
 }
 
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
+  my $fh = $msg->open;
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
+  $fh->close;
+}
+
 =pod
 
 =head1 ENVIRONMENT
