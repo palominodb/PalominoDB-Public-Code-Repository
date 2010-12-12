@@ -3,6 +3,8 @@ use warnings FATAL => 'all';
 use Test::More tests => 12;
 use TestDB;
 use DateTime;
+use Data::Dumper;
+$Data::Dumper::Indent = 0;
 
 BEGIN {
   use_ok('TableFind');
@@ -34,6 +36,14 @@ BEGIN {
   |);
   $tdb->dbh()->do(qq|
     CREATE TABLE test_20101202 (x int);
+  |);
+
+  $tdb->dbh()->do(qq|
+    INSERT INTO bobtable_20 (x) VALUES (10),(11),(13),(14),(15),(16);
+  |);
+
+  $tdb->dbh()->do(qq|
+    INSERT INTO table_20 (x) VALUES (10),(11),(13),(14),(15),(16);
   |);
 }
 
@@ -89,3 +99,14 @@ is_deeply([map { $_->{Name} } $tf->find(
     pattern => $pattern
   })], [ "test_20101104", "test_20101108", "test_20101116", "test_20101202" ],
           "find newer_than, verify list");
+
+diag(Dumper([map { $_->{Name} }
+             $tf->find(
+               greater_than => 1024,
+               smaller_than => 16*1024,
+             )]));
+is_deeply([map { $_->{Name} }
+             $tf->find(
+               greater_than => 1024,
+               smaller_than => 16*1024,
+             )], ['bobtable_20'], "greater_than and smaller_than");

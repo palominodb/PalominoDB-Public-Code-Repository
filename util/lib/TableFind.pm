@@ -95,6 +95,17 @@ sub PREDICATE_row_format {
   return lc($tbl->{Row_format}) eq lc($pred_args);
 }
 
+sub PREDICATE_smaller_than {
+  my ($self, $tbl, $pred_args) = @_;
+  return $tbl->{Data_length}+$tbl->{Index_length} < $pred_args;
+}
+
+sub PREDICATE_greater_than {
+  my ($self, $tbl, $pred_args) = @_;
+  return $tbl->{Data_length}+$tbl->{Index_length} > $pred_args;
+}
+
+
 sub PREDICATE_agebyname {
   my ($self, $tbl, $pred_args) = @_;
   my $tbl_age = undef;
