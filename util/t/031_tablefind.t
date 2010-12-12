@@ -1,6 +1,6 @@
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 12;
+use Test::More tests => 13;
 use TestDB;
 use DateTime;
 use Data::Dumper;
