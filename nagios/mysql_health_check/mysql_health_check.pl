@@ -1,4 +1,7 @@
-#!/usr/bin/perl -w
+#!/usr/bin/env perl -w
+### work around for ePn until I can refactor completely.
+# nagios: -epn
+###
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
 #
@@ -28,7 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 $| = 1;
-our $VERSION = "1.1";
+our $VERSION = "1.1.0";
 
 use strict;
 use Nagios::Plugin;
@@ -48,7 +51,7 @@ my $meta_data = load_meta_data();
 
 switch ($np->opts->mode)
 {
-  case "long-query"
+  case 'long-query'
   {
     foreach my $query_hr (@{$meta_data->{proc_list}})
     {
