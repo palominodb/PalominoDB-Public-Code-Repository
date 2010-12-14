@@ -580,31 +580,13 @@ sub email_and_die {
 
 sub failure_email {
   my ($self,$extra) = shift;
-  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
-  $self->i("Not emailing:", $extra) if(not defined $self->{email_to});
-  $self->m("Emailing out failure w/ extra: $extra\n") if($extra);
-  my $msg = Mail::Send->new(Subject => "$self->{script_name} FAILED", To => $self->{email_to});
-  my $fh = $msg->open;
-  print $fh "$self->{script_name} on ". hostname() . " failed at ". scalar localtime() ."\n";
-  print $fh "\nThe Error: $extra\n" if($extra);
-  print $fh $self->stack() . "\n";
-  print $fh "RUN ID (for grep): $self->{run_id}\n";
-  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
-  $fh->close;
+  $self->send_email("$self->{script_name} FAILED", $extra);
 }
 
 sub success_email {
   my ($self, $extra) = shift;
-  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
-  $self->i("Not emailing:",$extra) if(not defined $self->{email_to});
-  $self->m("Emailing out success w/ extra: $extra\n") if($extra);
-  my $msg = Mail::Send->new(Subject => "$self->{script_name} SUCCESS", To => $self->{email_to});
-  my $fh = $msg->open;
-  print $fh "$self->{script_name} on ". hostname() . " succeeded at ". scalar localtime() ."\n";
-  print $fh "\nMessage: $extra\n" if($extra);
-  print $fh "RUN ID (for grep): $self->{run_id}\n";
-  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
-  $fh->close;
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
 }
 
 sub send_email {
