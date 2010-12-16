@@ -591,6 +591,7 @@ sub success_email {
 
 sub send_email {
   my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
   my @to;
   unless( $mail_available ) {
     $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
