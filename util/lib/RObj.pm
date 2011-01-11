@@ -380,7 +380,7 @@ sub _wrap {
   $code = encode_base64(nfreeze($code));
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 16052f4073dcad2a87af7462cc3783b03ecf2635
+# RObj::E package aa61b395315cfc85a2e6b91193b50c04f5c17ba5
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -561,7 +561,7 @@ $| = 1;
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
-$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
+$SIG{__DIE__} = sub { die @_ if $^S; R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args

@@ -222,7 +222,7 @@ $| = 1;
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
-$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
+$SIG{__DIE__} = sub { die @_ if $^S; R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args
