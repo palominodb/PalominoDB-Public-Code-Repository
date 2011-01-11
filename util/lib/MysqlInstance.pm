@@ -199,7 +199,16 @@ sub status {
 
 sub config {
   my ($self) = @_;
-  return {IniFile::read_config($self->{mycnf} || $self->{methods}->{config})};
+  my $cfg = undef;
+  eval {
+    $cfg = {IniFile::read_config($self->{mycnf} || $self->{methods}->{config})};
+  };
+  if($@ or not defined $cfg) {
+    die("Unable to open ".
+          ($self->{mycnf} || $self->{methods}->{config})
+            .": ". ($@ ? $@ : 'unknown reason'));
+  }
+  return $cfg;
 }
 
 sub methods {
@@ -220,19 +229,19 @@ use RObj;
       my $act = shift;
       my $mi = MysqlInstance->new(@_);
       if($act eq 'stop') {
-        $mi->stop();
+        return $mi->stop();
       }
       elsif($act eq 'start') {
-        $mi->start();
+        return $mi->start();
       }
       elsif($act eq 'restart') {
-        $mi->restart();
+        return $mi->restart();
       }
       elsif($act eq 'status') {
-        $mi->status();
+        return $mi->status();
       }
       elsif($act eq 'config') {
-        $mi->config();
+        return $mi->config();
       }
     });
   return [$ro->do($action, @args)];
