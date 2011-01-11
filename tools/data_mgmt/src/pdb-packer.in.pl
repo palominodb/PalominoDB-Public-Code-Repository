@@ -215,7 +215,7 @@ sub main {
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
     $pl->d('tables:', join(',', @tbls) );  
-    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config', $d->get('F'))};
+    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config', $d->get('rF'))};
     $pl->d('status:', $status, 'cfg:', $cfg);
     unless($status eq 'EXIT') {
       $pl->e($d->get('h'), "did not return host config correctly. Got:", Dumper($cfg));
@@ -389,7 +389,7 @@ sub pack_table {
     $ro->add_package('TablePacker');
     $ro->add_main(sub {
         # This packs and checks the table specified by $dsn
-        my ($self) = @_;
+        my ($self, $force_small) = @_;
         eval {
           local $SIG{__DIE__};
           $self->pack($force_small);
@@ -397,7 +397,7 @@ sub pack_table {
         };
         return $self;
       });
-    $tp = [$ro->do($tp)]->[1];
+    $tp = [$ro->do($tp, $force_small)]->[1];
   }
   else {
     eval {
