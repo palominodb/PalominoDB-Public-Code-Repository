@@ -138,6 +138,7 @@ use 5.0008;
 # into messages back to the controlling process.
 BEGIN {
   $SIG{__DIE__} = sub {
+    die @_ if $^S;
     my $ro = RObj::Base->new;
     $ro->write_message(\*STDOUT, @_);
     exit(RObj::Base::COMPILE_FAILURE);

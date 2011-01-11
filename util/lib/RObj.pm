@@ -380,7 +380,7 @@ sub _wrap {
   $code = encode_base64(nfreeze($code));
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package aa61b395315cfc85a2e6b91193b50c04f5c17ba5
+# RObj::E package fcdb022f2e18920a8d6c0a1188e852a5d105b0fa
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -483,6 +483,7 @@ use warnings FATAL => 'all';
 use 5.0008;
 BEGIN {
   $SIG{__DIE__} = sub {
+    die @_ if $^S;
     my $ro = RObj::Base->new;
     $ro->write_message(\*STDOUT, @_);
     exit(RObj::Base::COMPILE_FAILURE);
