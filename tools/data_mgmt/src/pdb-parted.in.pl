@@ -38,10 +38,24 @@ use warnings FATAL => 'all';
 # ###########################################################################
 
 # ###########################################################################
+# DSN package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End DSN package
+# ###########################################################################
+
+# ###########################################################################
 # TablePartitions package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End TablePartitions package
+# ###########################################################################
+
+# ###########################################################################
+# Timespec package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Timespec package
 # ###########################################################################
 
 # ###########################################################################
@@ -60,6 +74,8 @@ use English qw(-no_match_vars);
 use ProcessLog;
 use IniFile;
 use TablePartitions;
+use DSN;
+use Timespec;
 
 use DBI;
 use Getopt::Long qw(:config no_ignore_case);
@@ -185,7 +201,7 @@ sub main {
   $dbh = DBI->connect($dsn, $db_user, $db_pass,
     { RaiseError => 1, PrintError => 0, AutoCommit => 0, ShowErrorStatement => 1 });
 
-  $pl = ProcessLog->new('pdb-parted', $logfile || 'pdb-parted.log', $email_to);
+  $pl = ProcessLog->new($0, $logfile, $email_to);
 
   $pl->start;
 
@@ -437,23 +453,89 @@ pdb-parted - MySQL partition management script
 
 =head1 SYNOPSIS
 
-pdb-parted -d <database> -t <table> [options] [action]
+pdb-parted [options] ACTION TIMESPEC DSN
 
 options:
 
-  --host,          -h   Host to connect to.
-  --defaults-file, -F   mysql-type config file.
-  --prefix,        -P   Partition prefix. Mandatory.
-  --range,         -r   Partition range. Mandatory.
-                        One of: months, weeks, days.
-  --pretend             Report on actions without taking them.
+  --help,          -h   This help. See C<perldoc pdb-parted> for full docs.
+  --dryrun,        -n   Report on actions without taking them.
+  --logfile,       -L   Direct output to given logfile. Default: none.
+  --email-activity      Send a brief email report of actions taken.
+                        The email is sent to --email-to.
+  --email-to       -E   Where to send activity and failure emails.
+                        Default: none.
+
+  --prefix         -P   Partition prefix. Defaults to 'p'.
   
   --archive             Archive partitions before dropping them.
 
-action:
+ACTION:
 
   --add   Add N partitions.
   --drop  Remove N partitions.
+
+TIMESPEC:
+
+A timespec is a "natural" string to specify how far in advance to create
+partitions. A sampling of possible timespecs:
+
+  1w (create partitions one week in advance)
+  1m (one month)
+  2q (two quarters)
+  5h (five hours)
+
+See the full documentation for a complete description of timespecs.
+
+=head1 TIMESPEC
+
+A timespec is one of:
+
+  A modifier to current local time
+  or, an absolute time in 'YYYY-MM-DD HH:MM:SS' format.
+
+Since the latter isn't very complicated, this section describes
+what the modifiers are.
+
+A modifer is, an optional plus or minus sign followed by a number,
+and then one of:
+
+  y = year, q = quarter , m = month, w = week, d = day, h = hour
+
+Followed optionally by a space or a period and 'startof'.
+Which is described in the next section.
+
+Some examples (the time is assumed to be 00:00:00):
+
+  -1y         (2010-11-01 -> 2009-11-01)
+   5d         (2010-12-10 -> 2010-12-15)
+  -1w         (2010-12-13 -> 2010-12-07)
+  -1q startof (2010-05-01 -> 2010-01-01)
+   1q.startof (2010-05-01 -> 2010-07-01)
+
+=head2 startof
+
+The 'startof' modifier for timespecs is a little confusing,
+but, is the only sane way to achieve latching like behavior.
+It adjusts the reference time so that it starts at the beginning
+of the requested type of interval. So, if you specify C<-1h startof>,
+and the current time is: C<2010-12-03 04:33:56>, first the calculation
+throws away C<33:56> to get: C<2010-12-03 04:00:00>, and then subtracts
+one hour to yield: C<2010-12-03 03:00:00>.
+
+Diagram of the 'startof' operator for timespec C<-1q startof>,
+given the date C<2010-05-01 00:00>.
+
+          R P   C
+          v v   v
+   ---.---.---.---.---.--- Dec 2010
+   ^   ^   ^   ^   ^   ^
+   Jul Oct Jan Apr Jul Oct
+  2009    2010
+
+  . = quarter separator 
+  C = current quarter
+  P = previous quarter
+  R = Resultant time (2010-01-01 00:00:00)
 
 =head1 OPTIONS
 
