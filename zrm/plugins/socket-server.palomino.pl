@@ -315,7 +315,7 @@ sub doRealHotCopy()
       if($fh == \*INNO_LOG) {
         if( sysread( INNO_LOG, $buf, 10240 ) ) {
           &printLog($buf);
-          if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+          if($buf =~ /innobackupex.*: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
             record_backup("full", $start_tm, time(), $backup_sz, "failure", $1);
             restore_wait_timeout($dbh, $prev_wait);
             sendNagiosAlert("CRITICAL: $1", 2);
