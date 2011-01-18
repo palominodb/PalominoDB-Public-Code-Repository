@@ -232,13 +232,12 @@ sub logpath {
     openlog($script_name, "", $1);
     $self->{logsub} = sub {
       my $self = shift;
+      $_[3] = '';
       my $lvl = 'LOG_DEBUG';
       $lvl = 'LOG_INFO' if($_[0] eq "msg");
       $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
       $lvl = 'LOG_ERR'  if($_[0] eq "err");
-      foreach my $l (split "\n", _p(@_)) {
-        syslog($lvl, $l);
-      }
+      syslog($lvl, _p(@_));
       print _p(@_) unless $self->{quiet};
     };
   }
@@ -529,9 +528,9 @@ sub _p {
   my $package = shift;
   my $line = shift;
   my $time = shift;
-  my $prefix = "$mode ";
-  $prefix .= "${package}:${line} " if(defined $package and defined $line);
-  $prefix .= "$time: ";
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
   @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
        map { defined $_ ? $_ : 'undef' } @_;
   $prefix. join(' ',@_). "\n";

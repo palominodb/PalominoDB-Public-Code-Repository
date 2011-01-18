@@ -88,6 +88,7 @@ eval {
   $pls->e('error message');
   $pls->i('notice message');
   $pls->m('info message');
+  $pls->m("multi-line\nmessage\ntesting");
 };
 if($@) { fail('syslog messages'); diag($@); }
 else { pass('syslog messages'); }
