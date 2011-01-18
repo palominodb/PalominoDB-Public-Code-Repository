@@ -34,14 +34,16 @@ use English qw(-no_match_vars);
 use Data::Dumper;
 
 use ProcessLog;
+use DSN;
+use DBI;
 
 sub new {
-  my ( $class, $pl, $dbh, $schema, $name ) = @_;
+  my ( $class, $pl, $dsn ) = @_;
   my $self = ();
-  $self->{dbh} = $dbh;
+  $self->{dbh} = $dsn->get_dbh(1);
   $self->{pl} = $pl;
-  $self->{schema} = $schema;
-  $self->{name} = $name;
+  $self->{schema} = $dsn->get('D');
+  $self->{name} = $dsn->get('t');
   bless $self, $class;
 
   $self->_get_partitions();
