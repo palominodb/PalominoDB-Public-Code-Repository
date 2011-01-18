@@ -10,6 +10,9 @@ test:
 	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
 	cover
 
+test-no-cover:
+	prove -I$(LIB_PATH) -It/lib -Isrc -I$(TLIB_PATH) t/*
+
 bin:
 	mkdir bin
 
