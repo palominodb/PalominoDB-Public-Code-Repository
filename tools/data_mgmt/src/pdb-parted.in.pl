@@ -123,6 +123,7 @@ sub main {
     "add",
     "drop",
     "archive",
+    "archive-path=s",
     "i-am-sure",
   );
 
@@ -609,49 +610,42 @@ What directory to place the SQL dumps of partition data in.
 
 =item --add
 
-Adds partitions till there are at least L<--interval> sized future buckets.
+Adds partitions till there are at least TIMESPEC L<--interval> sized future buckets.
 
 The adding of partitions is not done blindly. This will only add new partitions
-if there are fewer than N future partitions. For example, if N is 2 (e.g., C<--add 2> is used),
-8 partitions already exist, and today falls in partition 6, then C<--add> will do nothing.
+if there are fewer than TIMESPEC future partitions. For example:
 
-Diagram 1:
+  Given: --interval d, today is: 2011-01-15, TIMESPEC is: +1w,
+         last partition (p5) is for 2011-01-16;
+  
+  Result:
+    Parted will add 6 partitions to make the last partition 2011-01-22 (p11).
 
-  |-----+-|
-  0     6 8
+  Before:
+   |---+|
+  p0  p5
 
-Conversely, if N is 3 and the rest of the conditions are as above, then C<--add> will add 1 partition.
-
-Diagram 2:
-
-  |-----+--|
-  0     6  9
+  After:
+   |---+-----|
+  p0  p5    p11 
 
 You can think of C<--add> as specifying a required minimum safety zone.
 
-If L<--uneven> is passed, then this tool will ignore fractional parts of weeks and months.
-This can be useful to convert from one size partition to another.
-Otherwise, this tool will round up to the largest whole week or month. This means, that if you
-are adding monthly partitions, it makes sense to run the tool on the same day of the month.
-And, if you are adding weekly partitions, it would behoove you to run this on the same day of the week each time.
-
 =item --drop
 
-type: integer
+Drops partitions strictly older than TIMESPEC.
+The partitions are not renumbered to start with p0 again.
 
-Drops the N oldest partitions.
+  Given: today is: 2011-01-15, TIMESPEC is: -1w,
+         first partition (p0) is for 2011-01-06
 
-B<NOTE:> Unless L<"--i-am-sure"> is passed,
-this tool refuses to drop more than 1 at a time.
 
-You'll note from the below diagram that this tool does NOT renumber partitions to start at 0.
-
-Diagram 3:
+  Result: 2 partitions will be dropped.
 
   Before: |-----+--|
           0     6  9
-  After : x-----+--|
-           1    6  9
+  After : |---+--|
+          2   6  9
 
 =back
 
