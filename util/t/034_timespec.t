@@ -2,7 +2,7 @@ use strict;
 use warnings FATAL => 'all';
 use DateTime;
 use DateTime::Format::Strptime;
-use Test::More tests => 10;
+use Test::More tests => 16;
 
 BEGIN {
   use_ok('Timespec');
@@ -133,3 +133,20 @@ is($r, $oct_1st_2010, 'subtract one month startof');
 
 $r = Timespec->parse('1m.startof', $sep_23rd_2010);
 is($r, $oct_1st_2010, 'subtract one month.startof');
+
+$r = Timespec->parse('2010-09-23 00:00:00');
+is($r, $sep_23rd_2010, 'mysql time - local');
+
+$r = Timespec->parse('2010-09-23 00:00:00 US/Eastern');
+diag($r->time_zone_short_name());
+is($r, $sep_23rd_2010, 'US/Eastern time str compare');
+ok($r != $sep_23rd_2010, 'US/Eastern time DateTime compare');
+
+$r = Timespec->parse('2010-09-23 00:00:00 Etc/UTC');
+diag($r->time_zone_short_name());
+is($r, $sep_23rd_2010, 'UTC time str compare');
+ok($r != $sep_23rd_2010, 'UTC time DateTime compare');
+
+$r = Timespec->parse('1295930000');
+is($r, DateTime->new(year => 2011, month => 1, day => 25,
+                     hour => 04, minute => 33, second => 20), 'unix epoch - UTC');

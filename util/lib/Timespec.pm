@@ -31,6 +31,7 @@ use strict;
 use warnings FATAL => 'all';
 use DateTime;
 use DateTime::Format::Strptime;
+use Carp;
 
 sub parse {
   my ($class, $str, $ref) = @_;
@@ -44,7 +45,10 @@ sub parse {
   else {
     $ref = $ref->clone();
   }
-  my $fmt = DateTime::Format::Strptime->new(pattern => '%F %T', time_zone => 'local');
+  my $fmt_local = DateTime::Format::Strptime->new(pattern => '%F %T',
+                                                  time_zone => 'local');
+  my $fmt_tz = DateTime::Format::Strptime->new(pattern => '%F %T %O');
+  $fmt_tz->parse_datetime($str);
   # $1: op, $2: amt, $3: spec, $4: startof
   if($str =~ /^([-+]?)(\d+)([hdwmqy])(?:(?:\s|\.)(startof))?$/) {
     my ($spec, $amt) = ($3, $2);
@@ -76,8 +80,17 @@ sub parse {
     }
     return $ref;
   }
-  elsif($_ = $fmt->parse_datetime($str)) {
+  elsif($str =~ /^(\d+)$/) {
+    return DateTime->from_epoch(epoch => $1);
+  }
+  elsif($_ = $fmt_tz->parse_datetime($str)) {
     return $_;
+  }
+  elsif($_ = $fmt_local->parse_datetime($str)) {
+    return $_;
+  }
+  else {
+    croak("Unknown or invalid Timespec [$str] supplied.");
   }
 }
 
@@ -91,10 +104,17 @@ Timespec - Easy time manipulations.
 
 A timespec is one of:
 
-  A modifier to current local time
-  or, an absolute time in 'YYYY-MM-DD HH:MM:SS' format.
+  A modifier to current local time,
+  A unix timestamp (assumed in UTC),
+  An absolute time in 'YYYY-MM-DD HH:MM:SS' format,
+  An absolute time in 'YYYY-MD-DD HH:MM:SS TIMEZONE' format.
 
-Since the latter isn't very complicated, this section describes
+For the purposes of this module, TIMEZONE refers to zone names
+created and maintained by the zoneinfo database.
+See L<http://en.wikipedia.org/wiki/Tz_database> for more information.
+Commonly used zone names are: Etc/UTC, US/Pacific and US/Eastern.
+
+Since the last three aren't very complicated, this section describes
 what the modifiers are.
 
 A modifer is, an optional plus or minus sign followed by a number,
