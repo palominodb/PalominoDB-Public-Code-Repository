@@ -80,6 +80,9 @@ sub parse {
     }
     return $ref;
   }
+  elsif($str eq 'now') {
+    return DateTime->now(time_zone => 'local');
+  }
   elsif($str =~ /^(\d+)$/) {
     return DateTime->from_epoch(epoch => $1);
   }
@@ -106,6 +109,7 @@ A timespec is one of:
 
   A modifier to current local time,
   A unix timestamp (assumed in UTC),
+  The string 'now' to refer to current local time,
   An absolute time in 'YYYY-MM-DD HH:MM:SS' format,
   An absolute time in 'YYYY-MD-DD HH:MM:SS TIMEZONE' format.
 
