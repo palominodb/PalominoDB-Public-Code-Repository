@@ -663,6 +663,7 @@ There is presently no way to disable this behavior.
 
 {
   no strict 'refs';
+  no warnings 'once';
   *::PL = \(ProcessLog->new($0, '/dev/null'));
 }
 
