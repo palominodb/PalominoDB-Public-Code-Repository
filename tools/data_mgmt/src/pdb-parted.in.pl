@@ -133,11 +133,19 @@ sub main {
   pod2usage("Missing DSN") if(!$dsn);
 
   $email_log    = '';
-  $requested_dt = Timespec->parse($timespec);
-  $dsn          = DSNParser->default()->parse($dsn);
+  eval {
+    $requested_dt = Timespec->parse($timespec);
+    $dsn          = DSNParser->default()->parse($dsn);
+  };
+  if($@) {
+    pod2usage($@);
+  }
   
-  unless($o{'interval'} and $o{'interval'} =~ /^[hdmqy]$/) {
-    pod2usage("interval must be one of: h,d,m,q,y");
+  unless($o{'drop'}) {
+    # interval is not necessary for --drop.
+    unless($o{'interval'} and $o{'interval'} =~ /^[hdmqy]$/) {
+      pod2usage("interval must be one of: h,d,m,q,y");
+    }
   }
 
   unless($o{'prefix'} =~ /^[A-Za-z][A-Za-z0-9_-]*$/) {
