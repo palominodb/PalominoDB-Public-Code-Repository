@@ -468,6 +468,7 @@ It creates partitions in regular intervals up to some maximum future date.
   --archive             Archive partitions before dropping them.
   --limit,         -m   Limit the number of actions to be performed.
                         Default: 0 (unlimited)
+
 =head2 ACTION
 
   --add   Add partitions.
