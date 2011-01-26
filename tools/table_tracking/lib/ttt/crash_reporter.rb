@@ -28,7 +28,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 require 'rubygems'
 require 'action_mailer'
-require 'ruby-debug'
 
 module TTT
   class CrashMailer < ActionMailer::Base
@@ -50,7 +49,6 @@ module TTT
             :filename => "data#{i}.yaml",
             :body => a.to_yaml
         rescue
-          debugger
           attachment :content_type => 'text/yaml',
             :filename => "crash_error#{i}.yaml",
             :body => $!.to_yaml + "\n" + $!.backtrace.to_yaml

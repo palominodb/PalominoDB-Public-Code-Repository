@@ -27,10 +27,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 require 'rubygems'
-#require 'ttt/information_schema'
 require 'ttt/db'
 require 'ttt/history'
 require 'set'
+require 'mysql'
 require 'ttt/crash_reporter'
 
 module TTT
@@ -92,9 +92,23 @@ module TTT
   end
 
   class CollectionDirector
-    MYSQL_CONNECT_ERROR = 2003
-    MYSQL_TOO_MANY_CONNECTIONS = 1040
-    MYSQL_HOST_NOT_PRIVILEGED = 1130
+    MYSQL_CONNECT_ERROR = Mysql::Error::CR_CONN_HOST_ERROR
+    MYSQL_TOO_MANY_CONNECTIONS = Mysql::Error::ER_CON_COUNT_ERROR
+    MYSQL_HOST_NOT_PRIVILEGED = Mysql::Error::ER_HOST_NOT_PRIVILEGED
+    UNREACHABLE_ERRORS = [
+                          MYSQL_CONNECT_ERROR,
+                          MYSQL_TOO_MANY_CONNECTIONS,
+                          MYSQL_HOST_NOT_PRIVILEGED,
+                          Errno::EHOSTDOWN,
+                          Errno::EHOSTUNREACH,
+                          Errno::ECONNREFUSED,
+                          Errno::ECONNABORTED,
+                          Errno::ECONNRESET,
+                          Errno::ETIMEDOUT,
+                          Errno::ENETDOWN,
+                          Errno::ENETUNREACH,
+                          Errno::ENETRESET
+                          ]
     class RunData
       attr_reader :host, :tables, :runref, :logger
       attr_accessor :cur_snapshot
@@ -205,8 +219,8 @@ module TTT
         rd=nil
         if @host != host
           @host=host
-          TTT::InformationSchema.connect(@host, @cfg)
           begin
+            TTT::InformationSchema.connect(@host, @cfg)
             ActiveRecord::Base.logger.info "[cache tables]: #{@host} - #{collector.stat}"
             recache_tables!
 
@@ -222,7 +236,7 @@ module TTT
               t.save
             end
           rescue Mysql::Error => mye
-            if [MYSQL_HOST_NOT_PRIVILEGED, MYSQL_CONNECT_ERROR, MYSQL_TOO_MANY_CONNECTIONS].include? mye.errno
+            if UNREACHABLE_ERRORS.include? mye.errno
               prev=collector.stat.find_last_by_server(@host)
               rd=RunData.new(host, nil, collector, @runtime)
               if prev.nil? or !prev.unreachable?
