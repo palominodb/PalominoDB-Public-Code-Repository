@@ -24,10 +24,10 @@ task :default => :test
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "1.5.2"
+  s.version = "1.5.3"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
-  s.homepage = "http://blog.palominodb.com/blog/"
+  s.homepage = "http://www.palominodb.com/"
   s.platform = Gem::Platform::RUBY
   s.summary = "Track Database table schema, and size changes"
   s.description =<<E_DESC
