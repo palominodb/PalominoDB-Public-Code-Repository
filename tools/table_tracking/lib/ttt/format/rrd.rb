@@ -61,7 +61,7 @@ module TTT
         @rrd_io.puts(args.join(' '))
         o=@rrd_io.readpartial(4096).split("\n")
         o.map! { |l| l.chomp }
-        unless o[-1] =~ /^OK u:\d+.\d+ s:\d+.\d+ r:\d+.\d+$/
+        unless o[-1] =~ /^OK u:\d+.\d+ s:\d+.\d+ r:\d+.\d+$/ or o[-1] =~ /ERROR: illegal attempt to update.*/
           raise RrdError, "RRD Returned: #{o} intead of OK"
         end
         o.pop
