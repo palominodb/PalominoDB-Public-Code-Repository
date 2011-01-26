@@ -114,7 +114,7 @@ use TablePacker;
 use TableRotater;
 use RObj;
 
-our $VERSION = 0.035;
+our $VERSION = 0.036;
 
 use constant DEFAULT_LOG => "/dev/null";
 use constant DEFAULT_DATE_FORMAT => "_%Y%m%d";
@@ -130,6 +130,7 @@ my $age_format = "_%Y%m%d";
 my $rotate_format = '';
 my $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
 my $force    = 0;
+my $force_small = 0;
 
 sub main {
   # Overwrite ARGV with parameters passed here
@@ -155,7 +156,8 @@ sub main {
     "age=s" => \$age,
     "age-format=s" => \$age_format,
     "rotate-format=s" => \$rotate_format,
-    "force" => \$force
+    "force" => \$force,
+    "force-small" => \$force_small,
   );
 
   unless(scalar @ARGV >= 1) {
@@ -198,7 +200,7 @@ sub main {
       $pl->e('DSN:', $_->str(), 'is missing one of the required keys: t or r');
       return 1;
     }
-    unless($_->get('r') =~ /\(.*?\)/) {
+    if($_->has('r') and $_->get('r') !~ /\(.*?\)/) {
       $pl->e('DSN:', $_->str(), 'r key does not have a capture group.');
       return 1;
     }
@@ -213,7 +215,8 @@ sub main {
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
     $pl->d('tables:', join(',', @tbls) );  
-    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config')};
+    my ($status, $cfg) = @{MysqlInstance->remote($d, 'config', $d->get('rF'))};
+    $pl->d('status:', $status, 'cfg:', $cfg);
     unless($status eq 'EXIT') {
       $pl->e($d->get('h'), "did not return host config correctly. Got:", Dumper($cfg));
       next;
@@ -378,7 +381,7 @@ sub pack_table {
     }
   }
   if($dsn->get('h') ne 'localhost') {
-    my $ro = RObj->new($dsn->get('h'), $dsn->get('sU'), $dsn->get('sK'));
+    my $ro = RObj->new($dsn);
     # Make sure the RObj has the needed modules
     $ro->add_use('TablePacker', 'DBI');
     $ro->add_package('DSN');
@@ -386,22 +389,23 @@ sub pack_table {
     $ro->add_package('TablePacker');
     $ro->add_main(sub {
         # This packs and checks the table specified by $dsn
-        my ($self) = @_;
+        my ($self, $force_small) = @_;
         eval {
           local $SIG{__DIE__};
-          $self->pack();
+          $self->pack($force_small);
           $self->check();
         };
         return $self;
       });
-    $tp = [$ro->do($tp)]->[1];
+    $tp = [$ro->do($tp, $force_small)]->[1];
   }
   else {
     eval {
-      $tp->pack();
+      $tp->pack($force_small);
       $tp->check();
     };
   }
+  print( STDERR 'TablePacker: ', Dumper($tp));
   # Flush the table so that mysql reloads the .FRM file.
   $tp->flush();
   chomp($tp->{errstr}) if($tp->{errstr});
@@ -547,6 +551,11 @@ Default: off
 =item B<--force>
 
 Force packing to run, even if mysql thinks the table is already packed.
+
+
+=item B<--force-small>
+
+Force packing to run even if the table is too small.
 
 =back
 

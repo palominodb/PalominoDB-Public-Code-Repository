@@ -7,7 +7,8 @@ class mysql::config {
     "sysdefault" => $mysql::my_cnf_path,
     default => $mysql_mycnf_dest,
   }
-  file { "$dest":
+  file { 'my.cnf':
+    path   => $dest,
     ensure => "file",
     owner => "root",
     group => $operatingsystem ? {
@@ -17,3 +18,4 @@ class mysql::config {
     source => "puppet:///git-config/mysql/$ipaddress/my.cnf",
   }
 }
+

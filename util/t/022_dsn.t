@@ -1,7 +1,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 10;
+use Test::More tests => 14;
 BEGIN {
   use_ok('DSN');
 }
@@ -34,3 +34,34 @@ eval {
   $dsn->fill_in($dsn4);
 };
 is($@, '', 'array-ref values cause fatal warning');
+
+my $p2 = DSNParser->new({ 'h' => { 'desc' => 'hostname', 'default' => '', 'mandatory' => 1 } });
+eval {
+  my $dsn5 = $p2->parse('');
+};
+diag($@);
+like($@, qr/Missing key:/, 'missing key generates exception');
+
+$p2 = DSNParser->new({ 'h' => { 'default' => '', 'mandatory' => 1 } });
+eval {
+  my $dsn5 = $p2->parse('');
+};
+diag($@);
+like($@, qr/Missing key:/, 'missing description generates "Missing key:" exception');
+
+$dsn4 = $p->parse('h=remote-box,SSL_key=/path/to/key,SSL_cipher=AES');
+diag($dsn4->get_dbi_str());
+like($dsn4->get_dbi_str(), qr/mysql_ssl=1;/, 'Adding an SSL option includes mysql_ssl option in DBI string');
+unlike($dsn4->get_dbi_str(), qr/^\Gmysql_ssl=1;/, 'Does not add mysql_ssl more than once');
+
+$dsn = $p->parse($TestDB::dsnstr);
+
+eval {
+  my $dbh = $dsn->get_dbh(1);
+  my $r = $dbh->selectall_arrayref("SHOW TABLE STATUS FROM `fakedb` LIKE 'faketable'");
+};
+diag($@);
+like($@, qr/Unknown database/, 'exception contains info');
+
+
+

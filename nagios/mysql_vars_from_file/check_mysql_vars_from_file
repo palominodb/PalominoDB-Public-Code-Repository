@@ -1,0 +1,185 @@
+#! /usr/bin/perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+use strict;
+use warnings FATAL => 'all';
+use Getopt::Long qw(:config no_ignore_case);
+use Time::HiRes qw(time);
+use DBI;
+use Data::Dumper;
+
+# Define nagios constants
+use constant OK       => 0;
+use constant WARNING  => 1;
+use constant CRITICAL => 2;
+use constant UNKNOWN  => 3;
+
+use constant TIMEOUT => 10;
+
+# Define subroutines
+sub print_help(;$);
+sub populate_var_hash(); 
+sub get_vars_from_files();
+sub parse_expression_and_compare();
+sub round2();
+
+my %o;
+my (@mysqlvarlist,%mylist,$compval,$output,$parsedexpr);
+my $label='';
+
+sub print_help(;$) {
+  my $err = ($_[0] ? "Error: $_[0]" : "");
+  print <<EOF;
+Copyright (c) 2010, PalominoDB, Inc.
+
+Nagios plugin to compare MySQL status/system variables in a file to a threshold
+
+Usage: $0 -l <label> -c <comparison and threshold> -e <expr> -f </path/to/variables-files> [options]
+
+Options:
+  -l, --label=STRING
+     label of this check, ie "% max connections"
+  -c, --comparison=STRING
+    comparison and threshold (Perl syntax), e.g. ">80"
+  -e, --expression=STRING
+    the calculation, a Perl expression with MySQL variable names
+    e.g. "Max_used_connections/max_connections * 100"
+  -f, --input-file=STRING
+    full path to the variables file 
+  -t, --timeout=INTEGER
+    Number of seconds before plugin times out (default: 15)
+  -v, --verbose
+    Print extra debugging information
+  -V, --version
+     Show version information
+
+$err
+EOF
+  exit(UNKNOWN);
+}
+
+MAIN:
+{
+    my ($TIMEOUT) = (TIMEOUT);
+
+    GetOptions(\%o,
+        "help|h",
+        "verbose|v",
+        "timeout|t=i",
+        "input-file|f=s",
+        "comparison|c=s",
+        "expression|e=s",
+        "label|l=s"
+    );
+
+    if ($o{'help'}) {
+        print_help();
+        exit OK;
+    }
+
+    ($o{'label'}) || print_help("label not specified.");
+    ($o{'comparison'}) || print_help("comparison not specified.");
+    ($o{'expression'}) || print_help("expression not specified.");
+    ($o{'input-file'}) || print_help("input file not specified.");
+    if (!open(INPUT,$o{'input-file'})) {
+        print_help("Input file for variables cannot be opened: $o{'input-file'}\n");
+    close(INPUT);
+    }
+
+    # Don't risk hanging nagios.
+    $SIG{'ALRM'} = sub {
+        print "TIMEOUT after $TIMEOUT seconds.\n";
+        exit UNKNOWN;
+    };
+    alarm($TIMEOUT);
+
+if ($o{'verbose'}) { print "using filenames from list $o{'input-file'}\n"; }
+get_vars_from_files();
+populate_var_hash();
+parse_expression_and_compare();
+} # end main
+
+sub get_vars_from_files() {
+if ($o{'verbose'}) { print "using filenames from list $o{'input-file'}\n"; }
+foreach my $filename (split(",",$o{'input-file'})) {
+        if (open(FILE,"<$filename")) {
+        push (@mysqlvarlist,<FILE>);
+        close(FILE);
+        }
+        else {
+                print "cannot open $filename\n"; 
+                exit 1;
+                }
+        }
+}
+
+sub populate_var_hash() {
+foreach my $vline (@mysqlvarlist) {
+#if ($o{'verbose'}) { print "$vline"; }
+           $vline =~ /([a-zA-Z_]*)\s*(.*)/;
+           $mylist{$1} = $2;
+        }        
+}
+
+sub parse_expression_and_compare() {
+if ($o{'verbose'}) {print "expr starts as $o{'expression'}\n";}
+$parsedexpr='';
+foreach my $word (split(/\b/,$o{'expression'})) {
+  if (exists($mylist{$word})) {
+    $parsedexpr.=$mylist{$word};
+    }
+  else {
+    $parsedexpr.=$word;
+    }
+}
+if ($o{'verbose'}) {print "expr after parsing is $parsedexpr\n";}
+$compval=eval($parsedexpr);
+if ($o{'verbose'}) {print "expr evals to '$compval'\n";}
+
+$compval=&round2($compval);
+#if ($o{'verbose'}) {print "after rounding, expr evals to $compval\n";}
+
+ my $parsed=eval($parsedexpr);
+ my $returnval=eval($parsed.$o{'comparison'});
+ if ($o{'verbose'}) { print "returning a value of $returnval\n"; }
+ if ($returnval ne '') {print "ERROR: ";} else { print "OK: ";}
+  print "$o{'label'} = ".$parsed;
+ exit $returnval;
+}
+
+
+
+sub round2() {
+my $num=shift;
+# if the result is a number with a decimal point, round to the nearest 0.01
+if ($num=~/^-?\d+\.?\d*(e.\d+)?$/ && $o{'expression'} !~ /version/i) {
+  $num=sprintf("%.2f",$num);
+}
+else { return $num;}
+}

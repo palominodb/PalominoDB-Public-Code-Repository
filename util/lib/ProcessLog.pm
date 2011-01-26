@@ -103,37 +103,9 @@ sub new {
   $self->{stack_depth} = 10; # Show traces 10 levels deep.
   $self->{logsub} = 0;
   $self->{quiet} = 0;
-  if($logpath =~ /^syslog:(\w+)/) {
-    openlog($script_name, "", $1);
-    $self->{logsub} = sub {
-      my $self = shift;
-      my $lvl = 'LOG_DEBUG';
-      $lvl = 'LOG_INFO' if($_[0] eq "msg");
-      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
-      $lvl = 'LOG_ERR'  if($_[0] eq "err");
-      foreach my $l (split "\n", _p(@_)) {
-        syslog($lvl, $l);
-      }
-      print _p(@_) unless $self->{quiet};
-    };
-  }
-  elsif($logpath eq 'pdb-test-harness') {
-    $self->{logsub} = sub {
-      my $self = shift;
-      print STDERR '# ', _p(@_);
-    }
-  }
-  else {
-    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
-    $self->{logsub} = sub {
-      my $self = shift;
-      my $fh  = $self->{LOG};
-      print $fh _p(@_);
-      print _p(@_) unless $self->{quiet};
-    };
-  }
 
   bless $self,$class;
+  $self->logpath($logpath);
   return $self;
 }
 
@@ -247,6 +219,67 @@ sub quiet {
 
 =pod
 
+=head3 C<logpath($path)>
+
+Sets the logpath for this ProcessLog.
+
+=cut
+
+sub logpath {
+  my ($self, $logpath) = @_;
+  my $script_name = $$self{script_name};
+  if($logpath =~ /^syslog:(\w+)/) {
+    openlog($script_name, "", $1);
+    $self->{logsub} = sub {
+      my $self = shift;
+      $_[3] = '';
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
+      syslog($lvl, _p(@_));
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      my @args = @_;
+      $args[0] =~ s/^/# /;
+      print STDERR _p(@args);
+    }
+  }
+  else {
+    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    $self->{logsub} = sub {
+      my $self = shift;
+      my $fh  = $self->{LOG};
+      print $fh _p(@_);
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  return $self;
+}
+
+=pod
+
+=head3 C<email_to($email_addr,...)>
+
+Set where emails should be sent for this ProcessLog.
+
+=cut
+
+sub email_to {
+  my ($self, @emails) = @_;
+  my $old = $$self{email_to};
+  if(@emails) {
+    $$self{email_to} = [@emails];
+  }
+  return $old;
+}
+
+=pod
+
 =head3 C<m(@args)>
 
 Regular message.
@@ -346,6 +379,21 @@ sub e {
   my $fh = $self->{LOG};
   my $t = sprintf("%.3f", time());
   $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+=pod
+
+=head3 C<e($die,@args)>
+
+Error message and die with first argument.
+Useful for errors that may be capturable later.
+
+=cut
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
 }
 
 =pod
@@ -497,9 +545,9 @@ sub _p {
   my $package = shift;
   my $line = shift;
   my $time = shift;
-  my $prefix = "$mode ";
-  $prefix .= "${package}:${line} " if(defined $package and defined $line);
-  $prefix .= "$time: ";
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
   @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
        map { defined $_ ? $_ : 'undef' } @_;
   $prefix. join(' ',@_). "\n";
@@ -565,31 +613,58 @@ sub email_and_die {
 
 sub failure_email {
   my ($self,$extra) = shift;
-  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
-  $self->i("Not emailing:", $extra) if(not defined $self->{email_to});
-  $self->m("Emailing out failure w/ extra: $extra\n") if($extra);
-  my $msg = Mail::Send->new(Subject => "$self->{script_name} FAILED", To => $self->{email_to});
-  my $fh = $msg->open;
-  print $fh "$self->{script_name} on ". hostname() . " failed at ". scalar localtime() ."\n";
-  print $fh "\nThe Error: $extra\n" if($extra);
-  print $fh $self->stack() . "\n";
-  print $fh "RUN ID (for grep): $self->{run_id}\n";
-  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
-  $fh->close;
+  $self->send_email("$self->{script_name} FAILED", $extra);
 }
 
 sub success_email {
   my ($self, $extra) = shift;
-  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and return(0) unless($mail_available);
-  $self->i("Not emailing:",$extra) if(not defined $self->{email_to});
-  $self->m("Emailing out success w/ extra: $extra\n") if($extra);
-  my $msg = Mail::Send->new(Subject => "$self->{script_name} SUCCESS", To => $self->{email_to});
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
+}
+
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
   my $fh = $msg->open;
-  print $fh "$self->{script_name} on ". hostname() . " succeeded at ". scalar localtime() ."\n";
-  print $fh "\nMessage: $extra\n" if($extra);
-  print $fh "RUN ID (for grep): $self->{run_id}\n";
-  print $fh "Logfile: ". File::Spec->rel2abs($self->{log_path}), "\n";
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
   $fh->close;
+}
+
+=pod
+
+=head1 DEFAULT PROCESSLOG
+
+This package places a default ProcessLog object into the global
+namespace as C<$::PL> which any module is free to access.
+There is presently no way to disable this behavior.
+
+=cut
+
+{
+  no strict 'refs';
+  no warnings 'once';
+  *::PL = \(ProcessLog->new($0, '/dev/null'));
 }
 
 =pod

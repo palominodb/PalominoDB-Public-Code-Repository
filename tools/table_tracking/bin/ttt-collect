@@ -33,6 +33,7 @@ require 'yaml'
 require 'getoptlong'
 require 'open-uri'
 require 'text/reform'
+require 'sqlite3'
 
 require 'pdb/dsn'
 require 'ttt/db'
@@ -156,12 +157,27 @@ begin
     end
   end
 rescue Exception => e
-  if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
-    TTT::CrashMailer.deliver_crash(e, director, cur_col)
-    $stderr.puts "ttt-collect has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+  if e.message =~ /SQLite3::BusyException/
+    if !$sleep_message_printed then
+      $sleep_message_printed = true
+      $stderr.puts "TTT DB locked. Sleeping until available. Ctrl-C will abort."
+    end
+    begin
+      sleep(1)
+    rescue Interrupt => e
+      exit 1
+    end
+    retry
+  else
+    if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
+      TTT::CrashMailer.deliver_crash(e, director, cur_col)
+      $stderr.puts "ttt-collect has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+    end
+    $stderr.puts e
+    $stderr.puts e.backtrace
+    exit 1
   end
-  $stderr.puts e
-  $stderr.puts e.backtrace
+rescue Interrupt => e
   exit 1
 end
 

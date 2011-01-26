@@ -1,17 +1,31 @@
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 5;
+use Test::More tests => 8;
 use TestUtil;
 
 BEGIN {
   use_ok('RObj');
 }
 
-SKIP: {
-  if(!$ENV{TEST_ROBJ_HOST} or !$ENV{TEST_ROBJ_USER}) {
-    skip "Need TEST_ROBJ_HOST and TEST_ROBJ_USER setup", 4
+sub nondefault_fail_check {
+  if( -d "/noway" ) {
+    return 'ok';
   }
-  my $ro = new_ok('RObj' => [$ENV{TEST_ROBJ_HOST}, $ENV{TEST_ROBJ_USER}]);
+  return "/noway is not a directory!\n";
+}
+
+sub nondefault_pass_check {
+  if( -d "/etc" ) {
+    return 'ok';
+  }
+  return "/etc is not a directory?";
+}
+
+SKIP: {
+  if(!$ENV{TEST_SSH_HOST} or !$ENV{TEST_SSH_USER}) {
+    skip "Need TEST_SSH_HOST and TEST_SSH_USER setup", 5
+  }
+  my $ro = new_ok('RObj' => [$ENV{TEST_SSH_HOST}, $ENV{TEST_SSH_USER}]);
   $ro->add_main(
     sub {
       my $cmd = $_[0];
@@ -41,4 +55,22 @@ SKIP: {
   $ro->write('DONE');
   my @r =$ro->wait();
   is_deeply(\@r, ['EXIT', OK], 'get exit');
+
+  eval {
+    diag('check result:', join(' ', $ro->check()));
+  };
+  diag($@ or "no exception");
+  unlike($@, qr/^failed check:/, 'default check() returns successfully');
+
+  eval {
+     diag('check result:', join(' ', $ro->check(\&nondefault_pass_check)));
+  };
+  diag($@ or "no exception");
+  unlike($@, qr/^failed check:/, 'non-default check() returns successfully');
+
+  eval {
+     diag('check result:', join(' ', $ro->check(\&nondefault_fail_check)));
+  };
+  diag($@ or "no exception");
+  like($@, qr/^failed check:/, 'non-default check() fails correctly');
 }

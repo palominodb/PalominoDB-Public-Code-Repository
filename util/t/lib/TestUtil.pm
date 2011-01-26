@@ -26,6 +26,8 @@ $VERSION = 0.01;
 @ISA = qw(Exporter);
 @EXPORT = qw(get_test_dir get_files_dir get_test_data slurp new_ok fake_use);
 
+our $PDB_CODE_ROOT = $ENV{PDB_CODE_ROOT} || die("PDB_CODE_ROOT not set to path to pdb-code checkout");
+
 sub get_test_dir ($) {
   my $hide = shift || 0;
   my @cvars = caller($hide);

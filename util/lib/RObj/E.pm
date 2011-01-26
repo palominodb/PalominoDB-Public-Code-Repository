@@ -138,6 +138,7 @@ use 5.0008;
 # into messages back to the controlling process.
 BEGIN {
   $SIG{__DIE__} = sub {
+    die @_ if $^S;
     my $ro = RObj::Base->new;
     $ro->write_message(\*STDOUT, @_);
     exit(RObj::Base::COMPILE_FAILURE);
@@ -167,7 +168,7 @@ sub R_die {
 sub R_exit {
   my ($exit_code) = @_;
   R_print('EXIT', $exit_code);
-  exit($exit_code);
+  exit(OK);
 }
 
 sub R_print {
@@ -177,7 +178,6 @@ sub R_print {
 sub R_read {
   my @recv;
   1 while( !(@recv = $ro->read_message(\*STDIN)) and $ro->sys_error() == 0 );
-  #R_print('ACK');
   return @recv;
 }
 
@@ -223,7 +223,7 @@ $| = 1;
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
-$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
+$SIG{__DIE__} = sub { die @_ if $^S; R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args

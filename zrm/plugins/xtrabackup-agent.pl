@@ -74,7 +74,7 @@ our $VERSION="0.75.1";
 my $REMOTE_VERSION = undef;
 my $MIN_XTRA_VERSION=1.0;
 
-my $logDir = "/var/log/mysql-zrm";
+my $logDir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
 my $logFile = "$logDir/xtrabackup-agent.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
@@ -407,7 +407,7 @@ sub doRealHotCopy {
       if($fh == \*INNO_LOG) {
         if( sysread( INNO_LOG, $buf, 10240 ) ) {
           printLog($buf);
-          if($buf =~ /innobackupex: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
+          if($buf =~ /innobackupex.*: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
             record_backup("full", $start_tm, time(), $backup_sz, "failure", $1);
             restore_wait_timeout($dbh, $prev_wait);
             sendNagiosAlert("CRITICAL: $1", 2);
@@ -644,7 +644,7 @@ sub open_stats_db {
 
 sub record_backup {
   my ($type, $start_tm, $end_tm, $sz, $status, $info) = @_;
-  my ($all_stats, $i, $upd) = ((), 0, 0);
+  my ($all_stats, $i, $upd) = (undef, 0, 0);
   my $cnt = 0;
   if(not defined $type or not defined $start_tm) {
     die("Programming error. record_backup() needs at least two parameters.");
@@ -662,6 +662,7 @@ sub record_backup {
 
   for($i = 0; $i < @$all_stats; $i++) {
     my $stat = $$all_stats[$i];
+    next if($stat =~ /^$/);
     my ($stype, $sstart, $send, $ssize, $sstatus, $sinfo) = split(/\t/, $stat);
     if(!$upd and $stype eq $type and $start_tm == $sstart) {
       $$all_stats[$i] = join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
@@ -685,7 +686,7 @@ sub record_backup {
 
 sub doMonitor {
   my ($newer_than, $max_items) = (0, 0);
-  my ($all_stats, $i) = ((), 0);
+  my ($all_stats, $i) = (undef, 0);
   if(not defined $params) { # modern client >= 0.75.1 
     $newer_than = $HDR{newer_than};
     $max_items = $HDR{max_items};
@@ -768,7 +769,7 @@ sub processRequest {
         chomp($_);
         $params .= " --password=$_ ";
         $mysql_pass=$_;
-        
+
         $tmp_directory=getTmpName();
         my $r = mkdir( $tmp_directory );
         if( $r == 0 ){

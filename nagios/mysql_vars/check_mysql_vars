@@ -1,0 +1,180 @@
+#! /usr/bin/perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+use strict;
+use warnings FATAL => 'all';
+use Getopt::Long qw(:config no_ignore_case);
+use Time::HiRes qw(time);
+use DBI;
+use Data::Dumper;
+
+# Define nagios constants
+use constant OK       => 0;
+use constant WARNING  => 1;
+use constant CRITICAL => 2;
+use constant UNKNOWN  => 3;
+
+use constant TIMEOUT => 10;
+
+sub print_help(;$);
+sub get_vars ($$$$$$);
+
+my %o;
+
+sub print_help(;$) {
+  my $err = ($_[0] ? "Error: $_[0]" : "");
+  print <<EOF;
+Copyright (c) 2010, PalominoDB, Inc.
+
+Nagios plugin to get MySQL system and status variables and save to a file
+
+Usage: $0 -H <host> -o output-file </full/path/to/file> [options]
+
+Options:
+  -H, --hostname=STRING
+     Name or IP address of host to check
+  -o, --output-file=STRING
+    full path to the output file where data should be written
+  -t, --timeout=INTEGER
+    Number of seconds before plugin times out (default: 15)
+  -P, --port=INTEGER
+    Port on which the MySQL server is running on <host> (Default: 3306)
+  -u, --user=STRING
+    Username with which to connect (Default: root)
+  -p, --password=STRING
+    Password with which to connect (Default: (blank))
+  -d, --database=STRING
+    Database name for connection
+  -v, --verbose
+    Print extra debugging information
+  -V, --version
+     Show version information
+
+$err
+EOF
+  exit(UNKNOWN);
+}
+
+MAIN:
+{
+    my (
+        $connections_warning, $connections_critical, $slowquery_warning,
+        $slowquery_critical,  $show_slow_queries
+    );
+    my ($TIMEOUT) = (TIMEOUT);
+
+    GetOptions(\%o,
+        "help|h",
+        "verbose|v",
+        "timeout|t=i",
+        "output-file|o=s",
+        "port|P=i",
+        "user|u=s",
+        "password|p=s",
+        "database|d=s",
+        "hostname|H=s"
+    );
+
+    if ($o{'help'}) {
+        print_help();
+        exit OK;
+    }
+
+    ($o{'hostname'}) || print_help("Hostname / IP address not specified.");
+    print_help("Invalid host: $o{'hostname'}") unless ( $o{'hostname'} =~ /([-.A-Za-z0-9]+)/ );
+    my $host = $o{'hostname'};
+
+    ($o{'output-file'}) || print_help("output file not specified.");
+    if (!open(OUTPUT,">>",$o{'output-file'})) {
+        print_help("Output file cannot be opened: $o{'output-file'}\n");
+	close(OUTPUT);
+    }
+
+
+    ($o{'port'}) || ( $o{'port'} = 3306 );
+    print_help("Invalid port: $o{'port'}") unless ( $o{'port'} =~ /^([0-9]+)$/ );
+    my $port = $o{'port'};
+
+    ($o{'user'}) || ( $o{'user'} = 'root' );
+    my $user = $o{'user'};
+
+    ($o{'password'}) || ( $o{'password'} = '' );
+    my $password = $o{'password'};
+
+    ($o{'database'}) || ( $o{'database'} = '' );
+    my $db = $o{'database'};
+
+    if ( $o{'timeout'} && $o{'timeout'} =~ /^([0-9]+)$/ ) { $TIMEOUT = $1; }
+
+    # Don't risk hanging nagios.
+    $SIG{'ALRM'} = sub {
+        print "TIMEOUT after $TIMEOUT seconds.\n";
+        exit UNKNOWN;
+    };
+    alarm($TIMEOUT);
+
+    my @system=get_vars($host, $port, $user, $password, $db, "VARIABLES");
+    my @status=get_vars($host, $port, $user, $password, $db, "STATUS");
+    open(OUTPUT,">",$o{'output-file'});
+    print OUTPUT @system;
+    print OUTPUT @status;
+    close(OUTPUT);
+    exit OK;
+}
+
+sub get_vars ($$$$$$) {
+    my ( @return );
+    my ( $host, $port, $user, $password, $db, $vartype ) = @_;
+    my ( $rows, $row, $statement );
+
+    my $source = "DBI:mysql:database=$db:host=$host:port=$port";
+    my $dbh = DBI->connect( $source, $user, $password );
+    unless ($dbh) {
+        print "Failed to connect to $source.\n";
+        exit CRITICAL;
+    }
+
+    $statement = $dbh->prepare("SHOW GLOBAL $vartype");
+    unless ($statement) {
+        print "Failed to prepare statement.\n";
+        exit CRITICAL;
+    }
+
+    unless ( $statement->execute() ) {
+        print "Failed to execute statement.\n";
+        exit CRITICAL;
+    }
+
+    for ( $rows = 0 ; ( $row = $statement->fetchrow_hashref() ) ; ++$rows ) {
+    push(@return,"$row->{Variable_name}\t$row->{Value}\n");
+    }
+
+return @return;
+}
+

@@ -1,0 +1,269 @@
+#! /usr/bin/perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+use strict;
+use warnings FATAL => 'all';
+use Getopt::Long qw(:config no_ignore_case);
+use Time::HiRes qw(time);
+use DBI;
+use Data::Dumper;
+
+# Define nagios constants
+use constant OK       => 0;
+use constant WARNING  => 1;
+use constant CRITICAL => 2;
+use constant UNKNOWN  => 3;
+
+use constant TIMEOUT => 10;
+
+sub print_help(;$);
+sub check_locked_queries ($$$$$$$$);
+sub print_locked_queries (@);
+
+my %o;
+
+sub print_help(;$) {
+  my $err = ($_[0] ? "Error: $_[0]" : "");
+  print <<EOF;
+Copyright (c) 2009-2010, PalominoDB, Inc.
+
+MySQL Extended Monitoring check plugin for Nagios
+
+Usage: $0 -H <host> [options]
+
+Options:
+  -H, --hostname=STRING
+     Name or IP address of host to check
+  -w, --warning=INTEGER
+    Maximum number of seconds before a warning state is triggered for a locked query
+  -c, --critical=INTEGER
+    Maximum number of seconds before a critical state is triggered for a locked query
+  -s, --show-locked-queries
+    Actually display running locked queries
+  -t, --timeout=INTEGER
+    Number of seconds before plugin times out (default: 15)
+  -P, --port=INTEGER
+    Port on which the MySQL server is running on <host> (Default: 3306)
+  -u, --user=STRING
+    Username with which to connect (Default: root)
+  -p, --password=STRING
+    Password with which to connect (Default: (blank))
+  -d, --database=STRING
+    Database name for connection
+  -v, --verbose
+    Print extra debugging information
+  -V, --version
+     Show version information
+
+$err
+EOF
+  exit(UNKNOWN);
+}
+
+MAIN:
+{
+    my (
+        $lockedquery_warning,
+        $lockedquery_critical,  $show_locked_queries
+    );
+    my ($TIMEOUT) = (TIMEOUT);
+
+    GetOptions(\%o,
+        "help|h",
+        "verbose|v",
+        "timeout|t=i",
+        "lockedquery-warning|w=i",
+        "lockedquery-critical|c=i",
+        "show-locked-queries|s",
+        "port|P=i",
+        "user|u=s",
+        "password|p=s",
+        "database|d=s",
+        "hostname|H=s"
+    );
+
+    if ($o{'help'}) {
+        print_help();
+        exit OK;
+    }
+
+    ($o{'hostname'}) || print_help("Hostname / IP address not specified.");
+    print_help("Invalid host: $o{'hostname'}") unless ( $o{'hostname'} =~ /([-.A-Za-z0-9]+)/ );
+    my $host = $o{'hostname'};
+
+    if ($o{'lockedquery-warning'}) {
+        print_help("Invalid locked query warning threshold: $o{'lockedquery-warning'}")
+          unless ( $o{'lockedquery-warning'} =~ /^([0-9]+)$/ );
+        $lockedquery_warning = $o{'lockedquery-warning'};
+    }
+
+    if ($o{'lockedquery-critical'}) {
+        print_help("Invalid locked query critical threshold: $o{'lockedquery-critical'}")
+          unless ( $o{'lockedquery-critical'} =~ /^([0-9]+)$/ );
+        $lockedquery_critical = $o{'lockedquery-critical'};
+    }
+
+    if ($o{'show-locked-queries'}) {
+        $show_locked_queries = 1;
+    }
+    else {
+        $show_locked_queries = 0;
+    }
+
+    ($o{'port'}) || ( $o{'port'} = 3306 );
+    print_help("Invalid port: $o{'port'}") unless ( $o{'port'} =~ /^([0-9]+)$/ );
+    my $port = $o{'port'};
+
+    ($o{'user'}) || ( $o{'user'} = 'root' );
+    my $user = $o{'user'};
+
+    ($o{'password'}) || ( $o{'password'} = '' );
+    my $password = $o{'password'};
+
+    ($o{'database'}) || ( $o{'database'} = '' );
+    my $db = $o{'database'};
+
+    if ( $o{'timeout'} && $o{'timeout'} =~ /^([0-9]+)$/ ) { $TIMEOUT = $1; }
+
+    if ( defined($lockedquery_warning) && !defined($lockedquery_critical) ) {
+        print_help("Both warning and critical options must be specified.");
+    }
+
+    # Don't risk hanging nagios.
+    $SIG{'ALRM'} = sub {
+        print "TIMEOUT after $TIMEOUT seconds.\n";
+        exit UNKNOWN;
+    };
+    alarm($TIMEOUT);
+
+    if ( defined($lockedquery_warning) ) {
+        check_locked_queries( $host, $port, $user, $password, $db,
+            $lockedquery_warning, $lockedquery_critical, $show_locked_queries );
+    }
+
+    print "No action.\n";
+    exit UNKNOWN;
+}
+
+sub check_locked_queries ($$$$$$$$) {
+    my ( $host, $port, $user, $password, $db, $warning, $critical, $show ) = @_;
+    my ( $rows, $row, $statement );
+
+    my $source = "DBI:mysql:database=$db:host=$host:port=$port";
+    my $dbh = DBI->connect( $source, $user, $password );
+    unless ($dbh) {
+        print "Failed to connect to $source.\n";
+        exit CRITICAL;
+    }
+
+    $statement = $dbh->prepare("SHOW FULL PROCESSLIST");
+    unless ($statement) {
+        print "Failed to prepare statement.\n";
+        exit CRITICAL;
+    }
+
+    unless ( $statement->execute() ) {
+        print "Failed to execute statement.\n";
+        exit CRITICAL;
+    }
+
+    my $criticalQueries = 0;
+    my $warningQueries  = 0;
+    my $maxTime         = 0;
+    my @lockedQueries;
+
+    while ( $row = $statement->fetchrow_hashref() ) {
+        if ( ($row->{State} || '') eq "Locked" && $row->{Command} eq "Query" ) {
+            if ( $row->{Time} >= $critical ) {
+                ++$criticalQueries;
+                push( @lockedQueries, $row );
+            }
+            elsif ( $row->{Time} >= $warning ) {
+                ++$warningQueries;
+                push( @lockedQueries, $row );
+            }
+
+            if ( $row->{Time} > $maxTime ) {
+                $maxTime = $row->{Time};
+            }
+        }
+    }
+
+    my $total = ( $criticalQueries + $warningQueries );
+
+    #FIXME: Log details of locked queries.
+    if ( $criticalQueries > 0 ) {
+        printf
+"MySQL Locked Queries CRITICAL - %s locked quer%s (%d quer%s over %ds, %d quer%s over %ds; max: %d seconds).\n",
+          $total,
+          $total != 1 ? "ies" : "y",
+          $warningQueries,
+          $warningQueries != 1 ? "ies" : "y",
+          $warning,
+          $criticalQueries,
+          $criticalQueries != 1 ? "ies" : "y",
+          $critical,
+          $maxTime;
+        print_locked_queries(@lockedQueries);
+        exit CRITICAL;
+    }
+    elsif ( $warningQueries > 0 ) {
+        printf
+"MySQL Locked Queries WARNING - %s locked quer%s (%d quer%s over %ds, %d quer%s over %ds; max: %d seconds).\n",
+          $total,
+          $total != 1 ? "ies" : "y",
+          $warningQueries,
+          $warningQueries != 1 ? "ies" : "y",
+          $warning,
+          $criticalQueries,
+          $criticalQueries != 1 ? "ies" : "y",
+          $critical,
+          $maxTime;
+        print_locked_queries(@lockedQueries);
+        exit WARNING;
+    }
+
+    printf
+"MySQL Locked Queries OK - 0 locked queries (0 queries over %ds, 0 queries over %ds; max: %d seconds).\n",
+      $warning,
+      $critical,
+      $maxTime;
+    exit OK;
+}
+
+sub print_locked_queries (@) {
+    my (@lockedQueries) = @_;
+
+    foreach my $query (@lockedQueries) {
+        $query->{Info} =~ s/\n/ /gs;
+        printf "#%d [%s] (%ds): %s\n", $query->{Id}, $query->{User},
+          $query->{Time}, $query->{Info};
+    }
+}
+

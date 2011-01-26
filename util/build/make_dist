@@ -31,11 +31,24 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 use Getopt::Long qw(:config no_ignore_case);
+
+BEGIN {
+  die("Need PDB_CODE_ROOT set in the environment to the base of a checkout") unless($ENV{PDB_CODE_ROOT});
+  use lib "$ENV{PDB_CODE_ROOT}/util/build";
+}
+
 require 'insert_module';
 
+my $manifest_ver = "";
 my $input = "";
-my @module_paths;
+my @module_paths = ($ENV{PDB_CODE_ROOT}.'/util/lib');
 my @modules;
+
+if(scalar @ARGV < 2) {
+  print("Usage: $0 [--lib path] IN_SCRIPT OUT_SCRIPT\n\n");
+  print("--lib sets the search path for modules.\n  Defaults to $ENV{PDB_CODE_ROOT}/util/lib\n");
+  exit(1);
+}
 
 GetOptions(
   'lib|L=s@' => \@module_paths
@@ -50,16 +63,18 @@ my $infile = shift @ARGV;
 my $outfile = shift @ARGV;
 
 {
+  local $/ = undef;
+
   open my $file, "<$infile";
-  $/ = undef;
   $input = <$file>;
   close $file;
-}
-my $script_ver = qx@../../util/gitver.sh $infile@;
-chop($script_ver);
 
-$input =~ s/\bSCRIPT_GIT_VERSION\b/$script_ver/g;
-$input =~ s/\bGIT_SCRIPT_VERSION\b/$script_ver/g;
+  open $file, "<$ENV{PDB_CODE_ROOT}/manifest.uuid";
+  chomp($manifest_ver = <$file>);
+  close $file;
+}
+
+$input =~ s/\bMANIFEST_BUILD\b/$manifest_ver/g;
 
 (@modules) = $input =~ /^# ([A-Z0-9a-z_]+(?:::[A-Z0-9a-z_]+)*) package (?:[a-f0-9]{40}|GIT_VERSION|FSL_VERSION)/mg;
 
@@ -72,6 +87,9 @@ foreach my $m (@modules) {
       last;
     }
   }
+}
+foreach my $m (@modules) {
+  $input =~ s/^\s*use\s+$m;//mg;
 }
 
 open my $output, ">$outfile";

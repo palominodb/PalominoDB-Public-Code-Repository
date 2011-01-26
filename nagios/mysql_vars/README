@@ -1,0 +1,28 @@
+Copyright (c) 2010, PalominoDB, Inc.
+
+Nagios plugin to get MySQL system and status variables and save to a file
+
+Usage: ./check_mysql_vars -H <host> [options]
+
+Options:
+  -H, --hostname=STRING
+     Name or IP address of host to check
+  -o, --output-file=STRING
+    full path to the output file where data should be written
+  -t, --timeout=INTEGER
+    Number of seconds before plugin times out (default: 15)
+  -P, --port=INTEGER
+    Port on which the MySQL server is running on <host> (Default: 3306)
+  -u, --user=STRING
+    Username with which to connect (Default: root)
+  -p, --password=STRING
+    Password with which to connect (Default: (blank))
+  -d, --database=STRING
+    Database name for connection
+  -v, --verbose
+    Print extra debugging information
+  -V, --version
+     Show version information
+
+Example:
+./check_mysql_vars -H localhost -o /tmp/mysql_vars.tab -u guest

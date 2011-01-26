@@ -40,8 +40,7 @@ use ProcessLog;
 sub new {
   my ( $class, $pl, $backup_dir ) = @_;
   my $self = ();
-  $self->{pl} = $pl;
-  $self->{backup_dir} = $backup_dir;
+  $self->{backup_dir} = ($backup_dir ? $backup_dir : $pl);
   bless $self, $class;
 
   unless( $self->_load_index() ) {
@@ -64,7 +63,7 @@ sub backup_dir {
 # Can be used to walk back to a full backup for restore purposes.
 sub open_last_backup {
   my ($self) = @_;
-  return ZRMBackup->new($self->{pl}, $self->last_backup);
+  return ZRMBackup->new(undef, $self->last_backup);
 };
 
 # Returns a list of all the backups back to the most recent full.
@@ -75,7 +74,7 @@ sub find_full {
   my @backups;
   unshift @backups, $self;
   while($backups[0] && $backups[0]->backup_level != 0) {
-    $self->{pl}->d("unadjusted lookup:", $backups[0]->last_backup);
+    $::PL->d("unadjusted lookup:", $backups[0]->last_backup);
     my @path = File::Spec->splitdir($backups[0]->last_backup);
     my $path;
     if($strip and $strip =~ /^\d+$/) {
@@ -90,8 +89,8 @@ sub find_full {
       unshift @path, $rel_base;
     }
     $path = File::Spec->catdir(@path);
-    $self->{pl}->d("adjusted lookup:", $path);
-    unshift @backups, ZRMBackup->new($$self{pl}, $path);
+    $::PL->d("adjusted lookup:", $path);
+    unshift @backups, ZRMBackup->new(undef, $path);
   }
   # If a backup points to a non-existant
   # previous backup, then the loop above terminates
@@ -125,7 +124,7 @@ sub extract_to {
     # and that the tool exists on the current machine
     @args = ($self->compress ." -d ". $self->backup_dir ."/backup-data". " | tar -C $xdir -xf -");
   }
-  my $r = $self->{pl}->x(sub { system(@_) }, @args);
+  my $r = $::PL->x(sub { system(@_) }, @args);
   return wantarray ? ($r->{rcode}, $r->{fh}) : $r->{rcode};
 }
 
@@ -243,7 +242,8 @@ sub AUTOLOAD {
   my ($self) = @_;
   my $name = $AUTOLOAD;
   $name =~ s/.*:://;
-  $self->{pl}->d("AUTOLOAD:", $name, '->', $self->{idx}{$name});
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level2
+    && $::PL->d("AUTOLOAD:", $name, '->', $self->{idx}{$name});
   if(exists $self->{idx}{$name}) {
     return $self->{idx}{$name};
   }

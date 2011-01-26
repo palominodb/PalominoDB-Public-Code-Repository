@@ -9,10 +9,10 @@ BEGIN {
 }
 
 SKIP: {
-  skip "Need TEST_ROBJ_HOST and TEST_ROBJ_USER setup", 2 if !$ENV{TEST_ROBJ_HOST} or !$ENV{TEST_ROBJ_USER};
+  skip "Need TEST_SSH_HOST and TEST_SSH_USER setup", 2 if !$ENV{TEST_SSH_HOST} or !$ENV{TEST_SSH_USER};
   my $dsnp = DSNParser->default();
-  my $dsn  = $dsnp->parse("h=$ENV{TEST_ROBJ_HOST},sU=$ENV{TEST_ROBJ_USER}"); 
-  my $ro = new_ok('RObj' => [$ENV{TEST_ROBJ_HOST}, $ENV{TEST_ROBJ_USER}]);
+  my $dsn  = $dsnp->parse("h=$ENV{TEST_SSH_HOST},sU=$ENV{TEST_SSH_USER}"); 
+  my $ro = new_ok('RObj' => [$ENV{TEST_SSH_HOST}, $ENV{TEST_SSH_USER}]);
   $ro->add_main(sub { return 0; });
   my @r = $ro->do(0);
   is_deeply(\@r, ['EXIT', 0], 'RObj exits with 0');

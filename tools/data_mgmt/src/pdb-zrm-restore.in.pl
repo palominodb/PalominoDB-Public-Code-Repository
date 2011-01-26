@@ -133,6 +133,7 @@ sub main {
   );
 
   $pl = ProcessLog->new($0, $o{'log-file'}, undef);
+  $pl->d('ARGV:', @ARGV);
   if(not exists $o{'identify-dirs'} and exists $o{i}) {
     $o{'identify-dirs'} = $o{i};
   }
@@ -200,10 +201,12 @@ sub main {
   if($o{'create-dirs'}) {
     eval {
       mkpath($datadir);
-      mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
+      if(exists $cfg{'mysqld'}{'log-bin'} and $cfg{'mysqld'}{'log-bin'} =~ m|^/|) {
+        mkpath(dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     };
     if($@) {
-      $pl->e("Unable to create all directories for $datadir.", $@);
+      $pl->e("Unable to create directories:", $datadir, $cfg{'mysqld'}{'log-bin'}, "\n", "exception:", $@);
       return 1;
     }
   }
@@ -229,10 +232,12 @@ sub main {
   # being used like a scratch area.
   unless($o{'dry-run'}) {
     unless($o{'skip-extract'}) {
-      $pl->m("Removing contents of $datadir.");
+      $pl->m("Removing contents of mysqld.datadir:", $datadir);
       Path::dir_empty($datadir);
-      $pl->m("Removing contents of $cfg{'mysqld'}{'log-bin'}.");
-      Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
+      if($cfg{'mysqld'}{'log-bin'} and $cfg{'mysqld'}{'log-bin'} =~ m|^/|) {
+        $pl->m("Removing contents of mysqld.log-bin:", dirname($cfg{'mysqld'}{'log-bin'}));
+        Path::dir_empty(dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     }
     else {
       $pl->i("Skipping emptying $datadir due to --skip-extract");
@@ -343,13 +348,16 @@ sub start_mysqld {
   my $pid = fork;
   if($pid == 0) {
 
-    $pl->i('attempting to chown', $cfg{'mysqld'}{'datadir'}, 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
-    system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} $cfg{'mysqld'}{'datadir'}");
+    if($cfg{'mysqld_safe'}{'user'} and $cfg{'mysqld_safe'}{'group'}) {
+      $pl->i('attempting to chown', $cfg{'mysqld'}{'datadir'}, 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+      system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} $cfg{'mysqld'}{'datadir'}");
 
-    if($cfg{'mysqld'}{'log-bin'}) {
-      $pl->i('attempting to chown', dirname($cfg{'mysqld'}{'log-bin'}), 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
-      system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} ". dirname($cfg{'mysqld'}{'log-bin'}));
+      if($cfg{'mysqld'}{'log-bin'}) {
+        $pl->i('attempting to chown', dirname($cfg{'mysqld'}{'log-bin'}), 'to',  "$cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'}");
+        system("chown -R $cfg{'mysqld_safe'}{'user'}:$cfg{'mysqld_safe'}{'group'} ". dirname($cfg{'mysqld'}{'log-bin'}));
+      }
     }
+
 
     my @path = File::Spec->splitdir($o{'mysqld'});
     pop @path; pop @path;
@@ -580,45 +588,6 @@ Quoting to protect the space from the shell is likely necessary.
 =item --force,-f
 
 Continue even after errors when applying binlogs.
-
-=item --mysql-user,-u
-
-User in the restored database that has privileges to setup slaving.
-
-Default: root
-
-=item --mysql-password,-p
-
-Password for the mysql user that has privileges to setup slaving.
-
-Default: (no password)
-
-=item --reslave,-r
-
-Automatically reslaves the restored server according to the contents
-of C<master.info>. If binlogs are applied, then the position will be
-used from those instead of from the original C<master.info>.
-
-=item --slave-user
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the user to slave with.
-
-Default: from C<master.info>
-
-=item --slave-password
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the password to slave with.
-
-Default: from C<master.info>
-
-=item --master-host
-
-If C<master.info> is missing, or has invalid data, this option
-will override or set the master host to connect to.
-
-Default: from C<master.info>
 
 =item --mysqld
 

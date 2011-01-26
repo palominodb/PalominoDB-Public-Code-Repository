@@ -1,3 +1,9 @@
+### THIS FILE IS MANAGED BY PUPPET, DO NOT EDIT ###
+### If you would like to make another one of    ###
+### these, please consult the puppet code under ###
+### puppet/manifests/nodes/admin.pp in git      ###
+### THIS FILE IS MANAGED BY PUPPET, DO NOT EDIT ###
+
 tmp_logfile=$(mktemp)
 scp -B -i /root/.ssh/sql_profiler.key mysql@<%= name %>:<%= log_path %> $tmp_logfile
 slow_logs=$tmp_logfile
