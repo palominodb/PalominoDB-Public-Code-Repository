@@ -26,46 +26,40 @@
 ################################################################################
 
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
-package main;
+# ###########################################################################
+# IniFile package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End IniFile package
+# ###########################################################################
+
+package XtraBackupClient;
 
 use strict;
+use warnings FATAL => 'all';
 use Socket;
 use File::Temp qw/ :POSIX /;
 use Getopt::Long;
 use File::Basename;
 use File::Spec::Functions;
 use Data::Dumper;
-
-
-$ENV{PATH}="/usr/local/bin:/opt/csw/bin:/usr/bin:/usr/sbin:/bin:/sbin";
-# xinetd port on remote host
-# Set socket-remote-port in mysql-zrm.conf if this needs to be changed.
-my $REMOTE_PORT = 25300;
-
-# Set remote-mysql-binpath if mysql client binaries on the remote machine
-# are in a different location.
-my $REMOTE_MYSQL_BINPATH = "/usr/bin";
-
-# This is the temporary directory on the remote host
-# that is used to keep data before transferring to the backup host.
-# This gets inherited from mysql-zrm. If that should not be used then
-# Uncomment and modify this if some other directory is to be used
-#$ENV{'TMPDIR'}="/tmp";
+use ProcessLog;
+use IniFile;
 
 my $TAR = "tar";
 my $TAR_WRITE_OPTIONS = "";
 my $TAR_READ_OPTIONS = "";
 my $CP="cp -pr";
 
-my $MYSQL_BINPATH="/usr/bin";
-
 my $VERSION = "0.75.1";
+my $REMOTE_PORT=25300;
+
 my $srcHost = "localhost";
 my $destHost = "localhost";
 my $destDir;
@@ -76,27 +70,16 @@ my $host;
 my @snapshotParamList;
 my $snapshotConfString;
 my %config;
-my $pl; # ProcessLog
 
-$SIG{'PIPE'} = sub { $pl->end; die "Pipe broke"; };
-$SIG{'TERM'} = sub { close SOCK; $pl->end; die "TERM broke\n"; };
+$SIG{'PIPE'} = sub { $::PL->end; die "Pipe broke"; };
+$SIG{'TERM'} = sub { close SOCK; $::PL->end; die "TERM broke\n"; };
 
 $config{'socket-copy-logfile'} = '/var/log/mysql-zrm/socket-copy.log';
 $config{'socket-copy-email'} = undef;
 $config{'tar-force-ownership'} = 1;
 $config{'apply-xtrabackup-log'} = 0;
 
-if($^O eq "linux") {
-  $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
-  $TAR_READ_OPTIONS = "--same-owner -xphsC";
-}
-elsif($^O eq "freebsd") {
-  $TAR_WRITE_OPTIONS = " -cph -f - -C";
-  $TAR_READ_OPTIONS = " -xp -f - -C";
-}
-else {
-  printAndDie("Unable to determine which tar options to use!");
-}
+
 
 # Reads a key=value block from the incoming stream.
 # The format of a key=value block is as follows:
@@ -139,13 +122,13 @@ sub makeKvBlock {
 }
 
 sub printAndDie {
-  $pl->e(@_);
-  $pl->end;
+  $::PL->e(@_);
+  $::PL->end;
   die("ERROR: @_");
 }
 
 sub my_exit {
-  $pl->end;
+  $::PL->end;
   exit($_[0]);
 }
 
@@ -215,7 +198,7 @@ sub getCopyParameters {
       }
     }
   }
-  $pl->m("socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir");
+  $::PL->m("socket-copy:\taction:$action\n\tsrcHost:$srcHost\n\tparams:$params\n\tdestHost:$destHost\n\tdestDir:$destDir");
 }
 
 sub doLocalTar {
@@ -247,7 +230,7 @@ sub doLocalTar {
   my $destCmd = "$tarCmd $destDir -x";
   $cmd = "$srcCmd|$destCmd";
 
-  $pl->m("local-tar:\n\t$cmd");
+  $::PL->m("local-tar:\n\t$cmd");
 
   my $r = system( $cmd );
   if( $lsCmd ne "" ){
@@ -290,7 +273,7 @@ sub getInputs {
 
 #This will opne the connection to the remote host
 sub connectToHost {
-  $pl->m("connect-to-host:\thost:", $host, "\tport:", $REMOTE_PORT);
+  $::PL->m("connect-to-host:\thost:", $host, "\tport:", $REMOTE_PORT);
   my $iaddr = inet_aton($host) or die "no host: $host";
   my $paddr = sockaddr_in($REMOTE_PORT, $iaddr);
   my $proto = getprotobyname('tcp');
@@ -299,14 +282,14 @@ sub connectToHost {
   select( SOCK );
   $| = 1;
   select( STDOUT );
-  $pl->m('connected to host.');
+  $::PL->m('connected to host.');
 }
 
 # This will send the required arguments to the remote host
 sub sendArgsToRemoteHost {
   my $tmp = File::Spec->tmpdir();
   my $args = makeKvBlock('action' => $action, 'tmpdir' => $tmp, %config);
-  $pl->m("send-args-to-host:\n", $args);
+  $::PL->m("send-args-to-host:\n", $args);
   print SOCK "$VERSION\n";
   print SOCK $args;
   $_ = <SOCK>;
@@ -319,7 +302,7 @@ sub sendArgsToRemoteHost {
 sub readTarStream {
   my $tmpfile = tmpnam();
   my $tar_cmd = "|$TAR $TAR_READ_OPTIONS $destDir 2>$tmpfile";
-  $pl->m("read-tar-stream:\n\t$tar_cmd\n");
+  $::PL->m("read-tar-stream:\n\t$tar_cmd\n");
   unless( open( TAR_H, "$tar_cmd" ) ){
     printAndDie("tar failed $!");
   }
@@ -341,7 +324,7 @@ sub readTarStream {
     open my $fh, "<$tmpfile";
     my $errs = <$fh>;
     chomp($errs);
-    $pl->e("tar-errors:", $errs) if($errs !~ /\s*/);
+    $::PL->e("tar-errors:", $errs) if($errs !~ /\s*/);
     close $fh;
     unlink $tmpfile;
   }
@@ -361,7 +344,7 @@ sub readInnoBackupStream {
     $tar_cmd .= "--same-owner -xipC ";
   }
   $tar_cmd .= "$destDir 2>$tmpfile";
-  $pl->m("read-inno-tar-stream:", $tar_cmd);
+  $::PL->m("read-inno-tar-stream:", $tar_cmd);
 
   unless( open( TAR_H, "$tar_cmd" ) ){
     printAndDie("tar failed $!");
@@ -391,7 +374,7 @@ sub readInnoBackupStream {
     open my $fh, '<', $tmpfile;
     my $errs = <$fh>;
     chomp($errs);
-    $pl->e("tar-errors:", $errs);# if($errs !~ /\s*/);
+    $::PL->e("tar-errors:", $errs);# if($errs !~ /\s*/);
     close $fh;
     unlink $tmpfile;
   }
@@ -400,12 +383,12 @@ sub readInnoBackupStream {
   }
 
   if( $config{'backup-level'} == 0 and $config{'apply-xtrabackup-log'} == 1 ) {
-    $pl->m("Applying logs..");
-    my $r = $pl->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
+    $::PL->m("Applying logs..");
+    my $r = $::PL->x(sub { system @_; }, "cd $destDir && innobackupex-1.5.1 --apply-log $destDir");
     my $fh = $$r{fh};
-    while(<$fh>) { $pl->m($_); }
+    while(<$fh>) { $::PL->m($_); }
     if($$r{rcode} != 0) {
-      $pl->i("Applying the innobackup logs failed.");
+      $::PL->i("Applying the innobackup logs failed.");
     }
     if($$r{error}) { printAndDie("Error executing innobackupex."); }
   }
@@ -433,28 +416,16 @@ sub writeTarStream {
 # Please note this does not do any validation of the config file
 # pointed to by $ZRM_CONF in the enviornment
 sub parseConfFile {
-  unless( exists $ENV{ZRM_CONF} and open( FH, $ENV{ZRM_CONF} ) ){
+  $::PL->d("Reading options from: ", $ENV{ZRM_CONFIG});
+  unless( exists $ENV{ZRM_CONF} and %config = IniFile::read_config($ENV{ZRM_CONFIG}) ){
     die "Unable to open config file. The ZRM_CONF environment variable isn't set.\n";
-  }
-  my @tmparr = <FH>;
-  close( FH );
-  chomp( @tmparr );
-  foreach( @tmparr ){
-    next if(/^\s*$/);
-    my @v = split( /=/, $_, 2 );
-    my $v1 = shift @v;
-    my $v2 = shift @v;
-    $config{$v1} = $v2;
   }
 }
 
 # Setup the parameters that are relevant from the conf
 sub setUpConfParams {
   if( $config{"socket-remote-port"} ){
-    $REMOTE_PORT = $config{"socket-remote-port"};
-  }
-  if( $config{"remote-mysql-binpath"} ){
-    $REMOTE_MYSQL_BINPATH = $config{"remote-mysql-binpath"};
+    $REMOTE_PORT = $config{"xtrabackup-agent-port"};
   }
   if( defined $ENV{'SNAPSHOT_CONF'} ){
     my $fName = $ENV{'SNAPSHOT_CONF'};
@@ -473,7 +444,7 @@ sub setUpConfParams {
 }
 
 sub doSnapshotCommand {
-  $pl->m("do-snapshot:\tplugin:",$config{'snapshot-plugin'});
+  $::PL->m("do-snapshot:\tplugin:",$config{'snapshot-plugin'});
   print SOCK $config{"snapshot-plugin"}."\n";
   my $num = @snapshotParamList;
   $num += 2; # For user/pass
@@ -483,10 +454,10 @@ sub doSnapshotCommand {
     print SOCK "user=$config{'user'}\n";
     print SOCK "password=$config{'password'}\n";
   }
-  $pl->m('  sent config data.');
+  $::PL->m('  sent config data.');
   my $status = <SOCK>;
   chomp( $status );
-  $pl->m('  result:', $status);
+  $::PL->m('  result:', $status);
   $num = <SOCK>;
   chomp($num);
   if($num !~ /^\d+$/) {
@@ -496,11 +467,11 @@ sub doSnapshotCommand {
   for( $i = 0 ; $i < $num; $i++ ){
     my $r = <SOCK>;
     if( $status eq "SUCCESS" ){
-      $pl->m(' ', $r);
+      $::PL->m(' ', $r);
       print STDOUT $r;
     }else{
       print STDERR $r;
-      $pl->e(' ', $r);
+      $::PL->e(' ', $r);
     }
   }
   if( $status ne "SUCCESS" ){
@@ -530,46 +501,64 @@ sub doCopyBetween()
 
 }
 
-parseConfFile();
-setUpConfParams();
+sub main {
+  @ARGV = @_;
 
-$pl = ProcessLog->new('socket-copy', $config{'socket-copy-logfile'}, $config{'socket-copy-email'});
-$pl->quiet(1); # Hide messages from the console.
-$pl->start;
+  $::PL->logpath('syslog:LOCAL0');
+  $::PL->start;
 
-if( $config{"tar-force-ownership"} == 0 or $config{"tar-force-ownership"} =~ /[Nn][oO]?/ ) {
-  $config{"tar-force-ownership"} = 0;
-  if( $^O eq "linux" ) {
-    $TAR_WRITE_OPTIONS = "--no-same-owner --no-same-permissions -chsC";
-    $TAR_READ_OPTIONS = "---no-same-owner --no-same-permissions -xhsC";
+  parseConfFile();
+  setUpConfParams();
+
+  if($^O eq "linux") {
+    $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
+    $TAR_READ_OPTIONS = "--same-owner -xphsC";
   }
-  elsif( $^O eq "freebsd" ) {
-    $TAR_WRITE_OPTIONS = " -ch -f - -C";
-    $TAR_READ_OPTIONS  = " -x -f - -C";
+  elsif($^O eq "freebsd") {
+    $TAR_WRITE_OPTIONS = " -cph -f - -C";
+    $TAR_READ_OPTIONS = " -xp -f - -C";
   }
+  else {
+    printAndDie("Unable to determine which tar options to use!");
+  }
+  
+  if( $config{"tar-force-ownership"} == 0 or $config{"tar-force-ownership"} =~ /[Nn][oO]?/ ) {
+    $config{"tar-force-ownership"} = 0;
+    if( $^O eq "linux" ) {
+      $TAR_WRITE_OPTIONS = "--no-same-owner --no-same-permissions -chsC";
+      $TAR_READ_OPTIONS = "---no-same-owner --no-same-permissions -xhsC";
+    }
+    elsif( $^O eq "freebsd" ) {
+      $TAR_WRITE_OPTIONS = " -ch -f - -C";
+      $TAR_READ_OPTIONS  = " -x -f - -C";
+    }
+  }
+  
+  getInputs();
+  if(defined $host) {
+    connectToHost();
+    sendArgsToRemoteHost();
+  }
+  if( $action eq "copy from" ){
+    readInnoBackupStream();
+  }elsif( $action eq "mysqlhotcopy" ){
+    printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
+  }elsif( $action eq "copy between" ){
+    doCopyBetween();
+  }elsif( $action eq "copy to" ){
+    my @suf;
+    my $file = basename( $srcFile, @suf );
+    my $dir = dirname( $srcFile );
+    writeTarStream( $dir, $file );
+  }elsif( $action eq "snapshot" ){
+    doSnapshotCommand( $params );
+  }
+  close( SOCK );
+  select( undef, undef, undef, 0.250 );
+  
+  my_exit(0);
+
 }
 
-getInputs();
-if(defined $host) {
-  connectToHost();
-  sendArgsToRemoteHost();
-}
-if( $action eq "copy from" ){
-  readInnoBackupStream();
-}elsif( $action eq "mysqlhotcopy" ){
-  printAndDie("InnobackupEX is hotcopy. No need for mysqlhotcopy.");
-}elsif( $action eq "copy between" ){
-  doCopyBetween();
-}elsif( $action eq "copy to" ){
-  my @suf;
-  my $file = basename( $srcFile, @suf );
-  my $dir = dirname( $srcFile );
-  writeTarStream( $dir, $file );
-}elsif( $action eq "snapshot" ){
-  doSnapshotCommand( $params );
-}
-close( SOCK );
-select( undef, undef, undef, 0.250 );
-
-my_exit(0);
+if(!caller) { exit(main(@ARGV)); }
 1;

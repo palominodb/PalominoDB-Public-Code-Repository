@@ -739,7 +739,7 @@ sub checkXtraBackupVersion {
 sub processRequest {
   ($Input_FH, $Output_FH, $logFile) = @_;
 
-  $PL = ProcessLog->new('socket-server', $logFile);
+  $PL = ProcessLog->new('xtrabackup-agent', $logFile);
   $PL->quiet(1);
 
   printLog("Server($VERSION) started.");
