@@ -31,6 +31,85 @@ use strict;
 use warnings FATAL => 'all';
 use File::Glob;
 
+=pod
+
+=head1 NAME
+
+IniFile - Reads an enhanced mysql style .cnf file.
+
+=head1 SYNOPSIS
+
+The IniFile module reads a mysql .cnf style config file,
+with a few enhancements to make it more general purpose.
+
+Example config (at /etc/myapp.local.cnf):
+
+  [global]
+    path = /usr/lib
+    no-startup-files
+    load[1] = module_a.so
+    load[2] = module_b.so
+
+  [regional]
+    skip-bad-setting
+
+  !include /etc/myapp.defaults.cnf
+  !includedir /etc/myapp.d
+
+Code to load it:
+
+  use IniFile;
+  use Data::Dumper;
+
+  my %c = IniFile::read_config('/etc/myapp.local.cnf');
+  print Dumper(\%c);
+  #Output:
+  #$VAR1 = {
+  #  'global' => {
+  #    'startup-files' => 0,
+  #    'path' => '/usr/lib',
+  #    'load' => [
+  #      'module_a.so',
+  #      'module_b.so'
+  #    ],
+  #    'setting-from-myapp_d' => 1
+  #  },
+  #  'regional' => {
+  #    'bad-setting' => 0,
+  #    'setting-from-defaults' => 'bill'
+  #  }
+  #};
+
+A few things worth noting here:
+
+=over 4
+
+=item Sections are supported like you'd expect.
+
+Anything not in a section goes into an empty section (named C<''>).
+This is only unintuitive part of sections.
+
+=item MySQL style no- and skip- prefixes do what you expect.
+
+Namely, you get the option name C<bad-setting>, with a value of C<0>.
+
+=item !include and !includedir load single and multiple files, respectively.
+
+=item The same key can be specified multiple times with an 'index' (load).
+
+At the time of this writing the value and order of the index is unimportant,
+the order in which the keys are listed is. So, the above example could have
+easily been:
+
+  load[10]=module1.so
+  load[8] =module2.so
+
+And the resultant list would have been the same.
+
+=back
+
+=cut
+
 # Loads a my.cnf into a hash.
 # of the form:
 # key: group
@@ -82,7 +161,15 @@ sub read_config {
           $v = 1;
         }
       }
+      # sanity check because newlines in these would be weird.
       chomp($k); chomp($v);
+
+      # numbered option keys create a list in the result.
+      if($k =~ /^(.*?)\s*\[\s*\d+\s*\]/) {
+        $k = $1;
+        push @{$cfg{$cur_sec}{$k}}, $v;
+        next;
+      }
       $cfg{$cur_sec}{$k} = $v;
     }
   }
