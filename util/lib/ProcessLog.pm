@@ -228,6 +228,7 @@ Sets the logpath for this ProcessLog.
 sub logpath {
   my ($self, $logpath) = @_;
   my $script_name = $$self{script_name};
+  $self->{log_path} = $logpath;
   if($logpath =~ /^syslog:(\w+)/) {
     openlog($script_name, "", $1);
     $self->{logsub} = sub {
