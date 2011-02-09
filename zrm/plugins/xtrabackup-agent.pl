@@ -31,6 +31,13 @@ use warnings FATAL => 'all';
 # End Which package
 # ###########################################################################
 
+# ###########################################################################
+# IniFile package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End IniFile package
+# ###########################################################################
+
 package XtraBackupAgent;
 use strict;
 use warnings FATAL => 'all';
@@ -42,9 +49,18 @@ use IO::Handle;
 use Sys::Hostname;
 use ProcessLog;
 use Which;
+use IniFile;
 use POSIX;
 use Tie::File;
 use Fcntl qw(:flock);
+use Data::Dumper;
+use DBI;
+
+{
+  no warnings 'once';
+  $Data::Dumper::Indent = 0;
+  $Data::Dumper::Sortkeys = 1;
+}
 
 # client supplied header data
 my %HDR = ();
@@ -73,6 +89,7 @@ my $INNOBACKUPEX="innobackupex-1.5.1";
 our $VERSION="0.75.1";
 my $REMOTE_VERSION = undef;
 my $MIN_XTRA_VERSION=1.0;
+my $XTRABACKUP_VERSION;
 
 my $logDir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
 my $logFile = "$logDir/xtrabackup-agent.log";
@@ -96,6 +113,9 @@ my $must_set_wait_timeout = 0;
 my $mycnf_path = "/etc/my.cnf";
 my $mysql_socket_path = undef;
 my $innobackupex_opts = "";
+
+## Catch all errors and log them.
+$SIG{'__DIE__'} = sub { die(@_) if($^S); $PL->e(@_); die(@_); };
 
 my ($mysql_user, $mysql_pass);
 
@@ -177,7 +197,7 @@ else {
 # This validates all incoming data, to ensure it's sane.
 # This will only allow and a-z A-Z 0-9 _ - / . = " ' ; + * and space.
 sub checkIfTainted {
-  if( $_[0] =~ /^([-\*\w\/"\'.\:;\+\s=\^\$]+)$/) {
+  if( $_[0] =~ /^([-\*\w\/"\'.\@\:;\+\s=\^\$]+)$/) {
     return $1;
   }
   else {
@@ -186,7 +206,10 @@ sub checkIfTainted {
 }
 
 sub my_exit {
-  if( $tmp_directory ){
+  ## Normally we always want to clean the temporary directory.
+  ## In certain debugging situations we might want to inspect it's
+  ## contents, which is why the following parameter exists.
+  if( $tmp_directory and $HDR{'xtrabackup-agent:clean-tmpdir'} ){
     rmtree $tmp_directory, 0, 0;
   }
   exit( $_[0] );
@@ -202,6 +225,9 @@ sub printAndDie {
   my @args = @_;
   chomp(@args);
   $PL->e(@args);
+  if( !isLegacyClient() ) {
+    printToServer("FAILED", join(' ', @args));
+  }
   &my_exit( 1 );
 }
 
@@ -217,6 +243,7 @@ sub isClientCompatible {
   my ($R_Maj, $R_Min, $R_Rev) = split(/\./, $REMOTE_VERSION);
   return 0 if($L_Maj != $R_Maj);
   return 1 if($L_Min >= $R_Min);
+  return 0;
 }
 
 sub isLegacyClient {
@@ -233,18 +260,21 @@ sub isLegacyClient {
 #
 sub readKvBlock {
   my $fh = shift;
-  my (%kv, $i, $N) = ((), 0, 0);
+  my %kv = ();
+  my ($i, $N) = ((), 0, 0);
   chomp($N = <$fh>);
   checkIfTainted($N);
   if($N !~ /^\d+$/) {
-    printAndDie("Bad input: $_");
+    printAndDie("Bad input:", $N);
   }
   for($i = 0; $i < $N; $i++) {
     chomp($_ = <$fh>);
     checkIfTainted($_);
     my ($k, $v) = split(/=/, $_, 2);
+    $v = undef if($v eq '');
     $kv{$k} = $v;
   }
+  $_ = <$fh>;
   return \%kv;
 }
 
@@ -258,8 +288,10 @@ sub makeKvBlock {
   my %Kv = @_;
   my $out = scalar(keys %Kv). "\n";
   foreach my $k (keys %Kv) {
-    $out .= "$k=$Kv{$k}\n";
+    $out .= "$k=". (defined $Kv{$k} ? $Kv{$k} : '') . "\n";
   }
+  $out .= "\n";
+  $PL->d('KvBlock:', $out);
   return $out;
 }
 
@@ -289,6 +321,7 @@ sub getHeader {
   $REMOTE_VERSION = <$Input_FH>;
   chomp($REMOTE_VERSION);
   $REMOTE_VERSION = checkIfTainted($REMOTE_VERSION);
+  $PL->d('Stream debug (Client Version):', "'$REMOTE_VERSION'");
 
   if( isLegacyClient() ) {
     my @inp;
@@ -352,8 +385,7 @@ sub doRealHotCopy {
   my $dbh = undef;
   my $prev_wait = undef;
   eval {
-    require "DBI";
-    $dbh = DBI->connect("DBI:mysql:host=localhost". $mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : "", $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
+    $dbh = DBI->connect("DBI:mysql:host=localhost". ($mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : ""), $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
   };
   if( $@ ) {
     printLog("Unable to open DBI handle. Error: $@\n");
@@ -378,7 +410,26 @@ sub doRealHotCopy {
     printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
+  ## xtrabackup version 1.4 and (presently) greater have a bug, where
+  ## it attempts to write to the files 'stderr' and 'stdout' in the
+  ## current working directory. Since our normal working directory is
+  ## the root directory, we make the subprocess cd into the mysql datadir.
+  ##
+  ## The logic involved looks in normal paths and assumes you'll specify
+  ## any non-normal paths.
+  if($XTRABACKUP_VERSION >= 1.4) {
+    my %mycnf = IniFile::read_config($mycnf_path);
+    %mycnf = IniFile::read_config('/etc/my.cnf') if(!%mycnf);
+    %mycnf = IniFile::read_config('/etc/mysql/my.cnf') if(!%mycnf);
+    unless($mycnf{'mysqld'}{'datadir'}) {
+      die("xtrabackup version requires work-arounds, but cannot open any my.cnf\n");
+    }
+    $INNOBACKUPEX = "cd $mycnf{'mysqld'}{'datadir'}; $INNOBACKUPEX";
+  }
 
+  $PL->d("Exec:", $INNOBACKUPEX, $new_params, "--defaults-file", $mycnf_path,
+          $innobackupex_opts, "--slave-info", "--stream=tar", $tmp_directory,
+          "2>/tmp/innobackupex-log|");
   open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path $innobackupex_opts --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
   &printLog("Opened InnoBackupEX.\n");
   open(INNO_LOG, "</tmp/innobackupex-log");
@@ -412,7 +463,7 @@ sub doRealHotCopy {
             restore_wait_timeout($dbh, $prev_wait);
             sendNagiosAlert("CRITICAL: $1", 2);
             unlink("/tmp/innobackupex-log");
-            printAndDie($_);
+            printAndDie($1);
           }
         }
         else {
@@ -513,46 +564,12 @@ sub writeTarStream {
   record_backup("incremental", $start_tm, time(), $backup_sz, "success", $fileList);
 }
 
-#$_[0] dirname to stream the data to
-sub readTarStream {
-  my ($extract_to) = @_;
-  my $tar_fh;
-  printLog("readTarStream: $TAR $TAR_READ_OPTIONS $extract_to\n");
-  unless(open( $tar_fh, "|$TAR $TAR_READ_OPTIONS $extract_to 2>/dev/null" ) ){
-    printAndDie( "tar failed $!\n" );
-  }
-
-  my $buf;
-  # Initially read the length of data to read
-  # This will be packed in network order
-  # Then read that much data which is uuencoded
-  # Then write the unpacked data to tar
-  while( read( $Input_FH, $buf, 4 ) ){
-    $buf = unpack( "N", $buf );
-    read $Input_FH, $buf, $buf;
-    print $tar_fh unpack( "u", $buf );
-  }
-  unless( close($tar_fh) ){
-    printAndDie( "close of pipe failed\n" );
-  }
-  close( $tar_fh );
-}
-
 sub getTmpName {
   if( ! -d $GLOBAL_TMPDIR ){
     printAndDie( "$GLOBAL_TMPDIR not found. Please create this first.\n" );
   }
   printLog( "TMP directory being used is $GLOBAL_TMPDIR\n" );
   return File::Temp::tempnam( $GLOBAL_TMPDIR, "" );
-}
-
-sub validateSnapshotCommand {
-  my $file = basename( $_[0] );
-  my $cmd = "$snapshotInstallPath/$file";
-  if( -f $cmd ){
-    return $cmd;
-  }
-  return "";
 }
 
 sub printToServer {
@@ -565,7 +582,7 @@ sub printToServer {
     print "$msg\n";
     return;
   }
-  print makeKvBlock(status => $status, msg => $msg);
+  print $Output_FH makeKvBlock(status => $status, msg => $msg);
 }
 
 sub readOneLine {
@@ -610,10 +627,6 @@ sub doSnapshotCommand {
       printToServer( "ERROR", $_ );
     }
   }
-}
-
-sub doCopyBetween {
-  printToServer("ERROR", "Unsupported action");
 }
 
 sub open_stats_db {
@@ -687,7 +700,7 @@ sub record_backup {
 sub doMonitor {
   my ($newer_than, $max_items) = (0, 0);
   my ($all_stats, $i) = (undef, 0);
-  if(not defined $params) { # modern client >= 0.75.1 
+  if(not defined $params) { # modern client >= 0.75.1
     $newer_than = $HDR{newer_than};
     $max_items = $HDR{max_items};
   }
@@ -722,8 +735,9 @@ sub checkXtraBackupVersion {
     }
     $_ = qx/xtrabackup --version 2>&1/;
     if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
-      if($MIN_XTRA_VERSION > $1) {
-        printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $1.");
+      $XTRABACKUP_VERSION=$1;
+      if($MIN_XTRA_VERSION > $XTRABACKUP_VERSION) {
+        printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $XTRABACKUP_VERSION.");
       }
     }
     else {
@@ -750,51 +764,128 @@ sub processRequest {
 
   checkXtraBackupVersion();
 
+  $PL->d('Client Header:', Dumper(\%HDR));
+
   if( $action eq "copy from" ){
-    if(-f "/tmp/zrm-innosnap/running" ) {
-      printLog(" Redirecting to innobackupex. \n");
-      open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
-      $_ = <FAKESNAPCONF>; # timestamp
-      chomp($_);
-      if((time - int($_)) >= 300) {
-        printLog("  Caught stale inno-snapshot - deleting.\n");
-        unlink("/tmp/zrm-innosnap/running");
+    if( isLegacyClient() ) {
+      if(-f "/tmp/zrm-innosnap/running" ) {
+        printLog(" Redirecting to innobackupex. \n");
+        open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
+        $_ = <FAKESNAPCONF>; # timestamp
+        chomp($_);
+        if((time - int($_)) >= 300) {
+          printLog("  Caught stale inno-snapshot - deleting.\n");
+          unlink("/tmp/zrm-innosnap/running");
+        }
+        else {
+          $_ = <FAKESNAPCONF>; # user
+          chomp($_);
+          $params .= " --user=$_ ";
+          $mysql_user=$_;
+          $_ = <FAKESNAPCONF>; # password
+          chomp($_);
+          $params .= " --password=$_ ";
+          $mysql_pass=$_;
+
+          $tmp_directory=getTmpName();
+          my $r = mkdir( $tmp_directory );
+          if( $r == 0 ){
+            printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
+          }
+          doRealHotCopy( $tmp_directory );
+        }
       }
       else {
-        $_ = <FAKESNAPCONF>; # user
-        chomp($_);
-        $params .= " --user=$_ ";
-        $mysql_user=$_;
-        $_ = <FAKESNAPCONF>; # password
-        chomp($_);
-        $params .= " --password=$_ ";
-        $mysql_pass=$_;
-
-        $tmp_directory=getTmpName();
-        my $r = mkdir( $tmp_directory );
-        if( $r == 0 ){
-          printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
-        }
-        doRealHotCopy( $tmp_directory );
+        my @suf;
+        my $file = basename( $params, @suf );
+        my $dir = dirname( $params );
+        writeTarStream( $dir, $file );
       }
     }
+    # #######################################################################
+    # Handle new clients.
+    # #######################################################################
     else {
-      my @suf;
-      my $file = basename( $params, @suf );
-      my $dir = dirname( $params );
-      writeTarStream( $dir, $file );
+      if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
+          or not exists $HDR{'password'}) {
+        printAndDie("Mandatory parameters missing: user, password, backup-level.")
+      }
+      if($HDR{'backup-level'} == 0) { # A full backup.
+        $tmp_directory=getTmpName();
+        mkdir($tmp_directory);
+        $params .= " --user=$HDR{'user'} --password=$HDR{'password'}";
+        doRealHotCopy();
+      }
+      elsif($HDR{'backup-level'} == 1) { # An incremental backup.
+        my $fh;
+        my $last_sid = undef;
+        eval {
+          open($fh, "<$logDir/incremental.sid") or die("$!\n");
+          chomp($last_sid = <$fh>);
+          close($fh);
+        };
+
+        if(not defined($last_sid) or $last_sid ne $HDR{'sid'}) {
+          my $dbh;
+          my $slave_status = {};
+          my $master_logs  = {};
+          my $next_binlog;
+          eval {
+            $dbh = DBI->connect("DBI:mysql:host=localhost".
+              ($HDR{'socket'} ? ";mysql_socket=$HDR{'socket'}" : ""),
+              $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
+          };
+          if( $@ ) {
+            printLog("Unable to open DBI handle. Error: $@\n");
+            record_backup("incremental", time(), time(), '-', "failure", "$@");
+            printAndDie("ERROR", "Unable to open DBI handle. $@\n");
+          }
+
+          ## These will only return useful information when replication=1 anyway.
+          ## So there is little to no point in sending this information along
+          ## if it will only be confusing and misleading.
+          if($HDR{'replication'} == 1) {
+            $slave_status = $dbh->selectrow_hashref('SHOW SLAVE STATUS', { Slice => {} });
+            $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
+            sleep(5);
+            $dbh->do('START SLAVE');
+            sleep(20);
+          }
+
+          my ($file, $dir, $suffix) = fileparse($HDR{'file'});
+          $master_logs = [ map { $_->{'Log_name'} } @$master_logs ];
+          while( ($_ = shift @$master_logs ) ne $HDR{'binlog'}) {}
+          unshift @$master_logs, $HDR{'binlog'};
+          $next_binlog = pop @$master_logs;
+          $PL->d('Copying binlogs: ', @$master_logs);
+          $PL->d('Slave status: ', Dumper($slave_status));
+          print($Output_FH makeKvBlock(%$slave_status, 'status' => 'SENDING'));
+          writeTarStream( $dir, join(' ', @$master_logs) );
+
+          open($fh, ">$logDir/incremental.sid");
+          print($fh "$HDR{'sid'}\n");
+          close($fh);
+
+        }
+        else {
+          print($Output_FH makeKvBlock('status' => 'OK'));
+        }
+      }
     }
+
   }elsif( $action eq "copy between" ){
     printToServer("ERROR", "Unsupported action.");
   }elsif( $action eq "copy to" ){
-    if( ! -d $params ){
-      printAndDie( "$params not found\n" );
-    }
-    readTarStream( $params );
+    printToServer("ERROR", "Unsupported action.");
   }elsif( $action eq "snapshot" ){
-    $tmp_directory=getTmpName();
-    my $r = mkdir( $tmp_directory, 0700 );
-    doSnapshotCommand( $tmp_directory );
+    if( isLegacyClient() ) {
+      $tmp_directory=getTmpName();
+      my $r = mkdir( $tmp_directory, 0700 );
+      doSnapshotCommand( $tmp_directory );
+    }
+    else {
+      printToServer("ERROR", "Unsupported action.");
+    }
   }elsif( $action eq "monitor" ) {
     doMonitor();
   }else{
@@ -809,4 +900,4 @@ sub processRequest {
 if(!caller) { processRequest(\*STDIN, \*STDOUT, $logFile); }
 
 1;
-  
+
