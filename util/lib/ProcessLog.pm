@@ -613,12 +613,12 @@ sub email_and_die {
 
 
 sub failure_email {
-  my ($self,$extra) = shift;
+  my ($self,$extra) = @_;
   $self->send_email("$self->{script_name} FAILED", $extra);
 }
 
 sub success_email {
-  my ($self, $extra) = shift;
+  my ($self, $extra) = @_;
 
   $self->send_email("$self->{script_name} SUCCESS", $extra);
 }
