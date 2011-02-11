@@ -1230,6 +1230,10 @@ sub processRequest {
         }
 
         my ($file, $dir, $suffix) = fileparse($HDR{'file'});
+        if($HDR{'mysql-binlog-path'}) { # Someone has put the binlogs somewhere else..
+          $::PL->d('Overriding binlog directory with:', $HDR{'mysql-binlog-path'});
+          $dir = $HDR{'mysql-binlog-path'};
+        }
         $master_logs = [ map { $_->{'Log_name'} } @$master_logs ];
         while( ($_ = shift @$master_logs ) ne $HDR{'binlog'}) {}
         unshift @$master_logs, $HDR{'binlog'};
