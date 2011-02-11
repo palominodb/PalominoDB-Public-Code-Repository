@@ -717,6 +717,7 @@ sub processRequest {
         do_innobackupex($tmp_directory, %HDR);
       }
       else {
+        $::PL->m('Ignored duplicate/extra/useless request for:', $HDR{'file'});
         print($Output_FH makeKvBlock('status' => 'OK'));
       }
     }
@@ -770,6 +771,7 @@ sub processRequest {
 
       }
       else {
+        $::PL->m('Ignored duplicate/extra/useless request for:', $HDR{'file'});
         print($Output_FH makeKvBlock('status' => 'OK'));
       }
     }
