@@ -1,20 +1,20 @@
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -128,7 +128,7 @@ sub sys_error {
 # ###########################################################################
 package RObj;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use 5.008;
 
 use Storable qw(nfreeze thaw);
@@ -140,6 +140,11 @@ use POSIX;
 use Exporter;
 use B::Deparse;
 use Carp;
+use ProcessLog;
+use Data::Dumper;
+
+$Data::Dumper::Indent = 0;
+$Data::Dumper::Sortkeys = 1;
 
 # Bring exported symbols into this package.
 RObj::Base->import;
@@ -150,15 +155,17 @@ $VERSION = 0.01;
 
 @EXPORT = qw(R_die R_exit R_read R_write COMPILE_FAILURE TRANSPORT_FAILURE OK);
 
-no warnings 'once';
-$Storable::Deparse = 1;
-use warnings FATAL => 'all';
+{
+  no warnings 'once';
+  $Storable::Deparse = 1;
+}
+
 
 sub new {
   my ($class, $host, $user, $ssh_key, $pw_auth) = @_;
   my $s = RObj::Base->new;
   bless $s, $class;
-  
+
   # If the first argument is a DSN, go ahead
   # and setup the RObj appropriately
   if(ref($host) and ref($host) eq 'DSN') {
@@ -342,6 +349,8 @@ sub start {
     croak "Remote end did not come up properly. Expected: 'READY'; Got: ". (!$r[0] ? 'undef': join(' ',@r));
   }
   else {
+    ProcessLog::_PdbDEBUG >= ProcessLog::Level2
+    && $::PL->d("Sending parameters to remote:\n", Dumper(\@rparams));
     unless($self->write(@rparams)) {
       croak "Sending initial parameters to RObj failed.";
     }
@@ -377,6 +386,8 @@ sub _wrap {
     }
     push @$code, [$c->[0], $ctxt];
   }
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+  && $::PL->d("Decompiled code to be serialized:\n", Dumper($code));
   $code = encode_base64(nfreeze($code));
   my $cnt =<<'EOF';
 # ###########################################################################

@@ -1,0 +1,5 @@
+{
+  'section' => {
+    'indented_key' => 'value',
+  },
+}

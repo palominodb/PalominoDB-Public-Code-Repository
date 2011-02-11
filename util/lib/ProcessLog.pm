@@ -1,20 +1,20 @@
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -228,6 +228,7 @@ Sets the logpath for this ProcessLog.
 sub logpath {
   my ($self, $logpath) = @_;
   my $script_name = $$self{script_name};
+  $self->{log_path} = $logpath;
   if($logpath =~ /^syslog:(\w+)/) {
     openlog($script_name, "", $1);
     $self->{logsub} = sub {
@@ -505,7 +506,7 @@ sub x {
   $self->_restore_stdfhs($saved_fhs);
   # Rewind the filehandle to the beginning to allow the calling application
   # to deal with it.
-  seek($proc_fh, 0, SEEK_SET); 
+  seek($proc_fh, 0, SEEK_SET);
   return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
 }
 
@@ -612,12 +613,12 @@ sub email_and_die {
 
 
 sub failure_email {
-  my ($self,$extra) = shift;
+  my ($self,$extra) = @_;
   $self->send_email("$self->{script_name} FAILED", $extra);
 }
 
 sub success_email {
-  my ($self, $extra) = shift;
+  my ($self, $extra) = @_;
 
   $self->send_email("$self->{script_name} SUCCESS", $extra);
 }

@@ -13,19 +13,22 @@ sub time() {
 package main;
 use strict;
 use warnings;
-use Test::More tests => 23;
+use Test::More tests => 25;
 use Fcntl;
+my $pl;
 
 BEGIN {
   # Ensure debugging is enabled.
   $ENV{'Pdb_DEBUG'} = 1;
+  unlink('t/files/001_process_log2.t.log');
+  unlink('t/files/001_process_log.t.log');
 }
 
 use ProcessLog;
-
-no warnings 'redefine';
-*ProcessLog::time = \&Overlord::time;
-use warnings;
+{
+  no warnings 'redefine';
+  *ProcessLog::time = \&Overlord::time;
+}
 
 use IO::Handle;
 use English qw(-no_match_vars);
@@ -33,7 +36,7 @@ use English qw(-no_match_vars);
 sub get_line {
   my $n = shift;
   $n = 1 unless($n);
-  open my $lh, '<', 't/files/001_process_log.t.log';
+  open my $lh, '<', $pl->{'log_path'};
   while($lh->input_line_number < $n) {
     $_ = <$lh>;
   }
@@ -42,10 +45,7 @@ sub get_line {
   $_;
 }
 
-# Make sure everything is peachy before we get started.
-unlink('t/files/001_process_log.t.log');
-
-my $pl = ProcessLog->new('001_process_log.t', 't/files/001_process_log.t.log', undef);
+$pl = ProcessLog->new('001_process_log.t', 't/files/001_process_log.t.log', undef);
 $pl->quiet(1);
 ok($pl, 'instantiation');
 
@@ -112,6 +112,20 @@ is($pl->p($prompt_fh, 'p: ', qr/^C$/, 'Y'), 'C', 'default not used');
 
 close($prompt_fh);
 
+# Test changing the logpath to a new file
+$pl->logpath('t/files/001_process_log2.t.log');
+$pl->m('message 1');
+$pl->m('message 2');
+$pl->_flush();
+
+diag('logpath: ', $pl->{'log_path'});
+ok( -f "t/files/001_process_log2.t.log", "logpath changed to exists");
+is(get_line(1), 'msg 0.000: message 1', "get line 1 from new log");
+is(get_line(2), 'msg 0.000: message 2', "get line 2 from new log");
+
 # Cleanup after ourselves
-unlink('t/files/001_process_log.t.log');
+END {
+  unlink('t/files/001_process_log.t.log');
+  unlink('t/files/001_process_log2.t.log');
+}
 1;
