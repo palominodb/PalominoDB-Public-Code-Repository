@@ -82,7 +82,6 @@ my $Output_FH;
 
 my $tmp_directory;
 my $action;
-my $params;
 
 my $INNOBACKUPEX="innobackupex-1.5.1";
 
@@ -300,17 +299,6 @@ sub makeKvBlock {
 #
 # When the server has read and validated the key=value block,
 # it replies with 'READY'.
-#
-# For version 1.8b7_palomino (the legacy version):
-# The format is like so:
-#
-#   <client version>\n
-#   <action>\n
-#   <params>\n
-#   <tmpdir path>\n
-#   <mysql binpath>\n
-#
-# There is no communication back from server to client in this version.
 #
 sub getHeader {
   $REMOTE_VERSION = <$Input_FH>;
@@ -638,13 +626,8 @@ sub record_backup {
 sub doMonitor {
   my ($newer_than, $max_items) = (0, 0);
   my ($all_stats, $i) = (undef, 0);
-  if(not defined $params) { # modern client >= 0.75.1
-    $newer_than = $HDR{newer_than};
-    $max_items = $HDR{max_items};
-  }
-  else { # legacy client == 1.8b7_palomino
-    ($newer_than, $max_items) = split(/\s+/, $params);
-  }
+  $newer_than = $HDR{newer_than};
+  $max_items = $HDR{max_items};
 
   $all_stats = open_stats_db(LOCK_SH);
   if(not defined $all_stats) {
@@ -655,7 +638,7 @@ sub doMonitor {
   foreach my $stat (@$all_stats) {
     my ($stype, $sstart, $send, $ssize, $sstatus, $info) = split(/\t/, $stat);
     if($sstart >= $newer_than) {
-      print STDOUT $stat, "\n";
+      print($Output_FH $stat, "\n");
       $i++;
     }
     if($i == $max_items) {
