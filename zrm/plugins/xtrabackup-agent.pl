@@ -101,7 +101,6 @@ $SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
 $SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
 
 
-my $PL;
 my $stats_db       = "$logDir/stats.db";
 my $stats_history_len = 100;
 my $nagios_service = "MySQL Backups";
@@ -115,7 +114,7 @@ my $mysql_socket_path = undef;
 my $innobackupex_opts = "";
 
 ## Catch all errors and log them.
-$SIG{'__DIE__'} = sub { die(@_) if($^S); $PL->e(@_); die(@_); };
+$SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); die(@_); };
 
 my ($mysql_user, $mysql_pass);
 
@@ -218,16 +217,14 @@ sub my_exit {
 sub printLog {
   my @args = @_;
   chomp(@args);
-  $PL->m(@args);
+  $::PL->m(@args);
 }
 
 sub printAndDie {
   my @args = @_;
   chomp(@args);
-  $PL->e(@args);
-  if( !isLegacyClient() ) {
-    printToServer("FAILED", join(' ', @args));
-  }
+  $::PL->e(@args);
+  printToServer("FAILED", join(' ', @args));
   &my_exit( 1 );
 }
 
@@ -291,7 +288,7 @@ sub makeKvBlock {
     $out .= "$k=". (defined $Kv{$k} ? $Kv{$k} : '') . "\n";
   }
   $out .= "\n";
-  $PL->d('KvBlock:', $out);
+  $::PL->d('KvBlock:', $out);
   return $out;
 }
 
@@ -321,21 +318,8 @@ sub getHeader {
   $REMOTE_VERSION = <$Input_FH>;
   chomp($REMOTE_VERSION);
   $REMOTE_VERSION = checkIfTainted($REMOTE_VERSION);
-  $PL->d('Stream debug (Client Version):', "'$REMOTE_VERSION'");
+  $::PL->d('Stream debug (Client Version):', "'$REMOTE_VERSION'");
 
-  if( isLegacyClient() ) {
-    my @inp;
-    &printLog("Client is a legacy version.");
-    for( my $i = 0; $i < 4; $i++ ){
-      $_ = <$Input_FH>;
-      push @inp, $_;
-    }
-    chomp(@inp);
-    $action = checkIfTainted($inp[0]);
-    $params = checkIfTainted($inp[1]);
-    $GLOBAL_TMPDIR = checkIfTainted($inp[2]);
-    return;
-  }
   if(!isClientCompatible()) {
     printAndDie("Incompatible client version.");
   }
@@ -427,7 +411,7 @@ sub doRealHotCopy {
     $INNOBACKUPEX = "cd $mycnf{'mysqld'}{'datadir'}; $INNOBACKUPEX";
   }
 
-  $PL->d("Exec:", $INNOBACKUPEX, $new_params, "--defaults-file", $mycnf_path,
+  $::PL->d("Exec:", $INNOBACKUPEX, $new_params, "--defaults-file", $mycnf_path,
           $innobackupex_opts, "--slave-info", "--stream=tar", $tmp_directory,
           "2>/tmp/innobackupex-log|");
   open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path $innobackupex_opts --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
@@ -575,58 +559,7 @@ sub getTmpName {
 sub printToServer {
   my ($status, $msg) = @_;
   $msg =~ s/\n/\\n/g;
-  if( isLegacyClient() ) {
-    printLog( "status=$status cnt=1" , $msg);
-    print "$status\n";
-    print "1\n";
-    print "$msg\n";
-    return;
-  }
   print $Output_FH makeKvBlock(status => $status, msg => $msg);
-}
-
-sub readOneLine {
-  my $line = <$Input_FH>;
-  chomp( $line );
-  $line = checkIfTainted( $line );
-  return $line;
-}
-
-sub doSnapshotCommand {
-  if( isLegacyClient() ) {
-    my @confData;
-    my $cmd = readOneLine();
-    my $num = readOneLine();
-
-    for( my $i = 0; $i < $num; $i++ ) {
-      push @confData, readOneLine();
-    }
-
-    my $command = validateSnapshotCommand( $cmd );
-    if( $command eq "" ) {
-      printToServer( "ERROR", "Snapshot Plugin $cmd not found" );
-      printAndDie( "Snapshot Plugin $cmd not found" );
-    }
-    my $tmpf = File::Temp->new(DIR => $GLOBAL_TMPDIR);
-    if(not defined $tmpf) {
-      printToServer("ERROR", "Unable to open a temporary file in $GLOBAL_TMPDIR");
-      printAndDie("Unable to open temporary file in $GLOBAL_TMPDIR");
-    }
-
-    foreach( @confData ){
-      print $tmpf "$_\n";
-    }
-    $ENV{'ZRM_CONF'} = "$tmpf";
-    $command .= " $params 2>&1";
-    printLog("snapshot cmd: $command");
-    $_ = qx/$command/;
-    if( $? == 0 ) {
-      printToServer( "SUCCESS", $_ );
-    }
-    else {
-      printToServer( "ERROR", $_ );
-    }
-  }
 }
 
 sub open_stats_db {
@@ -642,7 +575,7 @@ sub open_stats_db {
         alarm(0);
       };
       if($@ and $@ =~ /ALARM/) {
-        $PL->e("on attempt", $_, "unable to flock $stats_db after 5 seconds.");
+        $::PL->e("on attempt", $_, "unable to flock $stats_db after 5 seconds.");
       }
       else {
         undef($st);
@@ -753,8 +686,8 @@ sub checkXtraBackupVersion {
 sub processRequest {
   ($Input_FH, $Output_FH, $logFile) = @_;
 
-  $PL = ProcessLog->new('xtrabackup-agent', $logFile);
-  $PL->quiet(1);
+  $::PL->logpath($logFile);
+  $::PL->quiet(1);
 
   printLog("Server($VERSION) started.");
   $Input_FH->autoflush(1);
@@ -764,132 +697,80 @@ sub processRequest {
 
   checkXtraBackupVersion();
 
-  $PL->d('Client Header:', Dumper(\%HDR));
+  $::PL->d('Client Header:', Dumper(\%HDR));
 
-  if( $action eq "copy from" ){
-    if( isLegacyClient() ) {
-      if(-f "/tmp/zrm-innosnap/running" ) {
-        printLog(" Redirecting to innobackupex. \n");
-        open FAKESNAPCONF, "</tmp/zrm-innosnap/running";
-        $_ = <FAKESNAPCONF>; # timestamp
-        chomp($_);
-        if((time - int($_)) >= 300) {
-          printLog("  Caught stale inno-snapshot - deleting.\n");
-          unlink("/tmp/zrm-innosnap/running");
-        }
-        else {
-          $_ = <FAKESNAPCONF>; # user
-          chomp($_);
-          $params .= " --user=$_ ";
-          $mysql_user=$_;
-          $_ = <FAKESNAPCONF>; # password
-          chomp($_);
-          $params .= " --password=$_ ";
-          $mysql_pass=$_;
+  if($action eq "copy from") {
+    if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
+        or not exists $HDR{'password'}) {
+      printAndDie("Mandatory parameters missing: user, password, backup-level.")
+    }
+    if($HDR{'backup-level'} == 0) { # A full backup.
+      $tmp_directory=getTmpName();
+      mkdir($tmp_directory);
+      $params .= " --user=$HDR{'user'} --password=$HDR{'password'}";
+      doRealHotCopy();
+    }
+    elsif($HDR{'backup-level'} == 1) { # An incremental backup.
+      my $fh;
+      my $last_sid = undef;
+      eval {
+        open($fh, "<$logDir/incremental.sid") or die("$!\n");
+        chomp($last_sid = <$fh>);
+        close($fh);
+      };
 
-          $tmp_directory=getTmpName();
-          my $r = mkdir( $tmp_directory );
-          if( $r == 0 ){
-            printAndDie( "Unable to create tmp directory $tmp_directory.\n$!\n" );
-          }
-          doRealHotCopy( $tmp_directory );
+      if(not defined($last_sid) or $last_sid ne $HDR{'sid'}) {
+        my $dbh;
+        my $slave_status = {};
+        my $master_logs  = {};
+        my $next_binlog;
+        eval {
+          $dbh = DBI->connect("DBI:mysql:host=localhost".
+            ($HDR{'socket'} ? ";mysql_socket=$HDR{'socket'}" : ""),
+            $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
+        };
+        if( $@ ) {
+          printLog("Unable to open DBI handle. Error: $@\n");
+          record_backup("incremental", time(), time(), '-', "failure", "$@");
+          printAndDie("ERROR", "Unable to open DBI handle. $@\n");
         }
+
+        ## These will only return useful information when replication=1 anyway.
+        ## So there is little to no point in sending this information along
+        ## if it will only be confusing and misleading.
+        if($HDR{'replication'} == 1) {
+          $slave_status = $dbh->selectrow_hashref('SHOW SLAVE STATUS', { Slice => {} });
+          $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
+          sleep(5);
+          $dbh->do('START SLAVE');
+          sleep(20);
+        }
+
+        my ($file, $dir, $suffix) = fileparse($HDR{'file'});
+        $master_logs = [ map { $_->{'Log_name'} } @$master_logs ];
+        while( ($_ = shift @$master_logs ) ne $HDR{'binlog'}) {}
+        unshift @$master_logs, $HDR{'binlog'};
+        $next_binlog = pop @$master_logs;
+        $::PL->d('Copying binlogs: ', @$master_logs);
+        $::PL->d('Slave status: ', Dumper($slave_status));
+        print($Output_FH makeKvBlock(%$slave_status, 'status' => 'SENDING'));
+        writeTarStream( $dir, join(' ', @$master_logs) );
+
+        open($fh, ">$logDir/incremental.sid");
+        print($fh "$HDR{'sid'}\n");
+        close($fh);
+
       }
       else {
-        my @suf;
-        my $file = basename( $params, @suf );
-        my $dir = dirname( $params );
-        writeTarStream( $dir, $file );
+        print($Output_FH makeKvBlock('status' => 'OK'));
       }
     }
-    # #######################################################################
-    # Handle new clients.
-    # #######################################################################
-    else {
-      if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
-          or not exists $HDR{'password'}) {
-        printAndDie("Mandatory parameters missing: user, password, backup-level.")
-      }
-      if($HDR{'backup-level'} == 0) { # A full backup.
-        $tmp_directory=getTmpName();
-        mkdir($tmp_directory);
-        $params .= " --user=$HDR{'user'} --password=$HDR{'password'}";
-        doRealHotCopy();
-      }
-      elsif($HDR{'backup-level'} == 1) { # An incremental backup.
-        my $fh;
-        my $last_sid = undef;
-        eval {
-          open($fh, "<$logDir/incremental.sid") or die("$!\n");
-          chomp($last_sid = <$fh>);
-          close($fh);
-        };
-
-        if(not defined($last_sid) or $last_sid ne $HDR{'sid'}) {
-          my $dbh;
-          my $slave_status = {};
-          my $master_logs  = {};
-          my $next_binlog;
-          eval {
-            $dbh = DBI->connect("DBI:mysql:host=localhost".
-              ($HDR{'socket'} ? ";mysql_socket=$HDR{'socket'}" : ""),
-              $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
-          };
-          if( $@ ) {
-            printLog("Unable to open DBI handle. Error: $@\n");
-            record_backup("incremental", time(), time(), '-', "failure", "$@");
-            printAndDie("ERROR", "Unable to open DBI handle. $@\n");
-          }
-
-          ## These will only return useful information when replication=1 anyway.
-          ## So there is little to no point in sending this information along
-          ## if it will only be confusing and misleading.
-          if($HDR{'replication'} == 1) {
-            $slave_status = $dbh->selectrow_hashref('SHOW SLAVE STATUS', { Slice => {} });
-            $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
-            sleep(5);
-            $dbh->do('START SLAVE');
-            sleep(20);
-          }
-
-          my ($file, $dir, $suffix) = fileparse($HDR{'file'});
-          $master_logs = [ map { $_->{'Log_name'} } @$master_logs ];
-          while( ($_ = shift @$master_logs ) ne $HDR{'binlog'}) {}
-          unshift @$master_logs, $HDR{'binlog'};
-          $next_binlog = pop @$master_logs;
-          $PL->d('Copying binlogs: ', @$master_logs);
-          $PL->d('Slave status: ', Dumper($slave_status));
-          print($Output_FH makeKvBlock(%$slave_status, 'status' => 'SENDING'));
-          writeTarStream( $dir, join(' ', @$master_logs) );
-
-          open($fh, ">$logDir/incremental.sid");
-          print($fh "$HDR{'sid'}\n");
-          close($fh);
-
-        }
-        else {
-          print($Output_FH makeKvBlock('status' => 'OK'));
-        }
-      }
-    }
-
-  }elsif( $action eq "copy between" ){
-    printToServer("ERROR", "Unsupported action.");
-  }elsif( $action eq "copy to" ){
-    printToServer("ERROR", "Unsupported action.");
-  }elsif( $action eq "snapshot" ){
-    if( isLegacyClient() ) {
-      $tmp_directory=getTmpName();
-      my $r = mkdir( $tmp_directory, 0700 );
-      doSnapshotCommand( $tmp_directory );
-    }
-    else {
-      printToServer("ERROR", "Unsupported action.");
-    }
-  }elsif( $action eq "monitor" ) {
+  }
+  elsif($action eq "monitor") {
     doMonitor();
-  }else{
-    $PL->i("Unknown action: $action, ignoring.");
+  }
+  else {
+    $::PL->i("Unknown action: $action, ignoring.");
   }
   printLog( "Server exit" );
   my_exit( 0 );
