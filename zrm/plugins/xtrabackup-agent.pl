@@ -833,7 +833,7 @@ sub do_innobackupex {
   printLog("Created FIFOS..\n");
 
   eval {
-    $dbh = DBI->connect("DBI:mysql:host=localhost". ($mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : ""), $cfg{'user'}, $cfg{'password'}, { RaiseError => 1, AutoCommit => 1});
+    $dbh = DBI->connect("DBI:mysql:host=localhost". ($cfg{'xtrabackup-agent:socket'} ? ";mysql_socket=$cfg{'xtrabackup-agent:socket'}" : ""), $cfg{'user'}, $cfg{'password'}, { RaiseError => 1, AutoCommit => 1});
   };
   if($@) {
     printLog("Unable to open DBI handle. Error: $@");
@@ -1158,6 +1158,7 @@ sub checkXtraBackupVersion {
 
 sub processRequest {
   ($Input_FH, $Output_FH, $logFile) = @_;
+  my $dbh;
 
   $::PL->logpath($logFile);
   $::PL->quiet(1);
@@ -1172,6 +1173,17 @@ sub processRequest {
 
   $::PL->d('Client Header:', Dumper(\%HDR));
 
+  eval {
+    $dbh = DBI->connect("DBI:mysql:host=localhost".
+      ($HDR{'xtrabackup-agent:socket'} ? ";mysql_socket=$HDR{'xtrabackup-agent:socket'}" : ""),
+      $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
+  };
+  if( $@ ) {
+    printLog("Unable to open DBI handle. Error: $@\n");
+    record_backup($HDR{'backup-level'} ? "full" : "incremental", time(), time(), '-', "failure", "$@");
+    printAndDie("ERROR", "Unable to open DBI handle. $@\n");
+  }
+
   if($action eq "copy from") {
     if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
         or not exists $HDR{'password'}) {
@@ -1179,6 +1191,10 @@ sub processRequest {
     }
     if($HDR{'backup-level'} == 0) { # A full backup.
       if($HDR{'file'} =~ /ZRM_LINKS/) {
+        if($HDR{'replication'} == 1) {
+          ## Re-enable replication.
+          $dbh->do('START SLAVE');
+        }
         print($Output_FH makeKvBlock('status' => 'SENDING'));
         $tmp_directory=getTmpName();
         mkdir($tmp_directory);
@@ -1199,20 +1215,10 @@ sub processRequest {
       };
 
       if(not defined($last_sid) or $last_sid ne $HDR{'sid'}) {
-        my $dbh;
         my $slave_status = {};
         my $master_logs  = {};
         my $next_binlog;
-        eval {
-          $dbh = DBI->connect("DBI:mysql:host=localhost".
-            ($HDR{'socket'} ? ";mysql_socket=$HDR{'socket'}" : ""),
-            $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
-        };
-        if( $@ ) {
-          printLog("Unable to open DBI handle. Error: $@\n");
-          record_backup("incremental", time(), time(), '-', "failure", "$@");
-          printAndDie("ERROR", "Unable to open DBI handle. $@\n");
-        }
+
 
         ## These will only return useful information when replication=1 anyway.
         ## So there is little to no point in sending this information along
