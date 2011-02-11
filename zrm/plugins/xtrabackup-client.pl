@@ -356,6 +356,7 @@ sub dummySnapshotDeviceInfo {
              'fstype=s',
              'sname=s',
              'size=s',
+             'device-mount-point=s',
            );
   @ARGV = @ARGS_SAVE;
   $::PL->d('Snapshot action:', $snap_o{'action'});
