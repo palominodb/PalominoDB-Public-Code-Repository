@@ -1,39 +1,526 @@
 #!/usr/bin/perl
-
+# Copyright (c) 2010-2011 PalominoDB, Inc.  All Rights Reserved.
+#
+# Based on socket-copy.pl and socket-server.pl distributed in
+# ZRM version 2.0 copyright Zmanda Inc.
+#
+# This program is free software; you can redistribute it and/or modify it
+# under the terms of the GNU General Public License version 2 as published
+# by the Free Software Foundation.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+# for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+#
+# Contact information: PalominoDB Inc, 57 South Main St. #117
+# Neptune, NJ 07753, United States, or: http://www.palominodb.com
+#
 # This is meant to be invoked by xinetd.
-# It expects two arguments on stdin
-# First argument is the action to be taken.
-# Valid actions are 'mysqlhotcopy', 'copy to', 'copy from'
-# Second argument is the parameter list if mysqlhotcopy is the action specified
-# or the file that needs to be copied if the action is copy.
-# It will output the data on stdout after being uuencoded
-# so that we only transfer ascii data.
-# Each data block is preceeded by the size of the block being written.
-# This date is encoded in Network order
-# Remember that the communication is not secure and that this can be used to
-# copy arbitary data from the host.
-# Log messages can be found in /var/log/mysql-zrm/socket-server.log
-# on the MySQL server
-
+# See associated documentation for working details.
 use strict;
 use warnings FATAL => 'all';
+
 # ###########################################################################
-# ProcessLog package FSL_VERSION
+# ProcessLog package 5de7a9b2674ffd5aef20f2e8ff1cfca9c0308217
 # ###########################################################################
+package ProcessLog;
+use strict;
+use warnings FATAL => 'all';
+
+
+my $mail_available = 1;
+eval 'use Mail::Send';
+if($@) {
+  $mail_available = 0;
+}
+use Sys::Hostname;
+use Sys::Syslog;
+use Digest::MD5 qw(md5_hex);
+use Time::HiRes qw(time);
+use File::Spec;
+use Fcntl qw(:seek);
+use English qw(-no_match_vars);
+
+use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
+use constant Level1 => 1;
+use constant Level2 => 2;
+use constant Level3 => 3;
+
+
+sub new {
+  my $class = shift;
+  my ($script_name, $logpath, $email_to) = @_;
+  my $self = {};
+
+  $self->{run_id} = md5_hex(time . rand() . $script_name);
+
+  $self->{script_name} = $script_name;
+  $self->{log_path} = $logpath;
+  $self->{email_to} = $email_to;
+  $self->{stack_depth} = 10; # Show traces 10 levels deep.
+  $self->{logsub} = 0;
+  $self->{quiet} = 0;
+
+  bless $self,$class;
+  $self->logpath($logpath);
+  return $self;
+}
+
+
+sub null {
+  my $class = shift;
+  $class->new('', '/dev/null', undef);
+}
+
+
+sub name {
+  my $self = shift;
+  $self->{script_name};
+}
+
+
+sub runid {
+  my $self = shift;
+  $self->{run_id};
+}
+
+
+sub start {
+  my $self = shift;
+  $self->m("BEGIN $self->{run_id}");
+}
+
+
+sub end {
+  my $self = shift;
+  $self->m("END $self->{run_id}");
+}
+
+
+sub stack_depth {
+  my ($self, $opts) = @_;
+  my $old = $self->{stack_depth};
+  $self->{stack_depth} = $opts if( defined $opts );
+  $old;
+}
+
+
+sub quiet {
+  my ($self, $new) = @_;
+  my $old = $self->{quiet};
+  $self->{quiet} = $new if( defined $new );
+  $old;
+}
+
+
+sub logpath {
+  my ($self, $logpath) = @_;
+  my $script_name = $$self{script_name};
+  $self->{log_path} = $logpath;
+  if($logpath =~ /^syslog:(\w+)/) {
+    openlog($script_name, "", $1);
+    $self->{logsub} = sub {
+      my $self = shift;
+      $_[3] = '';
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
+      syslog($lvl, _p(@_));
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      my @args = @_;
+      $args[0] =~ s/^/# /;
+      print STDERR _p(@args);
+    }
+  }
+  else {
+    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    $self->{logsub} = sub {
+      my $self = shift;
+      my $fh  = $self->{LOG};
+      print $fh _p(@_);
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  return $self;
+}
+
+
+sub email_to {
+  my ($self, @emails) = @_;
+  my $old = $$self{email_to};
+  if(@emails) {
+    $$self{email_to} = [@emails];
+  }
+  return $old;
+}
+
+
+sub m {
+  my ($self,$m) = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
+}
+
+
+sub ms {
+  my $self = shift;
+  $self->m(@_);
+  $self->m($self->stack());
+}
+
+
+sub p {
+  my ($self) = shift;
+  my $fh = \*STDIN;
+  my $regex = qr/.*/;
+  my $default = undef;
+  my @prompt = ();
+  if(ref($_[0]) eq 'GLOB') {
+    $fh = shift;
+  }
+  if(ref($_[-1]) eq 'Regexp') {
+    $regex = pop;
+  }
+  elsif(ref($_[-2]) eq 'Regexp') {
+    $default = pop;
+    $regex = pop;
+  }
+  @prompt = @_;
+  $self->m(@prompt);
+  chomp($_ = <$fh>);
+  if($default and $_ eq '') {
+    $self->m('Using default:', $default);
+    return $default;
+  }
+  while($_ !~ $regex) {
+    $self->d("Input doesn't match:", $regex);
+    $self->m(@prompt);
+    chomp($_ = <$fh>);
+  }
+
+  $self->m('Using input:', $_);
+  return $_;
+}
+
+
+sub e {
+  my ($self,$m) = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
+}
+
+
+sub es {
+  my $self = shift;
+  $self->e(@_);
+  $self->e($self->stack());
+}
+
+
+sub i {
+  my $self = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
+}
+
+
+sub is {
+  my $self = shift;
+  $self->i(@_);
+  $self->i($self->stack());
+}
+
+
+sub d {
+  my $self = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  if(_PdbDEBUG) {
+    my $t = sprintf("%.3f", time());
+    $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
+  }
+}
+
+
+sub ds {
+  my $self = shift;
+  $self->d(@_);
+  $self->d($self->stack());
+}
+
+
+sub x {
+  my ($self, $subref, @args) = @_;
+  my $r = undef;
+  my $saved_fhs = undef;
+  my $proc_fh = undef;
+  eval {
+    $saved_fhs = $self->_save_stdfhs();
+    open($proc_fh, '+>', undef) or die("Unable to open anonymous tempfile");
+    open(STDOUT, '>&', $proc_fh) or die("Unable to dup anon fh to STDOUT");
+    open(STDERR, '>&', \*STDOUT) or die("Unable to dup STDOUT to STDERR");
+    $r = $subref->(@args);
+  };
+  $self->_restore_stdfhs($saved_fhs);
+  seek($proc_fh, 0, SEEK_SET);
+  return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
+}
+
+
+sub stack {
+  my ($self, $level) = @_;
+  $level = $self->{stack_depth} ||= 10 unless($level);
+  my $out = "";
+  my $i=0;
+  my ($package, $file, $line, $sub) = caller($i+2); # +2 hides ProcessLog from the stack trace.
+  $i++;
+  if($package) {
+    $out .= "Stack trace:\n";
+  }
+  else {
+    $out .= "No stack data available.\n";
+  }
+  while($package and $i < $level) {
+    $out .= " "x$i . "$package  $file:$line  $sub\n";
+    ($package, $file, $line, $sub) = caller($i+2);
+    $i++;
+  }
+  chomp($out);
+  $out;
+}
+
+sub _p {
+  my $mode = shift;
+  my $package = shift;
+  my $line = shift;
+  my $time = shift;
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
+  @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
+       map { defined $_ ? $_ : 'undef' } @_;
+  $prefix. join(' ',@_). "\n";
+}
+
+sub _flush {
+  my ($self) = @_;
+  unless($self->{log_path} =~ /^syslog:/) {
+    $self->{LOG}->flush;
+  }
+  1;
+}
+
+sub _save_stdfhs {
+  my ($self) = @_;
+  open my $stdout_save, ">&", \*STDOUT or die("Unable to dup stdout");
+  open my $stderr_save, ">&", \*STDERR or die("Unable to dup stderr");
+  return { o => $stdout_save, e => $stderr_save };
+}
+
+sub _restore_stdfhs {
+  my ($self, $fhs) = @_;
+  my $o = $fhs->{o};
+  my $e = $fhs->{e};
+  open STDOUT, ">&", $o;
+  open STDERR, ">&", $e;
+  return 1;
+}
+
+
+sub email_and_die {
+  my ($self, $extra) = @_;
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
+  $self->failure_email($extra);
+  die($extra);
+}
+
+
+sub failure_email {
+  my ($self,$extra) = @_;
+  $self->send_email("$self->{script_name} FAILED", $extra);
+}
+
+sub success_email {
+  my ($self, $extra) = @_;
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
+}
+
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
+  my $fh = $msg->open;
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
+  $fh->close;
+}
+
+
+{
+  no strict 'refs';
+  no warnings 'once';
+  *::PL = \(ProcessLog->new($0, '/dev/null'));
+}
+
+
+1;
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# Which package FSL_VERSION
+# Which package fb3b29095206245c761e7099703527cd7483ab5d
 # ###########################################################################
+package Which;
+use strict;
+use warnings FATAL => 'all';
+use Carp;
+
+sub which($) {
+  my $cmd = shift;
+  croak "No command to which specified" if(!$cmd);
+  if( $cmd =~ /^\.?\// or $cmd =~ /\// ) {
+    return $cmd if(-f $cmd and -x $cmd);
+    return undef;
+  }
+  for(split(/:/, $ENV{'PATH'})) {
+    return "$_/$cmd" if(-f "$_/$cmd" and -x "$_/$cmd");
+  }
+  return undef;
+}
+
+1;
 # ###########################################################################
 # End Which package
 # ###########################################################################
 
 # ###########################################################################
-# IniFile package FSL_VERSION
+# IniFile package 781eb70eee887952666c5fba5e81818d1f5f512f
 # ###########################################################################
+package IniFile;
+use strict;
+use warnings FATAL => 'all';
+use File::Glob;
+
+
+sub read_config {
+  my $file = shift;
+  my %cfg;
+  my $inif;
+  unless(open $inif, "<$file") {
+    return undef;
+  }
+  my $cur_sec = '';
+  while(<$inif>) {
+    chomp;
+    next if(/^\s*(?:;|#)/);
+    next if(/^$/);
+    if(/^\s*\[(\w+)\]/) { # Group statement
+      $cfg{$1} = {};
+      $cur_sec = $1;
+    }
+    elsif(/^!(include(?:dir)?)\s+([^\0]+)/) { # include directives
+      my $path = $2;
+      my @files;
+      if($1 eq 'includedir') {
+        @files = glob($path . "/*.cnf");
+      }
+      else {
+        @files = ($path);
+      }
+      for(@files) { _merge(\%cfg, {read_config($_)}); }
+    }
+    else { # options and flags
+      my ($k, $v) = split(/=/, $_, 2);
+      $k =~ s/\s+$//;
+      $k =~ s/^\s+//;
+      if(defined($v)) {
+        $v =~ s/^\s+//;
+        $v =~ s/\s?#.*?[^"']$//;
+        $v =~ s/^(?:"|')//;
+        $v =~ s/(?:"|')$//;
+      }
+      else {
+        if($k =~ /^(?:no-|skip-)(.*)/) {
+          $k = $1;
+          $v = 0;
+        }
+        else {
+          $v = 1;
+        }
+      }
+      chomp($k); chomp($v);
+
+      if($k =~ /^(.*?)\s*\[\s*\d+\s*\]/) {
+        $k = $1;
+        push @{$cfg{$cur_sec}{$k}}, $v;
+        next;
+      }
+      $cfg{$cur_sec}{$k} = $v;
+    }
+  }
+  return %cfg;
+}
+
+sub _merge {
+  my ($h1, $h2, $p) = @_;
+  foreach my $k (keys %$h2) {
+    if(not $p and not exists $h1->{$k}) {
+      $h1->{$k} = $h2->{$k};
+    }
+    elsif(not $p and exists $h1->{$k}) {
+      _merge($h1->{$k}, $h2->{$k}, $h1);
+    }
+    elsif($p) {
+      $h1->{$k} = $h2->{$k};
+    }
+  }
+  $h1;
+}
+
+1;
 # ###########################################################################
 # End IniFile package
 # ###########################################################################
@@ -47,9 +534,7 @@ use File::Temp;
 use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
-use ProcessLog;
-use Which;
-use IniFile;
+
 use POSIX;
 use Tie::File;
 use Fcntl qw(:flock);
