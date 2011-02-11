@@ -96,9 +96,9 @@ my $logFile = "$logDir/xtrabackup-agent.log";
 my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
 # Set to 1 inside the SIGPIPE handler so that we can cleanup innobackupex gracefully.
-my $stop_copy = 0;
-$SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $stop_copy = 1; };
-$SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
+my $Stop_Copy = 0;
+$SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $Stop_Copy = 1; };
+$SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $Stop_Copy = 1; };
 
 
 my $stats_db       = "$logDir/stats.db";
@@ -115,8 +115,6 @@ my $innobackupex_opts = "";
 
 ## Catch all errors and log them.
 $SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); die(@_); };
-
-my ($mysql_user, $mysql_pass);
 
 if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
   open CFG, "< /usr/share/mysql-zrm/plugins/socket-server.conf";
@@ -344,35 +342,28 @@ sub restore_wait_timeout {
   undef;
 }
 
-sub doRealHotCopy {
+sub do_innobackupex {
+  my ($tmp_directory, %cfg) = @_;
+  my @cmd;
+  my ($fhs, $buf, $dbh, $prev_wait);
+
   my ($start_tm, $backup_sz) = (time(), 0);
   record_backup("full", $start_tm);
-  if($stop_copy == 1) {
+
+  if($Stop_Copy == 1) {
     # It's possible we could be interrupted before ever getting here.
     # Catch this.
     return;
   }
-  # massage params for innobackup
-  $params =~ s/--quiet//;
-  my $new_params = "";
-  foreach my $i (split(/\s+/, $params)) {
-    printLog("param: $i\n");
-    next if($i !~ /^--/);
-    next if($i =~ /^--host/);
-    $new_params .= "$i ";
-  }
 
-  my ($fhs, $buf);
   POSIX::mkfifo("/tmp/innobackupex-log", 0700);
   printLog("Created FIFOS..\n");
 
-  my $dbh = undef;
-  my $prev_wait = undef;
   eval {
-    $dbh = DBI->connect("DBI:mysql:host=localhost". ($mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : ""), $mysql_user, $mysql_pass, { RaiseError => 1, AutoCommit => 1});
+    $dbh = DBI->connect("DBI:mysql:host=localhost". ($mysql_socket_path ? ";mysql_socket=$mysql_socket_path" : ""), $cfg{'user'}, $cfg{'password'}, { RaiseError => 1, AutoCommit => 1});
   };
-  if( $@ ) {
-    printLog("Unable to open DBI handle. Error: $@\n");
+  if($@) {
+    printLog("Unable to open DBI handle. Error: $@");
     if($must_set_wait_timeout) {
       record_backup("full", $start_tm, time(), $backup_sz, "failure", "$@");
       printAndDie("ERROR", "Unable to open DBI handle. $@\n");
@@ -394,37 +385,40 @@ sub doRealHotCopy {
     printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
   }
 
+  ## Build our command.
+  ##
   ## xtrabackup version 1.4 and (presently) greater have a bug, where
   ## it attempts to write to the files 'stderr' and 'stdout' in the
   ## current working directory. Since our normal working directory is
-  ## the root directory, we make the subprocess cd into the mysql datadir.
+  ## the root directory, we now cd into a temporary directory before
+  ## running innobackupex. This prevents being unable to write files.
   ##
-  ## The logic involved looks in normal paths and assumes you'll specify
-  ## any non-normal paths.
-  if($XTRABACKUP_VERSION >= 1.4) {
-    my %mycnf = IniFile::read_config($mycnf_path);
-    %mycnf = IniFile::read_config('/etc/my.cnf') if(!%mycnf);
-    %mycnf = IniFile::read_config('/etc/mysql/my.cnf') if(!%mycnf);
-    unless($mycnf{'mysqld'}{'datadir'}) {
-      die("xtrabackup version requires work-arounds, but cannot open any my.cnf\n");
-    }
-    $INNOBACKUPEX = "cd $mycnf{'mysqld'}{'datadir'}; $INNOBACKUPEX";
-  }
+  push(@cmd, "cd $tmp_directory;", $INNOBACKUPEX);
+  push(@cmd, "--user=$cfg{'user'}", "--password=$cfg{'password'}",
+             "--defaults-file", $mycnf_path, $innobackupex_opts,
+             "--slave-info", "--stream=tar", $tmp_directory,
+             "2>/tmp/innobackupex-log");
 
-  $::PL->d("Exec:", $INNOBACKUPEX, $new_params, "--defaults-file", $mycnf_path,
-          $innobackupex_opts, "--slave-info", "--stream=tar", $tmp_directory,
-          "2>/tmp/innobackupex-log|");
-  open(INNO_TAR, "$INNOBACKUPEX $new_params --defaults-file=$mycnf_path $innobackupex_opts --slave-info --stream=tar $tmp_directory 2>/tmp/innobackupex-log|");
-  &printLog("Opened InnoBackupEX.\n");
+  if($cfg{'xtrabackup-agent:inline-compress'}) {
+    $_ = $cfg{'xtrabackup-agent:inline-compress'};
+    $::PL->d('Using inline compression program: ', $_);
+    push(@cmd, "| $_");
+  }
+  push(@cmd, "|");
+
+  ## Prepare to execute.
+  $::PL->d("Exec:", @cmd);
+  open(INNO_TAR, join(' ', @cmd));
+  printLog("Opened InnoBackupEX.\n");
   open(INNO_LOG, "</tmp/innobackupex-log");
   printLog("Opened Inno-Log.\n");
   $fhs = IO::Select->new();
   $fhs->add(\*INNO_TAR);
   $fhs->add(\*INNO_LOG);
-  $SIG{'PIPE'} = sub { printLog( "caught broken pipe\n" ); $stop_copy = 1; };
-  $SIG{'TERM'} = sub { printLog( "caught SIGTERM\n" ); $stop_copy = 1; };
+  $SIG{'PIPE'} = sub { printLog( "caught broken pipe\n" ); $Stop_Copy = 1; };
+  $SIG{'TERM'} = sub { printLog( "caught SIGTERM\n" ); $Stop_Copy = 1; };
   while( $fhs->count() > 0 ) {
-    if($stop_copy == 1) {
+    if($Stop_Copy == 1) {
       restore_wait_timeout($dbh, $prev_wait);
       printLog("Copy aborted. Closing innobackupex.\n");
       $fhs->remove(\*INNO_TAR);
@@ -497,7 +491,8 @@ sub sendNagiosAlert {
 #$_[0] dirname
 #$_[1] filename
 sub writeTarStream {
-  my ($stream_from, $file) = @_;
+  my @cmd;
+  my ($stream_from, $file, %cfg) = @_;
   my ($start_tm, $backup_sz) = (time(), 0);
   my $fileList = $file;
   my $lsCmd = "";
@@ -511,19 +506,29 @@ sub writeTarStream {
     $fileList = " -T $tmpFile";
   }
 
-  printLog("writeTarStream: $TAR $TAR_WRITE_OPTIONS $stream_from $fileList\n");
-  unless(open( $tar_fh, "$TAR $TAR_WRITE_OPTIONS $stream_from $fileList 2>/dev/null|" ) ) {
+  ## Build our command.
+  ## Yes, stderr is ignored.
+  push(@cmd, $TAR, $TAR_WRITE_OPTIONS, $stream_from, $fileList, '2>/dev/null');
+  if($cfg{'xtrabackup-agent:inline-compress'}) {
+    $_ = $cfg{'xtrabackup-agent:inline-compress'};
+    $::PL->d('Using inline compression program: ', $_);
+    push(@cmd, "| $_");
+  }
+  push(@cmd, '|');
+
+  $::PL->d('Exec:', @cmd);
+  if(!open( $tar_fh, join(' ', @cmd))) {
     record_backup("incremental", $start_tm, time(), $backup_sz, "failure", "$!");
     printAndDie( "tar failed $!\n" );
   }
-  binmode( $tar_fh );
+  binmode($tar_fh);
   my $buf;
   while( read( $tar_fh, $buf, 10240 ) ) {
     my $x = pack( "u*", $buf );
     $backup_sz += length($buf);
     print $Output_FH pack( "N", length( $x ) );
     print $Output_FH $x;
-    last if($stop_copy);
+    last if($Stop_Copy);
   }
   close( $tar_fh );
   printLog("tar exitval:", ($? >> 8));
@@ -705,10 +710,15 @@ sub processRequest {
       printAndDie("Mandatory parameters missing: user, password, backup-level.")
     }
     if($HDR{'backup-level'} == 0) { # A full backup.
-      $tmp_directory=getTmpName();
-      mkdir($tmp_directory);
-      $params .= " --user=$HDR{'user'} --password=$HDR{'password'}";
-      doRealHotCopy();
+      if($HDR{'file'} =~ /ZRM_LINKS/) {
+        print($Output_FH makeKvBlock('status' => 'SENDING'));
+        $tmp_directory=getTmpName();
+        mkdir($tmp_directory);
+        do_innobackupex($tmp_directory, %HDR);
+      }
+      else {
+        print($Output_FH makeKvBlock('status' => 'OK'));
+      }
     }
     elsif($HDR{'backup-level'} == 1) { # An incremental backup.
       my $fh;
@@ -741,9 +751,7 @@ sub processRequest {
         if($HDR{'replication'} == 1) {
           $slave_status = $dbh->selectrow_hashref('SHOW SLAVE STATUS', { Slice => {} });
           $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
-          sleep(5);
           $dbh->do('START SLAVE');
-          sleep(20);
         }
 
         my ($file, $dir, $suffix) = fileparse($HDR{'file'});
@@ -754,7 +762,7 @@ sub processRequest {
         $::PL->d('Copying binlogs: ', @$master_logs);
         $::PL->d('Slave status: ', Dumper($slave_status));
         print($Output_FH makeKvBlock(%$slave_status, 'status' => 'SENDING'));
-        writeTarStream( $dir, join(' ', @$master_logs) );
+        writeTarStream( $dir, join(' ', @$master_logs), %HDR);
 
         open($fh, ">$logDir/incremental.sid");
         print($fh "$HDR{'sid'}\n");

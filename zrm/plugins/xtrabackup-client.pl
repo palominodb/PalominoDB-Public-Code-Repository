@@ -173,7 +173,6 @@ sub agentRequest {
   my $tmp = File::Spec->tmpdir();
   my $args = makeKvBlock('action' => $action, 'tmpdir' => $tmp,
                           'sid' => $sid, %c, %params);
-  $::PL->d("Sending initial agent parameters:\n", $args);
   print SOCK "$VERSION\n";
   print SOCK $args;
   $_ = <SOCK>;
@@ -193,46 +192,97 @@ sub my_exit {
   exit($_[0]);
 }
 
+## Reads length prefixed uuencoded stream data.
+## The structure is (in perl pack format): Nu
+## Note: The N in this format is redundant
+## because the server side never sends more
+## than 10240 bytes of uuencoded data.
+sub read_uuencoded {
+  my ($fh) = @_;
+  my $buf;
+
+  ## Read network packed byte count.
+  ## If a false value is returned from read()
+  ## then we return undef because no more data
+  ## is available.
+  if(!read($fh, $buf, 4)) {
+    return undef;
+  }
+  $buf = unpack('N', $buf);
+  # Buffer should never be larger than this.
+  # So, we abort if it is.
+  # This handles the case where the other side dies
+  # and garbage is sent.
+  if($buf > 8*1024*1024) {
+    return undef;
+  }
+  read($fh, $buf, $buf);
+  return unpack('u', $buf);
+}
+
 # This will read the data from the socket and pipe the output to tar
 sub readTarStream {
+  my $buf;
+  my $tar_fh;
   my $tmpfile = tmpnam();
   my $destDir = $o{'destination-directory'};
-  my $tar_cmd = "|$TAR $TAR_READ_OPTIONS $destDir 2>$tmpfile";
-  $::PL->m("read-tar-stream:\n$tar_cmd\n");
-  unless( open( TAR_H, "$tar_cmd" ) ){
+  my @cmd = ($TAR, $TAR_READ_OPTIONS, $destDir, "2>$tmpfile");
+
+  if($c{'xtrabackup-agent:inline-compress'}) {
+    $::PL->m("Incoming tar stream is compressed with:",
+             $c{'xtrabackup-agent:inline-compress'});
+    unshift(@cmd, $c{'xtrabackup-agent:inline-compress'}, '-d', '|');
+  }
+  unshift(@cmd, '|');
+
+  ## We must check that the backup-level is 0 (full)
+  ## because ZRM is MUCH more pedantic about incrementals.
+  ## In the incremental case, it checks for the existance
+  ## of every file it expects to receive and annoyingly
+  ## flags the backup as "done, but with errors" if not
+  ## all of them are present. This makes sysadmins unhappy.
+  if($c{'backup-level'} == 0) {
+    if($c{'xtrabackup-client:unpack-backup'} == 0) {
+      $::PL->m("Not unpacking incoming tar stream.\n",
+               "The data will be written directly to $destDir/backup-data.");
+      my $backup_data_fh;
+      if(!open($backup_data_fh, ">$destDir/backup-data")) {
+        printAndDie("Unable to open $destDir/backup-data (". int($!) ."): $!");
+      }
+      binmode($backup_data_fh);
+      while($_ = read_uuencoded(\*SOCK)) {
+        print($backup_data_fh $_);
+      }
+      if(!close($backup_data_fh)) {
+        printAndDie("Unable to close backup-data file (". int($!) ."): $!")
+      }
+      return;
+    }
+  }
+
+  $::PL->m("read-tar-stream:", @cmd);
+  if(!open($tar_fh, join(' ', @cmd))) {
     printAndDie("tar failed $!");
   }
-  binmode( TAR_H );
-
-  my $buf;
+  binmode($tar_fh);
 
   # Initially read the length of data to read
   # This will be packed in network order
   # Then read that much data which is uuencoded
   # Then write the unpacked data to tar
-  while( read( SOCK, $buf, 4 ) ){
-    $buf = unpack( "N", $buf );
-    if($buf > 8*1024*1024) {
-      # Buffer should never be larger than this.
-      # So, we abort if it is.
-      # This handles the case where the other side dies
-      # and garbage is sent.
-      last;
-    }
-    read SOCK, $buf, $buf;
-
-    print TAR_H unpack( "u", $buf );
+  while($_ = read_uuencoded(\*SOCK)){
+    print($tar_fh $_);
   }
   {
     local $/;
     open my $fh, "<$tmpfile";
     my $errs = <$fh>;
     chomp($errs);
-    $::PL->e("tar-errors:", $errs);# if($errs !~ /\s*/);
+    $::PL->e("tar-errors (may be empty): '". (defined($errs) ? $errs : '(undef)'). "'");# if($errs !~ /\s*/);
     close $fh;
     unlink $tmpfile;
   }
-  unless( close(TAR_H) ){
+  unless( close($tar_fh) ){
     printAndDie('tar pipe failed');
   }
 }
@@ -251,6 +301,11 @@ sub readInnoBackupStream {
   readTarStream();
 
   if( $c{'backup-level'} == 0 and $c{'xtrabackup-client:run-apply-log'} == 1 ) {
+    if($c{'xtrabackup-client:unpack-backup'} == 0) {
+      $::PL->i('The options xtrabackup-client:unpack-backup and xtrabackup-client:run-apply-log',
+               'are mutually exclusive. Skipping apply log step.');
+      return;
+    }
     if(not defined $c{'xtrabackup-client:innobackupex-path'}) {
       $::PL->i("Unable to determine path to innobackupex-1.5.1.\n",
       'Check your PATH, or set xtrabackup-client:innobackupex-path in your config.');
@@ -366,6 +421,19 @@ sub main {
     $c{'xtrabackup-client:innobackupex-path'} = Which::which('innobackupex-1.5.1');
   }
 
+  ## We default to unpacking the backup because that's what
+  ## all previous versions of this code has done.
+  if(not exists $c{'xtrabackup-client:unpack-backup'}) {
+    $c{'xtrabackup-client:unpack-backup'} = 1;
+  }
+
+  ## This is a really easy typo.. Work around it with a warning.
+  if(exists $c{'xtrabackup-client:unpack-backups'}) {
+    $::PL->i("Found 'xtrabackup-client:unpack-backups'\n",
+             "Did you mean 'xtrabackup-client:unpack-backup'? Setting this one.");
+    $c{'xtrabackup-client:unpack-backup'} = $c{'xtrabackup-client:unpack-backups'};
+  }
+
   $::PL->logpath($c{'xtrabackup-client:logpath'});
   $::PL->quiet($c{'verbose'});
   $::PL->start;
@@ -385,6 +453,12 @@ sub main {
     printAndDie("Unable to determine which tar options to use!");
   }
 
+  if($c{'backup-level'} == 0 and exists $c{'compress'}
+      and $c{'xtrabackup-client:unpack-backup'}==0) {
+    $::PL->i("Confusing but allowed options: compress=1 and xtrabackup-client:unpack-backup=0\n",
+             "This will currently waste time compressing a likely already compressed backup!");
+  }
+
   if( $c{"xtrabackup-client:tar-force-ownership"} == 0
         or $c{"xtrabackup-client:tar-force-ownership"} =~ /[Nn][oO]?/ ) {
     $c{"xtrabackup-client:tar-force-ownership"} = 0;
@@ -400,6 +474,7 @@ sub main {
 
   if($o{'source-host'} and $o{'source-file'}
       and $o{'destination-host'} and $o{'destination-directory'}) {
+    my $agent_reply = {};
 
     ## ZRM Calls this script multiple times in the case of incremental backups
     ## The SID (session id, roughly) allows us and the agent to identify when
@@ -417,7 +492,7 @@ sub main {
       ## of sensible to the index until after it's done with the backup, nor
       ## does it allow us to write to the index since it overwrites the index wholesale.
       ## Finally, we can't put anything in the backup directory that we want later,
-      ## it'll be treated as backup data and deleted.
+      ## it'll be treated as backup data and deleted (after compression).
       eval {
         my $fh;
         my $last_dir;
@@ -442,16 +517,20 @@ sub main {
     agentRequest($o{'source-host'}, $c{'xtrabackup-agent:port'},
       'copy from', $sid, 'file' => $o{'source-file'}, 'binlog' => $next_binlog);
 
+    $agent_reply = agentRead();
+
+    $::PL->d('Received reply from agent:', Dumper($agent_reply));
+
     if($c{'backup-level'} == 0) {
-      $::PL->m('Writing full backup to', $o{'destination-directory'});
-      readInnoBackupStream();
+      if($agent_reply->{status} eq 'SENDING') {
+        $::PL->m('Writing full backup to', $o{'destination-directory'});
+        readInnoBackupStream();
+      }
     }
     elsif($c{'backup-level'} == 1) {
       if($c{'replication'} == 0) {
         $::PL->i('With replication=0, you cannot make a new secondary master.');
       }
-
-      my $slave_status = agentRead();
 
       ## Normally ZRM calls this script once for every binlog it wishes
       ## to have copied, however, this is needlessly inefficient.
@@ -459,14 +538,14 @@ sub main {
       ## ALL the binlogs and then the server ignores further requests for binlogs
       ## with the same SID.
       ## When it ignores a request it sends 'status=OK', as the slave information.
-      if($slave_status->{status} eq "SENDING") {
-        delete $slave_status->{status};
+      if($agent_reply->{status} eq 'SENDING') {
+        delete $agent_reply->{status};
         my $fh;
         open($fh, ">$o{'destination-directory'}/master.info");
         print($fh join("\n",
               map {
-                "$_=". (defined $$slave_status{$_} ? $$slave_status{$_} : 'NULL')
-              } sort keys %$slave_status));
+                "$_=". (defined $$agent_reply{$_} ? $$agent_reply{$_} : 'NULL')
+              } sort keys %$agent_reply));
         close($fh);
         readTarStream();
       }
