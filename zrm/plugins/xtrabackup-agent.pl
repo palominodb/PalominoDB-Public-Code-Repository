@@ -1216,16 +1216,16 @@ sub processRequest {
 
       if(not defined($last_sid) or $last_sid ne $HDR{'sid'}) {
         my $slave_status = {};
-        my $master_logs  = {};
+        my $master_logs  = [];
         my $next_binlog;
 
+        $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
 
         ## These will only return useful information when replication=1 anyway.
         ## So there is little to no point in sending this information along
         ## if it will only be confusing and misleading.
         if($HDR{'replication'} == 1) {
           $slave_status = $dbh->selectrow_hashref('SHOW SLAVE STATUS', { Slice => {} });
-          $master_logs  = $dbh->selectall_arrayref('SHOW MASTER LOGS', { Slice => {} });
           $dbh->do('START SLAVE');
         }
 

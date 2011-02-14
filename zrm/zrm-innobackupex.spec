@@ -1,8 +1,8 @@
 Name: zrm-innobackupex
 Summary: xtrabackup copy plugin for ZRM
-Version: 0.80.1
+Version: 0.80.2
 Vendor: PalominoDB
-Release: 2
+Release: 1
 License: GPL
 Group: Application/System
 Source: http://dev.palominodb.com/src/zrm-innobackupex-%{version}.tar.gz
