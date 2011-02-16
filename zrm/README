@@ -1,5 +1,35 @@
 README For the innobackupex ZRM plugin
 
+Upgrading from legacy socket-server based plugins (version 0.72 or 1.87b_palomino) to 0.80.2:
+  If you were using the legacy plugins, the following is a bullet point summary
+  of things that have changed:
+  * The logfile /var/log/mysql-zrm/socket-server.log is now /var/log/mysql-zrm/xtrabackup-agent.log
+
+  * The "snapshot plugin" inno-snapshot.pl has been renamed stub-snapshot.pl and only needs to be
+    on the backup server. It's harmless to put it on the db server, but it will never be used.
+
+  * You cannot use socket-copy.palomino.pl with xtrabackup-agent.pl. Incompatibile protocol changes
+    have been made. Going forward, it's not anticipated the protocol will change again.
+
+  * /etc/xinetd.d/zrm-palomino has been renamed /etc/xinetd.d/xtrabackup-agent
+  * There's a new log: /var/log/mysql-zrm/xtrabackup-client.pl on the backup server.
+    It contains errors, and when you run backups by hand, setting Pdb_DEBUG=1 it will include copious
+    debugging information.
+
+  * All options to the plugins are now prefixed with either 'xtrabackup-client:' or 'xtrabackup-agent:'.
+    See the example configuration in examples/mysql-zrm.conf for a full list of supported options.
+
+  * The directory /tmp/zrm-innosnap is not created anymore.
+
+  * The required list of perl modules has increased in this release:
+    - DBI (and DBD::mysql) are now required.
+    - Digest::MD5 is now required (but usually distributed with a basic perl install).
+
+  * The configuration file /usr/share/mysql-zrm/socket-server.conf is now soft-deprecated.
+    The options in it have not been migrated to centralized configuration, but, if you are
+    using any, be aware that they will be over the coming releases, and then that file will
+    not be read anymore.
+
 Installing:
   Place all of the perl scripts in /usr/share/mysql-zrm/plugins,
   or to whatever root you have installed zrm in. (So /usr/local/share/mysql-zrm/plugins,
@@ -15,8 +45,8 @@ Installing:
   by the zrm user.
 
   /etc/xinetd.d/mysql-zrm-socket-server needs to have this line:
-  server = /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
-  Or, you can use the provided zrm-palomino.xinetd config file, and reload xinetd.
+  server = /usr/share/mysql-zrm/plugins/xtrabackup-agent.pl
+  Or, you can use the provided xtrabackup-agent.xinetd config file, and reload xinetd.
 
   Included in the tarball is the file example_nagios.cfg, which contains a service
   definition, and a couple command definitions that should work with a stock
@@ -27,7 +57,7 @@ Installing:
   possible incompatibilities introduced.
 
 Files:
-  The scripts MUST have the ability to create files in /tmp.
+  The scripts MUST have the ability to create and read files in /tmp.
   Specifically, the directory /tmp/zrm-innosnap, and the file 'running' underneath it.
   That file is used to forward data to the copy plugin after the snapshot has been made.
   Innobackupex also creates a directory under /tmp, that contains state for while it's running.
@@ -36,26 +66,11 @@ Files:
   so that it can alert nagios in the event of failure.
 
 Logs/Troubleshooting:
-  - /var/log/socket-server.log
-    Contains standard zrm socket server logging plus the innobackupex log.
-    It also doesn't truncate after every run. It's also more verbose.
-    The line 'createLink' will help you track down mismatches between zrm and innobackupex,
-    though, technically, I don't think it matters.
-    
-How it works:
-  This is documented in the scripts also but basically this is what it does:
-  1. ZRM starts up, copies away replication info, etc. It also places a config file in /tmp.
-  2. ZRM creates a snapshot, and mounts it.
-      inno-snapshot.pl grabs the user/name and password from the config file that ZRM placed,
-      and squirrels it away in /tmp/zrm-innosnap/running along with a timestamp, that could be
-      used for staleness checking, but is currently ignored.
-      It does this because ZRM DELETES that config file after making the snapshot under
-      the assumption that it can just copy files now and that there won't be any programs
-      in between.
-  3. ZRM attempts to copy the files
-      The socket-server script checks for /tmp/zrm-innosnap/running and if it's present,
-      reads the username/password from it, and redirects to innobackupex <- this is the magic part.
-      Otherwise it lets the copy proceed as normal. That check allows copying repl files work.
-  4. ZRM unmounts and destroys the snapshot.
-      inno-snapshot.pl just deletes /tmp/zrm-innnosnap.
-  5. ZRM believes that is has raw copied your database. :)
+  - /var/log/mysql-zrm/xtrabackup-agent.log, xtrabackup-client.log
+    These contain detailed error and debugging entries for tracking down the
+    source of problems.
+  - Pdb_DEBUG environment variable.
+    Setting this to true (1) will enable copious amounts of debugging information.
+    To make the agent write debugging entries, add the line:
+    env = Pdb_DEBUG=1
+    to /etc/xinetd.d/xtrabackup-agent and reload xinetd.
