@@ -23,6 +23,9 @@ case "$1" in
     if [ -f /etc/xinetd.d/mysql-zrm-socket-server ]; then
         sed -i -e '/disable/ s/no/yes/' /etc/xinetd.d/mysql-zrm-socket-server 1>/dev/null 2>&1
     fi
+    if [ -f /etc/xinetd.d/zrm-palomino ]; then
+        sed -i -e '/disable/ s/no/yes/' /etc/xinetd.d/zrm-palomino 1>/dev/null 2>&1
+    fi
     touch /var/log/mysql-zrm/xtrabackup-agent.log
     if id mysql 1>/dev/null 2>&1 ; then
         chown -R mysql:mysql /var/log/mysql-zrm
