@@ -192,7 +192,7 @@ sub main {
     $pl->e("Unable to load $c{spec}.");
     return 1;
   }
-
+  
   ## Load the config file into a hash
   ## This is done before loading custom perl modules so that
   ## this data is available when they load.
@@ -600,6 +600,8 @@ index column, the name of the current column, and a hashref of the row data.
 The perl subroutine is expected to return the new value for the column.
 If the subroutine deletes the row in question, it should return a hashref so
 that the rest of the main loop is skipped.
+
+The perl subroutine is expected to return the new value for the column.
 
 =item C<method>
 

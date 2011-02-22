@@ -1,4 +1,4 @@
-service zrm-palomino
+service xtrabackup-agent
 {
         type            = UNLISTED
         disable         = no
@@ -8,7 +8,7 @@ service zrm-palomino
         user            = mysql
         group           = mysql
         instances       = 2
-        server          = /usr/share/mysql-zrm/plugins/socket-server.palomino.pl
+        server          = /usr/share/mysql-zrm/plugins/xtrabackup-agent.pl
         port            = 25300
 }
 
