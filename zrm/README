@@ -1,4 +1,7 @@
-README For the innobackupex ZRM plugin
+README For the innobackupex ZRM plugin.
+
+For configuration examples/usage. See the included mysql-zrm.conf file
+under the examples directory.
 
 Upgrading from legacy socket-server based plugins (version 0.72 or 1.87b_palomino) to 0.80.2:
   If you were using the legacy plugins, the following is a bullet point summary
@@ -10,6 +13,7 @@ Upgrading from legacy socket-server based plugins (version 0.72 or 1.87b_palomin
 
   * You cannot use socket-copy.palomino.pl with xtrabackup-agent.pl. Incompatibile protocol changes
     have been made. Going forward, it's not anticipated the protocol will change again.
+    Instead, set your copy-plugin to xtrabackup-client.pl.
 
   * /etc/xinetd.d/zrm-palomino has been renamed /etc/xinetd.d/xtrabackup-agent
   * There's a new log: /var/log/mysql-zrm/xtrabackup-client.pl on the backup server.
