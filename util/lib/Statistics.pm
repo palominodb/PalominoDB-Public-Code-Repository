@@ -51,6 +51,7 @@ sub aggsum {
 
 sub mean {
   my ($rows) = @_;
+  return undef if(!scalar(@$rows));
   $_ = sum(0, @$rows);
   $_ /= scalar(@$rows);
   return $_;
@@ -60,7 +61,7 @@ sub stdvar {
   my ($rows) = @_;
   my $m = mean($rows);
   my $s = scalar(@$rows);
-  $_ = reduce { $a + ($b - $m)**2 } (0, @$rows);
+  $_ = reduce { no warnings 'once'; $a + ($b - $m)**2 } (0, @$rows);
   return 1/($s-1)*$_;
 }
 
