@@ -568,97 +568,21 @@ my $Output_FH;
 my $tmp_directory;
 my $action;
 
-my $INNOBACKUPEX="innobackupex-1.5.1";
-
-our $VERSION="0.75.1";
+our $VERSION="0.76.1";
 my $REMOTE_VERSION = undef;
 my $MIN_XTRA_VERSION=1.0;
 my $XTRABACKUP_VERSION;
 
-my $logDir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
-my $logFile = "$logDir/xtrabackup-agent.log";
+my $Log_Dir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
+my $logFile = "$Log_Dir/xtrabackup-agent.log";
 
 # Set to 1 inside the SIGPIPE handler so that we can cleanup innobackupex gracefully.
 my $Stop_Copy = 0;
 $SIG{'PIPE'} = sub { &printLog( "caught broken pipe\n" ); $Stop_Copy = 1; };
 $SIG{'TERM'} = sub { &printLog( "caught SIGTERM\n" ); $Stop_Copy = 1; };
 
-
-my $stats_db       = "$logDir/stats.db";
-my $stats_history_len = 100;
-my $nagios_service = "MySQL Backups";
-my $nagios_host = "nagios.example.com";
-my $nsca_client = "/usr/sbin/send_nsca";
-my $nsca_cfg = "/usr/share/mysql-zrm/plugins/zrm_nsca.cfg";
-my $wait_timeout = 8*3600; # 8 Hours
-my $must_set_wait_timeout = 0;
-my $mycnf_path = "/etc/my.cnf";
-my $mysql_socket_path = undef;
-my $innobackupex_opts = "";
-
 ## Catch all errors and log them.
 $SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); die(@_); };
-
-if( -f "/usr/share/mysql-zrm/plugins/socket-server.conf" ) {
-  open CFG, "< /usr/share/mysql-zrm/plugins/socket-server.conf";
-  while(<CFG>) {
-    my ($var, $val) = split /\s+/, $_, 2;
-    chomp($val);
-    $var = lc($var);
-    if($var eq "nagios_service") {
-      $nagios_service = $val;
-    }
-    elsif($var eq "nagios_host") {
-      $nagios_host = $val;
-    }
-    elsif($var eq "nsca_client") {
-      $nsca_client = $val;
-    }
-    elsif($var eq "nsca_cfg") {
-      $nsca_cfg = $val;
-    }
-    elsif($var eq "innobackupex_path") {
-      $INNOBACKUPEX=$val;
-    }
-    elsif($var eq "mysql_wait_timeout") {
-      # If mysql_wait_timeout is less than 3600, we assume
-      # that the user specified hours, otherwise, we assume
-      # that it is specified in seconds.
-      # You'll note that there is no way to specify minutes.
-      if(int($val) < 3600) { # 1 hour, in seconds
-        $wait_timeout = int($val)*3600;
-      }
-      else {
-        $wait_timeout = int($val);
-      }
-    }
-    elsif($var eq "my.cnf_path") {
-      $mycnf_path = $val;
-    }
-    elsif($var eq "mysql_install_path") {
-      $ENV{PATH} = "$val:". $ENV{PATH};
-    }
-    elsif($var eq "perl_dbi_path") {
-      eval "use lib '$val'";
-    }
-    elsif($var eq "mysql_socket") {
-      $mysql_socket_path = $val;
-    }
-    elsif($var eq "innobackupex_opts") {
-      $innobackupex_opts = $val;
-    }
-    elsif($var eq "must_set_wait_timeout") {
-      $must_set_wait_timeout = $val;
-    }
-    elsif($var eq "stats_db") {
-      $stats_db = $val;
-    }
-    elsif($var eq "stats_history_len") {
-      $stats_history_len = $val;
-    }
-  }
-}
-
 
 if($^O eq "linux") {
   $TAR_WRITE_OPTIONS = "--same-owner -cphsC";
@@ -706,7 +630,21 @@ sub printAndDie {
   chomp(@args);
   $::PL->e(@args);
   printToServer("FAILED", join(' ', @args));
-  &my_exit( 1 );
+  my_exit( 1 );
+}
+
+sub getTmpName {
+  if( ! -d $GLOBAL_TMPDIR ){
+    printAndDie( "$GLOBAL_TMPDIR not found. Please create this first.\n" );
+  }
+  printLog( "TMP directory being used is $GLOBAL_TMPDIR\n" );
+  return File::Temp::tempnam( $GLOBAL_TMPDIR, "" );
+}
+
+sub printToServer {
+  my ($status, $msg) = @_;
+  $msg =~ s/\n/\\n/g;
+  print $Output_FH makeKvBlock(status => $status, msg => $msg);
 }
 
 # Compares version numbers in a pseudo-semversioning sort of way.
@@ -801,23 +739,46 @@ sub getHeader {
   print $Output_FH "READY\n";
 }
 
-sub restore_wait_timeout {
-  my ($dbh, $prev_wait) = @_;
+sub set_mysql_timeouts {
+  my ($wait_timeout, $net_read_timeout, $net_write_timeout) = @_;
+  $net_write_timeout ||= $net_read_timeout;
+  my @r;
+  eval {
+    my $dbh = get_dbh();
+    $_ = $dbh->selectall_hashref("SHOW GLOBAL VARIABLES LIKE '%timeout'", 'Variable_name');
+    @r = $_->{'wait_timeout','net_read_timeout','net_write_timeout'};
+    $dbh->do(
+      qq{SET GLOBAL wait_timeout=$wait_timeout,
+                    net_read_timeout=$net_read_timeout,
+                    net_write_timeout=$net_write_timeout}
+    );
+  };
+  if($@) {
+    $_ = "$@";
+    if($HDR{'xtrabackup-agent:must-set-mysql-timeouts'}) {
+      printAndDie("ERROR", $_);
+    }
+    else {
+      $::PL->e($_);
+    }
+  }
+  return @r;
+}
 
-  if($dbh and $prev_wait){
-    printLog("Re-setting wait_timeout to $prev_wait\n");
-    $dbh->do("SET GLOBAL wait_timeout=$prev_wait");
-  }
-  else {
-    undef;
-  }
-  undef;
+sub get_dbh {
+  my (%cfg) = @_;
+  my $socket = $cfg{'xtrabackup-agent:socket'};
+  my $dbh = DBI->connect_cached(
+    "DBI:mysql:host=localhost". ($socket ? ";mysql_socket=$socket" : ""),
+    $cfg{'user'}, $cfg{'password'},
+    { RaiseError => 1, AutoCommit => 0, PrintError => 0,
+      ShowErrorStatement => 1});
+  return $dbh;
 }
 
 sub do_innobackupex {
   my ($tmp_directory, %cfg) = @_;
-  my @cmd;
-  my ($fhs, $buf, $dbh, $prev_wait);
+  my ($fhs, $buf, $dbh, @timeouts, @cmd);
 
   my ($start_tm, $backup_sz) = (time(), 0);
   record_backup("full", $start_tm);
@@ -828,34 +789,13 @@ sub do_innobackupex {
     return;
   }
 
+  @timeouts = set_mysql_timeouts(
+    $cfg{'xtrabackup-agent:mysql-wait-timeout'},
+    $cfg{'xtrabackup-agent:mysql-net-timeout'}
+  );
+
   POSIX::mkfifo("/tmp/innobackupex-log", 0700);
   printLog("Created FIFOS..\n");
-
-  eval {
-    $dbh = DBI->connect("DBI:mysql:host=localhost". ($cfg{'xtrabackup-agent:socket'} ? ";mysql_socket=$cfg{'xtrabackup-agent:socket'}" : ""), $cfg{'user'}, $cfg{'password'}, { RaiseError => 1, AutoCommit => 1});
-  };
-  if($@) {
-    printLog("Unable to open DBI handle. Error: $@");
-    if($must_set_wait_timeout) {
-      record_backup("full", $start_tm, time(), $backup_sz, "failure", "$@");
-      printAndDie("ERROR", "Unable to open DBI handle. $@\n");
-    }
-  }
-
-  if($dbh) {
-    $prev_wait = $dbh->selectrow_arrayref("SHOW GLOBAL VARIABLES LIKE 'wait_timeout'")->[1];
-    eval {
-      $dbh->do("SET GLOBAL wait_timeout=$wait_timeout");
-    };
-    if( $@ ) {
-      printLog("Unable to set wait_timeout. $@\n");
-      if($must_set_wait_timeout) {
-        record_backup("full", $start_tm, time(), $backup_sz, "failure", "unable to set wait_timeout");
-        printAndDie("ERROR", "Unable to set wait_timeout. $@\n");
-      }
-    }
-    printLog("Got db handle, set new wait_timeout=$wait_timeout, previous=$prev_wait\n");
-  }
 
   ## Build our command.
   ##
@@ -865,9 +805,11 @@ sub do_innobackupex {
   ## the root directory, we now cd into a temporary directory before
   ## running innobackupex. This prevents being unable to write files.
   ##
-  push(@cmd, "cd $tmp_directory;", $INNOBACKUPEX);
+  push(@cmd, "cd $tmp_directory;", $cfg{'xtrabackup-agent:innobackupex-path'});
   push(@cmd, "--user=$cfg{'user'}", "--password=$cfg{'password'}",
-             "--defaults-file", $mycnf_path, $innobackupex_opts,
+             "--defaults-file",
+             $cfg{'xtrabackup-agent:my.cnf-path'},
+             $cfg{'xtrabackup-agent:innobackupex-opts'},
              "--slave-info", "--stream=tar", $tmp_directory,
              "2>/tmp/innobackupex-log");
 
@@ -891,7 +833,7 @@ sub do_innobackupex {
   $SIG{'TERM'} = sub { printLog( "caught SIGTERM\n" ); $Stop_Copy = 1; };
   while( $fhs->count() > 0 ) {
     if($Stop_Copy == 1) {
-      restore_wait_timeout($dbh, $prev_wait);
+      set_mysql_timeouts(@timeouts);
       printLog("Copy aborted. Closing innobackupex.\n");
       $fhs->remove(\*INNO_TAR);
       $fhs->remove(\*INNO_LOG);
@@ -906,11 +848,11 @@ sub do_innobackupex {
     my @r = $fhs->can_read(5);
     foreach my $fh (@r) {
       if($fh == \*INNO_LOG) {
-        if( sysread( INNO_LOG, $buf, 10240 ) ) {
+        if( sysread( INNO_LOG, $buf, 1024 ) ) {
           printLog($buf);
           if($buf =~ /innobackupex.*: Error:(.*)/ || $buf =~ /Pipe to mysql child process broken:(.*)/) {
             record_backup("full", $start_tm, time(), $backup_sz, "failure", $1);
-            restore_wait_timeout($dbh, $prev_wait);
+            set_mysql_timeouts(@timeouts);
             sendNagiosAlert("CRITICAL: $1", 2);
             unlink("/tmp/innobackupex-log");
             printAndDie($1);
@@ -943,10 +885,8 @@ sub do_innobackupex {
     }
   }
   unlink("/tmp/innobackupex-log");
-  if($dbh) {
-    restore_wait_timeout($dbh, $prev_wait);
-    $dbh->disconnect;
-  }
+  set_mysql_timeouts(@timeouts);
+
   record_backup("full", $start_tm, time(), $backup_sz, "success");
   sendNagiosAlert("OK: Copied data successfully.", 0);
 }
@@ -955,9 +895,15 @@ sub sendNagiosAlert {
   my $alert = shift;
   my $status = shift;
   my $host = hostname;
+  my $nagios_service = $HDR{'xtrabackup-agent:nagios-service'};
+  my $nagios_host    = $HDR{'xtrabackup-agent:nagios-host'};
+  my $nsca_client    = $HDR{'xtrabackup-agent:send_nsca-path'};
+  my $nsca_cfg       = $HDR{'xtrabackup-agent:send_nsca-cfg'};
   $status =~ s/'/\\'/g; # Single quotes are bad in this case.
-  printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
-  $_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
+  if($nagios_host) {
+    printLog("Pinging nagios with: echo -e '$host\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host\n");
+    $_ = qx/echo -e '$host\\t$nagios_service\\t$status\\t$alert' | $nsca_client -c $nsca_cfg -H $nagios_host/;
+  }
 }
 
 #$_[0] dirname
@@ -1025,21 +971,8 @@ sub writeTarStream {
   record_backup("incremental", $start_tm, time(), $backup_sz, "success", $fileList);
 }
 
-sub getTmpName {
-  if( ! -d $GLOBAL_TMPDIR ){
-    printAndDie( "$GLOBAL_TMPDIR not found. Please create this first.\n" );
-  }
-  printLog( "TMP directory being used is $GLOBAL_TMPDIR\n" );
-  return File::Temp::tempnam( $GLOBAL_TMPDIR, "" );
-}
-
-sub printToServer {
-  my ($status, $msg) = @_;
-  $msg =~ s/\n/\\n/g;
-  print $Output_FH makeKvBlock(status => $status, msg => $msg);
-}
-
 sub open_stats_db {
+  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
   my $do_lock = shift || LOCK_EX;
   my (@all_stats, $i) = ((), 0);
   my $st = tie @all_stats, 'Tie::File', $stats_db or printAndDie("ERROR", "unable to open the stats database $stats_db");
@@ -1067,6 +1000,7 @@ sub open_stats_db {
 
 sub record_backup {
   my ($type, $start_tm, $end_tm, $sz, $status, $info) = @_;
+  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
   my ($all_stats, $i, $upd) = (undef, 0, 0);
   my $cnt = 0;
   if(not defined $type or not defined $start_tm) {
@@ -1093,7 +1027,7 @@ sub record_backup {
       next;
     }
     if($stype eq $type) {
-      if($cnt > 30) {
+      if($cnt > $HDR{'xtrabackup-agent:stats-history'}) {
         delete $$all_stats[$i];
       }
       else {
@@ -1110,6 +1044,7 @@ sub record_backup {
 sub doMonitor {
   my ($newer_than, $max_items) = (0, 0);
   my ($all_stats, $i) = (undef, 0);
+  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
   $newer_than = $HDR{newer_than};
   $max_items = $HDR{max_items};
 
@@ -1170,17 +1105,34 @@ sub processRequest {
 
   checkXtraBackupVersion();
 
+  ## Set default values.
+  $HDR{'xtrabackup-agent:stats-db-path'} ||= "$Log_Dir/stats.db";
+  $HDR{'xtrabackup-agent:stats-history'} ||= 1000;
+  $HDR{'xtrabackup-agent:innobackupex-path'} ||= Which::which('innobackupex-1.5.1');
+  $HDR{'xtrabackup-agent:innobackupex-opts'} ||= "";
+  $HDR{'xtrabackup-agent:my.cnf-path'} ||= "/etc/my.cnf";
+  $HDR{'xtrabackup-agent:perl-lib-extra'} ||= "";
+  $HDR{'xtrabackup-agent:mysql-install-path'} ||= "";
+  $HDR{'xtrabackup-agent:mysql-wait-timeout'} ||= 8*3600;
+  $HDR{'xtrabackup-agent:mysql-net-timeout'}  ||= 8*3600;
+  $HDR{'xtrabackup-client:nagios-host'} ||= "";
+  $HDR{'xtrabackup-client:nagios-service'} ||= "MySQL Backups";
+  $HDR{'xtrabackup-client:send_nsca-path'} ||= Which::which("send_nsca");
+  $HDR{'xtrabackup-client:send_nsca-config'} ||= "/usr/share/mysql-zrm/plugins/nsca.cfg";
+
+  if(not exists $HDR{'xtrabackup-agent:must-set-mysql-timeouts'}) {
+    $HDR{'xtrabackup-agent:must-set-mysql-timeouts'} = 1;
+  }
+
   $::PL->d('Client Header:', Dumper(\%HDR));
 
   eval {
-    $dbh = DBI->connect("DBI:mysql:host=localhost".
-      ($HDR{'xtrabackup-agent:socket'} ? ";mysql_socket=$HDR{'xtrabackup-agent:socket'}" : ""),
-      $HDR{'user'}, $HDR{'password'}, { RaiseError => 1, AutoCommit => 1});
+    $dbh = get_dbh();
   };
   if( $@ ) {
-    printLog("Unable to open DBI handle. Error: $@\n");
-    record_backup($HDR{'backup-level'} ? "full" : "incremental", time(), time(), '-', "failure", "$@");
-    printAndDie("ERROR", "Unable to open DBI handle. $@\n");
+    $_ = "$@";
+    record_backup($HDR{'backup-level'} ? "full" : "incremental", time(), time(), '-', "failure", $_);
+    printAndDie("ERROR", "Unable to open DBI handle.", "Error:", $_);
   }
 
   if($action eq "copy from") {
@@ -1188,27 +1140,43 @@ sub processRequest {
         or not exists $HDR{'password'}) {
       printAndDie("Mandatory parameters missing: user, password, backup-level.")
     }
-    if($HDR{'backup-level'} == 0) { # A full backup.
+    ##
+    ## ZRM defines two kinds of backups: full and incremental.
+    ## In the configuration, a full backup is denoted by setting
+    ## backup-level=0 and an incremental by backup-level=1.
+    ##
+    ## Below is the handling code for a full backup.
+    ##
+    if($HDR{'backup-level'} == 0) {
       if($HDR{'file'} =~ /ZRM_LINKS/) {
         if($HDR{'replication'} == 1) {
           ## Re-enable replication.
           $dbh->do('START SLAVE');
         }
-        print($Output_FH makeKvBlock('status' => 'SENDING'));
-        $tmp_directory=getTmpName();
-        mkdir($tmp_directory);
-        do_innobackupex($tmp_directory, %HDR);
+        eval {
+          $::PL->d("Setting up temporary directory:", $tmp_directory);
+          $tmp_directory=getTmpName();
+          mkdir($tmp_directory);
+          print($Output_FH makeKvBlock('status' => 'SENDING'));
+          do_innobackupex($tmp_directory, %HDR);
+        };
+        if($@) {
+          printAndDie("full backup failed in a new and unusual way: $@");
+        }
       }
       else {
         $::PL->m('Ignored duplicate/extra/useless request for:', $HDR{'file'});
         print($Output_FH makeKvBlock('status' => 'OK'));
       }
     }
+    ##
+    ## Following this comment is the code for handling incremental backups.
+    ##
     elsif($HDR{'backup-level'} == 1) { # An incremental backup.
       my $fh;
       my $last_sid = undef;
       eval {
-        open($fh, "<$logDir/incremental.sid") or die("$!\n");
+        open($fh, "<$Log_Dir/incremental.sid") or die("$!\n");
         chomp($last_sid = <$fh>);
         close($fh);
       };
@@ -1242,7 +1210,7 @@ sub processRequest {
         print($Output_FH makeKvBlock(%$slave_status, 'status' => 'SENDING'));
         writeTarStream( $dir, join(' ', @$master_logs), %HDR);
 
-        open($fh, ">$logDir/incremental.sid");
+        open($fh, ">$Log_Dir/incremental.sid");
         print($fh "$HDR{'sid'}\n");
         close($fh);
 
