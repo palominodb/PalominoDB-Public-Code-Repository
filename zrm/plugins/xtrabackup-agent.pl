@@ -577,7 +577,6 @@ my $XTRABACKUP_VERSION;
 
 my $logDir = $ENV{LOG_PATH} || "/var/log/mysql-zrm";
 my $logFile = "$logDir/xtrabackup-agent.log";
-my $snapshotInstallPath = "/usr/share/mysql-zrm/plugins";
 
 # Set to 1 inside the SIGPIPE handler so that we can cleanup innobackupex gracefully.
 my $Stop_Copy = 0;
