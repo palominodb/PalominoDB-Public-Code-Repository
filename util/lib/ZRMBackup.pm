@@ -28,7 +28,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 package ZRMBackup;
 use strict;
-use 5.008;
 use warnings FATAL => 'all';
 
 use English qw(-no_match_vars);
@@ -39,7 +38,7 @@ use ProcessLog;
 
 sub new {
   my ( $class, $pl, $backup_dir ) = @_;
-  my $self = ();
+  my $self = {};
   $self->{backup_dir} = ($backup_dir ? $backup_dir : $pl);
   bless $self, $class;
 
