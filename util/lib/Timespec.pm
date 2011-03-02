@@ -1,20 +1,20 @@
 # Copyright (c) 2011, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -118,7 +118,7 @@ created and maintained by the zoneinfo database.
 See L<http://en.wikipedia.org/wiki/Tz_database> for more information.
 Commonly used zone names are: Etc/UTC, US/Pacific and US/Eastern.
 
-Since the last three aren't very complicated, this section describes
+Since the last four aren't very complicated, this section describes
 what the modifiers are.
 
 A modifer is, an optional plus or minus sign followed by a number,
@@ -157,7 +157,7 @@ given the date C<2010-05-01 00:00>.
    Jul Oct Jan Apr Jul Oct
   2009    2010
 
-  . = quarter separator 
+  . = quarter separator
   C = current quarter
   P = previous quarter
   R = Resultant time (2010-01-01 00:00:00)
