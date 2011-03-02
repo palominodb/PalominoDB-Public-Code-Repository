@@ -119,6 +119,7 @@ sub main {
     "email-activity",
     "prefix|P=s",
     "interval|i=s",
+    "limit=i",
     "add",
     "drop",
     "archive",
