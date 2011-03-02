@@ -181,18 +181,22 @@ sub main {
     }
     eval {
       @partitions = add_partitions($dsn, $parts, $requested_dt, %o);
+      $r = 0;
     };
     if($@) {
-      $PL->e("Error adding partitions:", $@);
+      $_ = "$@";
+      $PL->e("Error adding partitions:", $_);
       $r = 1;
       goto DONE;
     }
 
-    for(@partitions) {
-      $email_log .= "- $_->{name} [older than: $_->{date}]\n";
-    }
-    $PL->send_email("Partitions added on ". $dsn->get('h') .
+    if($o{'email-activity'}) {
+      for(@partitions) {
+        $email_log .= "- $_->{name} [older than: $_->{date}]\n";
+      }
+      $PL->send_email("Partitions added on ". $dsn->get('h') .
                       "." . $dsn->get('D') . "." . $dsn->get('t'), $email_log);
+    }
   }
   elsif($o{'drop'}) {
     $email_log = "Dropped partitions from ". $dsn->get('h') .
@@ -200,18 +204,22 @@ sub main {
 
     eval {
       @partitions = drop_partitions($dsn, $parts, $requested_dt, %o);
+      $r = 0;
     };
     if($@) {
-      $PL->e("Error dropping partitions:", $@);
+      $_ = "$@";
+      $PL->e("Error dropping partitions:", $_);
       $r = 1;
       goto DONE;
     }
 
-    for(@partitions) {
-      $email_log .= "- $_->{name} [older than: $_->{date}]\n";
-    }
-    $PL->send_email("Partitions dropped on ". $dsn->get('h') .
+    if($o{'email-activity'}) {
+      for(@partitions) {
+        $email_log .= "- $_->{name} [older than: $_->{date}]\n";
+      }
+      $PL->send_email("Partitions dropped on ". $dsn->get('h') .
                       "." . $dsn->get('D') . "." . $dsn->get('t'), $email_log);
+    }
   }
 
   DONE:
