@@ -688,6 +688,7 @@ use File::Basename;
 use File::Spec::Functions;
 use Data::Dumper;
 use Text::ParseWords;
+use MIME::Base64;
 
 
 {
@@ -839,6 +840,35 @@ sub read_uuencoded {
   }
   read($fh, $buf, $buf);
   return unpack('u', $buf);
+}
+
+sub read_base64 {
+  my ($fh) = @_;
+  my $buf;
+  read($fh, $buf, 57*180);
+  return decode_base64($buf);
+}
+
+sub read_null {
+  my ($fh) = @_;
+  my $buf;
+  read($fh, $buf, 10240);
+  return $buf;
+}
+
+sub decode {
+  my ($fh) = @_;
+  if(not exists $c{'xtrabackup-client:stream-encoding'}
+      or $c{'xtrabackup-client:stream-encoding'} eq 'uuencode'
+      or $c{'xtrabackup-client:stream-encoding'} eq 'default') {
+    return read_uuencoded($fh);
+  }
+  elsif($c{'xtrabackup-client:stream-encoding'} eq 'base64') {
+    return read_base64($fh);
+  }
+  elsif($c{'xtrabackup-client:stream-encoding'} eq 'null') {
+    return read_null($fh);
+  }
 }
 
 # This will read the data from the socket and pipe the output to tar
@@ -1032,6 +1062,12 @@ sub main {
   $c{'xtrabackup-agent:port'} ||= $REMOTE_PORT;
   $c{'xtrabackup-client:logpath'} ||= '/var/log/mysql-zrm/xtrabackup-client.log';
   $c{'xtrabackup-client:email'}   ||= '';
+
+  ## The default stream encoding is left *unset* so that this
+  ## client can interoperate with older agents, at some point
+  ## the default will be set to base64 or null encoding.
+  # $c{'xtrabackup-client:stream-encoding'} = 'base64';
+
   if( not exists $c{'xtrabackup-client:tar-force-ownership'} ) {
     $c{'xtrabackup-client:tar-force-ownership'} = 1;
   }
@@ -1097,6 +1133,25 @@ sub main {
   if($o{'source-host'} and $o{'source-file'}
       and $o{'destination-host'} and $o{'destination-directory'}) {
     my $agent_reply = {};
+    my %more_headers = ();
+
+    if(exists $c{'xtrabackup-client:stream-encoding'}) {
+      if($c{'xtrabackup-client:stream-encoding'} eq 'base64') {
+        $more_headers{'agent-stream-encoding'} = 'application/x-base64-stream';
+      }
+      elsif($c{'xtrabackup-client:stream-encoding'} eq 'null') {
+        $more_headers{'agent-stream-encoding'} = 'application/octet-stream';
+      }
+      elsif($c{'xtrabackup-client:stream-encoding'} eq 'uuencode') {
+        $more_headers{'agent-stream-encoding'} = 'application/x-uuencode-stream';
+      }
+      else {
+        $::PL->e("Unknown encoding requested:",
+                 $c{'xtrabackup-client:stream-encoding'}
+                );
+        my_exit(1);
+      }
+    }
 
     ## ZRM Calls this script multiple times in the case of incremental backups
     ## The SID (session id, roughly) allows us and the agent to identify when
@@ -1137,7 +1192,8 @@ sub main {
     }
 
     agentRequest($o{'source-host'}, $c{'xtrabackup-agent:port'},
-      'copy from', $sid, 'file' => $o{'source-file'}, 'binlog' => $next_binlog);
+      'copy from', $sid, 'file' => $o{'source-file'},
+      'binlog' => $next_binlog, %more_headers);
 
     $agent_reply = agentRead();
 

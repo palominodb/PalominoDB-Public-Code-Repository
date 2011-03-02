@@ -534,6 +534,7 @@ use File::Temp;
 use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
+use MIME::Base64;
 
 use POSIX;
 use Tie::File;
@@ -776,6 +777,53 @@ sub get_dbh {
   return $dbh;
 }
 
+## Provides the older, but compatible, uuencoded tar packing.
+## This encoding is nearly 400% slower than the base64 encoding,
+## but we need to keep it around for compatibility reasons.
+sub _enc_uuencode {
+  my ($fh) = @_;
+  my $raw_sz = read($fh, $_, 10240);
+  my $x = pack( "u*", $_ );
+
+  return ($raw_sz, length($x), pack("N", length($x)), $x);
+}
+
+## Newer Base64 encoding. It's faster and more robust.
+sub _enc_base64 {
+  my ($fh) = @_;
+  my $raw_sz = read($fh, $_, 180*57);
+  my $x = encode_base64($_);
+  return ($raw_sz, length($x), $x);
+}
+
+## NULL encoding - this will be fastest, but may not be suitable for use.
+sub _enc_null {
+  my ($fh) = @_;
+  my $raw_sz = read($fh, $_, 10240);
+  return ($raw_sz, $raw_sz, $_);
+}
+
+## Generic passthrough function to encode the stream
+## as requested by the client. It defaults to uuencoding which,
+## historically was the only encoding option. This enables seemless
+## backwards compatibility with older client versions.
+sub encode {
+  my ($fh) = @_;
+  if(not exists $HDR{'agent-stream-encoding'}
+      or $HDR{'agent-stream-encoding'} eq 'application/x-uuencode-stream') {
+    return _enc_uuencode($d);
+  }
+  elsif($HDR{'agent-stream-encoding'} eq 'application/x-base64-stream') {
+    return _enc_base64($d);
+  }
+  elsif($HDR{'agent-stream-encoding'} eq 'application/octet-stream') {
+    return _enc_null($d);
+  }
+  else {
+    printAndDie("Unknown encoding requested: $HDR{'agent-stream-encoding'}");
+  }
+}
+
 sub do_innobackupex {
   my ($tmp_directory, %cfg) = @_;
   my ($fhs, $buf, $dbh, @timeouts, @cmd);
@@ -865,11 +913,9 @@ sub do_innobackupex {
         }
       }
       if($fh == \*INNO_TAR) {
-        if( sysread( INNO_TAR, $buf, 10240 ) ) {
-          $backup_sz += length($buf);
-          my $x = pack( "u*", $buf );
-          print $Output_FH pack( "N", length( $x ) );
-          print $Output_FH $x;
+        my ($raw_sz, $packed_sz, @d) = encode(\*INNO_TAR);
+        if( $raw_sz ) {
+          print($Output_FH @x);
         }
         else {
           printLog("closed tar handle\n");
@@ -940,13 +986,11 @@ sub writeTarStream {
     printAndDie( "tar failed $!\n" );
   }
   binmode($tar_fh);
-  my $buf;
-  while( read( $tar_fh, $buf, 10240 ) ) {
-    my $x = pack( "u*", $buf );
-    $backup_sz += length($buf);
-    print $Output_FH pack( "N", length( $x ) );
-    print $Output_FH $x;
+  my ($raw_sz, $packed_sz, @x) = encode($tar_fh);
+  while($raw_sz) {
+    print($Output_FH @x);
     last if($Stop_Copy);
+    ($raw_sz, $packed_sz, @x) = encode($tar_fh);
   }
   close( $tar_fh );
   printLog("tar exitval:", ($? >> 8));
