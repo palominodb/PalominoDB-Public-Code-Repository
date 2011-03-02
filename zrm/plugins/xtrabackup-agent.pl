@@ -811,13 +811,13 @@ sub encode {
   my ($fh) = @_;
   if(not exists $HDR{'agent-stream-encoding'}
       or $HDR{'agent-stream-encoding'} eq 'application/x-uuencode-stream') {
-    return _enc_uuencode($d);
+    return _enc_uuencode($fh);
   }
   elsif($HDR{'agent-stream-encoding'} eq 'application/x-base64-stream') {
-    return _enc_base64($d);
+    return _enc_base64($fh);
   }
   elsif($HDR{'agent-stream-encoding'} eq 'application/octet-stream') {
-    return _enc_null($d);
+    return _enc_null($fh);
   }
   else {
     printAndDie("Unknown encoding requested: $HDR{'agent-stream-encoding'}");
@@ -915,7 +915,7 @@ sub do_innobackupex {
       if($fh == \*INNO_TAR) {
         my ($raw_sz, $packed_sz, @d) = encode(\*INNO_TAR);
         if( $raw_sz ) {
-          print($Output_FH @x);
+          print($Output_FH @d);
         }
         else {
           printLog("closed tar handle\n");
