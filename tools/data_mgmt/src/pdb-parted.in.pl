@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -140,7 +140,7 @@ sub main {
   if($@) {
     pod2usage($@);
   }
-  
+
   unless($o{'drop'}) {
     # interval is not necessary for --drop.
     unless($o{'interval'} and $o{'interval'} =~ /^[hdmqy]$/) {
@@ -220,7 +220,7 @@ sub main {
   return $r;
 }
 
-sub interval { 
+sub interval {
   my $interval = shift;
   my %i = ( 'h' => 'hours', 'd' => 'days', 'w' => 'weeks',
             'm' => 'months', 'y' => 'years' );
@@ -269,7 +269,7 @@ sub add_partitions {
 
   $PL->d('Last partition:', $last_p->{date}->ymd);
   $PL->d('End date:', $end_date->ymd);
-  
+
   ###########################################################################
   # Just loop until $curs_date (date cursor) is greater than
   # where we want to be. We advance the cursor by $range increments.
@@ -283,16 +283,16 @@ sub add_partitions {
     });
     $i++;
   }
-  
+
   $PL->i('Will add', scalar @parts, 'partition(s).', "\n",
          "Partitions: ",
          join(', ', map { "$_->{name}($_->{date})" } @parts), "\n");
-  
+
   if ($reorganize) {
     $parts->start_reorganization($parts->last_partition()->{name});
     push(@parts, { name => "$prefix". ($next_pN+$i), date => 'MAXVALUE' });
   }
-  
+
   ###########################################################################
   # Loop over the calculated dates and add partitions for each one
   ###########################################################################
@@ -312,7 +312,7 @@ sub add_partitions {
       }
     }
   }
-  
+
   if ($reorganize) {
     $ret = $parts->end_reorganization($dryrun);
     if(!$ret) {
@@ -432,7 +432,7 @@ pdb-parted - MySQL partition management script
   pdb-parted --add --email-activity --email-to ops@example.com \
              --interval d +4w h=localhost,D=test,t=part_table
 
-  # Drop partitions older than 8 weeks 
+  # Drop partitions older than 8 weeks
   pdb-parted --drop -8w h=localhost,D=test,t=part_table
 
   # Drop partitions older than Dec 20th, 2010, but only 5 of them.
@@ -440,12 +440,13 @@ pdb-parted - MySQL partition management script
              h=localhost,D=test,t=part_table
 
   # Drop and archive partitions older than 2 quarters ago.
-  pdb-parted --drop --archive /backups -2q h=locahost,D=test,t=part_table
+  pdb-parted --drop --archive --archive-path /backups -2q \
+             h=locahost,D=test,t=part_table
 
   # Logging to syslog
   pdb-parted --logfile syslog:LOCAL0 --add --interval d 1y \
              h=localhost,D=test,t=part_table
-            
+
 
 =head1 SYNOPSIS
 
@@ -464,8 +465,11 @@ It creates partitions in regular intervals up to some maximum future date.
                         Default: none.
 
   --prefix,        -P   Partition prefix. Defaults to 'p'.
-  
+
   --archive             Archive partitions before dropping them.
+  --archive-path        Directory to place mysqldumps.
+                        Default: current directory.
+
   --limit,         -m   Limit the number of actions to be performed.
                         Default: 0 (unlimited)
 
@@ -492,10 +496,18 @@ See the full documentation for a complete description of timespecs.
 
 A timespec is one of:
 
-  A modifier to current local time
-  or, an absolute time in 'YYYY-MM-DD HH:MM:SS' format.
+  A modifier to current local time,
+  A unix timestamp (assumed in UTC),
+  The string 'now' to refer to current local time,
+  An absolute time in 'YYYY-MM-DD HH:MM:SS' format,
+  An absolute time in 'YYYY-MD-DD HH:MM:SS TIMEZONE' format.
 
-Since the latter isn't very complicated, this section describes
+For the purposes of this module, TIMEZONE refers to zone names
+created and maintained by the zoneinfo database.
+See L<http://en.wikipedia.org/wiki/Tz_database> for more information.
+Commonly used zone names are: Etc/UTC, US/Pacific and US/Eastern.
+
+Since the last four aren't very complicated, this section describes
 what the modifiers are.
 
 A modifer is, an optional plus or minus sign followed by a number,
@@ -534,7 +546,7 @@ given the date C<2010-05-01 00:00>.
    Jul Oct Jan Apr Jul Oct
   2009    2010
 
-  . = quarter separator 
+  . = quarter separator
   C = current quarter
   P = previous quarter
   R = Resultant time (2010-01-01 00:00:00)
@@ -579,19 +591,10 @@ Where N is a number. Default is 'p', which was observed to be the most common pr
 
 =item --interval, -i
 
-type: string one of: months, weeks, days ; mandatory
+type: string one of: d w m y
 
-This is the interval in which partitions operate. Or, the size of the buckets
-that the partitions describe.
-
-When adding paritions, it specifies what timeframe the partitions describe.
-
-When dropping partitions, it specifies the multiplier for the N in C<--drop=N>.
-So, if you have: C<--range weeks --drop 3>, you're asking to drop data older than
-three weeks.
-
-B<Note that you'll also have to pass C<--i-am-sure> in order to drop
-more than one partition.>
+Specifies the size of the each partition for the --add action.
+'d' is day, 'w' is week, 'm' is month, and 'y' is year.
 
 =item --limit
 
@@ -626,7 +629,7 @@ if there are fewer than TIMESPEC future partitions. For example:
 
   Given: --interval d, today is: 2011-01-15, TIMESPEC is: +1w,
          last partition (p5) is for 2011-01-16;
-  
+
   Result:
     Parted will add 6 partitions to make the last partition 2011-01-22 (p11).
 
@@ -636,7 +639,7 @@ if there are fewer than TIMESPEC future partitions. For example:
 
   After:
    |---+-----|
-  p0  p5    p11 
+  p0  p5    p11
 
 You can think of C<--add> as specifying a required minimum safety zone.
 
