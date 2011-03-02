@@ -81,7 +81,6 @@ use DBI;
 use Getopt::Long qw(:config no_ignore_case pass_through);
 use Pod::Usage;
 use DateTime;
-use DateTime::Set;
 use DateTime::Duration;
 use DateTime::Format::Strptime;
 
