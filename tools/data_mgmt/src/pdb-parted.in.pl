@@ -491,6 +491,19 @@ See the full documentation for a complete description of timespecs.
 
 =head2 DSN
 
+DSNs, such as those passed as option values, or arguments to a program
+are of the format: C<({key}={value}(,{key}={value})*>. That is, a C<key=value> pair, followed
+by a comma, followed by any number of additional C<key=value> pairs separated by
+commas.
+
+Examples:
+
+  h=testdb1,u=pdb,p=frogs
+  h=localhost,S=/tmp/mysql.sock,u=root,F=/root/my.cnf
+
+Where 'h' is a hostname, 'S' is a socket path, 'u' is a user, 'F' is a path
+to a defaults file, and 'p' is a password. These are non-exhaustive examples.
+
 =head1 TIMESPEC
 
 A timespec is one of:
