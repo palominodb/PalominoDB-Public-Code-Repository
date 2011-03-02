@@ -727,16 +727,16 @@ sub getHeader {
   $REMOTE_VERSION = <$Input_FH>;
   chomp($REMOTE_VERSION);
   $REMOTE_VERSION = checkIfTainted($REMOTE_VERSION);
-  $::PL->d('Stream debug (Client Version):', "'$REMOTE_VERSION'");
 
   if(!isClientCompatible()) {
-    printAndDie("Incompatible client version.");
+    printAndDie("Incompatible client version $REMOTE_VERSION.");
   }
   %HDR = %{readKvBlock(\*$Input_FH)};
   unless(exists $HDR{'action'}) {
     printAndDie("Missing required header key 'action'.");
   }
   $action = $HDR{'action'};
+  $::PL->d('Request header:', Dumper(\%HDR));
   print $Output_FH "READY\n";
 }
 
@@ -1142,10 +1142,11 @@ sub processRequest {
   $::PL->quiet(1);
 
   printLog("Server($VERSION) started.");
+  $::PL->d("Server enivronment:", Dumper(\%ENV));
   $Input_FH->autoflush(1);
   $Output_FH->autoflush(1);
   getHeader();
-  printLog("Client Version: $REMOTE_VERSION" );
+  printLog("Client $ENV{'REMOTE_HOST'} ($REMOTE_VERSION) connected." );
 
   checkXtraBackupVersion();
 
