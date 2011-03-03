@@ -1136,8 +1136,11 @@ sub main {
 
   if($c{'backup-level'} == 0 and exists $c{'compress'}
       and $c{'xtrabackup-client:unpack-backup'}==0) {
-    $::PL->i("Confusing but allowed options: compress=1 and xtrabackup-client:unpack-backup=0\n",
-             "This will currently waste time compressing a likely already compressed backup!");
+    $::PL->e("options: compress=1 and xtrabackup-client:unpack-backup=0\n",
+             "This will cause ZRM to delete the backup data when compressing.\n",
+             "Aborting backup."
+            );
+    my_exit(1);
   }
 
   if( $c{"xtrabackup-client:tar-force-ownership"} == 0
