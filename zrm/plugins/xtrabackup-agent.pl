@@ -1115,7 +1115,7 @@ sub checkXtraBackupVersion {
   # xtrabackup  Ver 0.9 Rev 83 for 5.0.84 unknown-linux-gnu (x86_64)
   eval {
     unless(Which::which('xtrabackup') and Which::which('innobackupex-1.5.1')) {
-      printToServer("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
+      printAndDie("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
     }
     $_ = qx/xtrabackup --version 2>&1/;
     if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
@@ -1169,7 +1169,7 @@ sub processRequest {
     $HDR{'xtrabackup-agent:must-set-mysql-timeouts'} = 1;
   }
 
-  $::PL->d('Client Header:', Dumper(\%HDR));
+  $::PL->d('Adjusted Header:', Dumper(\%HDR));
 
   eval {
     $dbh = get_dbh();
