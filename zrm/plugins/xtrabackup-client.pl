@@ -689,7 +689,14 @@ use File::Spec::Functions;
 use Data::Dumper;
 use Text::ParseWords;
 use MIME::Base64;
+use POSIX qw(floor);
 
+##
+## Default size for reads from the network. (10k).
+## This value should *never* be changed, as doing so could
+## break compatibility with older agents.
+##
+use constant DEFAULT_BLOCK_SIZE => 10240;
 
 {
   no warnings 'once';
@@ -817,8 +824,9 @@ sub my_exit {
 ## Reads length prefixed uuencoded stream data.
 ## The structure is (in perl pack format): Nu
 ## Note: The N in this format is redundant
-## because the server side never sends more
+## because the server side has historically never sent more
 ## than 10240 bytes of uuencoded data.
+## More recent versions can send much larger blocks.
 sub read_uuencoded {
   my ($fh) = @_;
   my $buf;
@@ -835,24 +843,30 @@ sub read_uuencoded {
   # So, we abort if it is.
   # This handles the case where the other side dies
   # and garbage is sent.
-  if($buf > 8*1024*1024) {
+  if($buf > $c{'xtrabackup-client:stream-block-size'}) {
     return undef;
   }
   read($fh, $buf, $buf);
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+  && $::PL->d('Read stream', '('. length($buf) .' bytes):', 'binary data');
   return unpack('u', $buf);
 }
 
 sub read_base64 {
   my ($fh) = @_;
   my $buf;
-  read($fh, $buf, 57*180);
+  read($fh, $buf, floor($c{'xtrabackup-client:stream-block-size'}/57)*77);
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+  && $::PL->d('Read stream', '('. length($buf) .' bytes):', $buf);
   return decode_base64($buf);
 }
 
 sub read_null {
   my ($fh) = @_;
   my $buf;
-  read($fh, $buf, 10240);
+  read($fh, $buf, $c{'xtrabackup-client:stream-block-size'});
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+  && $::PL->d('Read stream', '('. length($buf) .' bytes):', 'binary data');
   return $buf;
 }
 
@@ -901,7 +915,7 @@ sub readTarStream {
         printAndDie("Unable to open $destDir/backup-data (". int($!) ."): $!");
       }
       binmode($backup_data_fh);
-      while($_ = read_uuencoded(\*SOCK)) {
+      while($_ = decode(\*SOCK)) {
         print($backup_data_fh $_);
       }
       if(!close($backup_data_fh)) {
@@ -921,7 +935,9 @@ sub readTarStream {
   # This will be packed in network order
   # Then read that much data which is uuencoded
   # Then write the unpacked data to tar
-  while($_ = read_uuencoded(\*SOCK)){
+  while($_ = decode(\*SOCK)){
+    ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+    && $::PL->d('Writing to tar:', length($_), 'bytes');
     print($tar_fh $_);
   }
   {
@@ -929,9 +945,12 @@ sub readTarStream {
     open my $fh, "<$tmpfile";
     my $errs = <$fh>;
     chomp($errs);
-    $::PL->e("tar-errors (may be empty): '". (defined($errs) ? $errs : '(undef)'). "'");# if($errs !~ /\s*/);
+    $::PL->e("tar-errors (may be empty): '". (defined($errs) ? $errs : '(undef)'). "'");
     close $fh;
-    unlink $tmpfile;
+    unless(exists $c{'xtrabackup-client:clean-tmpdir'}
+           and $c{'xtrabackup-client:clean-tmpdir'}) {
+      unlink $tmpfile;
+    }
   }
   unless( close($tar_fh) ){
     printAndDie('tar pipe failed');
@@ -1068,6 +1087,10 @@ sub main {
   ## the default will be set to base64 or null encoding.
   # $c{'xtrabackup-client:stream-encoding'} = 'base64';
 
+  ## Set the blocksize if it was not set in the configuration.
+  ## The default block size is mostly a legacy holdover.
+  $c{'xtrabackup-client:stream-block-size'} ||= DEFAULT_BLOCK_SIZE;
+
   if( not exists $c{'xtrabackup-client:tar-force-ownership'} ) {
     $c{'xtrabackup-client:tar-force-ownership'} = 1;
   }
@@ -1152,6 +1175,7 @@ sub main {
         my_exit(1);
       }
     }
+    $more_headers{'agent-stream-block-size'} = $c{'xtrabackup-client:stream-block-size'};
 
     ## ZRM Calls this script multiple times in the case of incremental backups
     ## The SID (session id, roughly) allows us and the agent to identify when

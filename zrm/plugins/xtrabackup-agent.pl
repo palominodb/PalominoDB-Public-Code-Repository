@@ -536,11 +536,20 @@ use IO::Handle;
 use Sys::Hostname;
 use MIME::Base64;
 
-use POSIX;
+use POSIX qw(floor);
 use Tie::File;
 use Fcntl qw(:flock);
 use Data::Dumper;
 use DBI;
+
+## Default size for writes to network. (10k).
+## The client can request a larger block size by sending the header
+## 'agent-stream-block-size' with the number of bytes per block.
+##
+## This value should *never* be changed, as doing so could break
+## existing clients.
+##
+use constant DEFAULT_BLOCK_SIZE => 10240;
 
 {
   no warnings 'once';
@@ -786,7 +795,7 @@ sub get_dbh {
 ## but we need to keep it around for compatibility reasons.
 sub _enc_uuencode {
   my ($fh) = @_;
-  my $raw_sz = read($fh, $_, 10240);
+  my $raw_sz = read($fh, $_, $HDR{'agent-stream-block-size'});
   my $x = pack( "u*", $_ );
 
   return ($raw_sz, length($x), pack("N", length($x)), $x);
@@ -795,7 +804,10 @@ sub _enc_uuencode {
 ## Newer Base64 encoding. It's faster and more robust.
 sub _enc_base64 {
   my ($fh) = @_;
-  my $raw_sz = read($fh, $_, 180*57);
+  ## The 57 here may seem arbitrary, however, it was chosen so that
+  ## we can incrementally encode the Base64 stream. Since each line
+  ## is 76 characters long and we can't afford
+  my $raw_sz = read($fh, $_, floor($HDR{'agent-stream-block-size'}/57)*57);
   my $x = encode_base64($_);
   return ($raw_sz, length($x), $x);
 }
@@ -803,7 +815,7 @@ sub _enc_base64 {
 ## NULL encoding - this will be fastest, but may not be suitable for use.
 sub _enc_null {
   my ($fh) = @_;
-  my $raw_sz = read($fh, $_, 10240);
+  my $raw_sz = read($fh, $_, $HDR{'agent-stream-block-size'});
   return ($raw_sz, $raw_sz, $_);
 }
 
@@ -1168,6 +1180,7 @@ sub processRequest {
   $HDR{'xtrabackup-client:nagios-service'} ||= "MySQL Backups";
   $HDR{'xtrabackup-client:send_nsca-path'} ||= Which::which("send_nsca");
   $HDR{'xtrabackup-client:send_nsca-config'} ||= "/usr/share/mysql-zrm/plugins/nsca.cfg";
+  $HDR{'agent-stream-block-size'} = DEFAULT_BLOCK_SIZE;
 
   if(not exists $HDR{'xtrabackup-agent:must-set-mysql-timeouts'}) {
     $HDR{'xtrabackup-agent:must-set-mysql-timeouts'} = 1;
