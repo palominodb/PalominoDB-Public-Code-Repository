@@ -622,7 +622,6 @@ sub my_exit {
 
 sub printLog {
   my @args = @_;
-  chomp(@args);
   $::PL->m(@args);
 }
 
@@ -743,11 +742,16 @@ sub getHeader {
 sub set_mysql_timeouts {
   my ($wait_timeout, $net_read_timeout, $net_write_timeout) = @_;
   $net_write_timeout ||= $net_read_timeout;
+  $::PL->d('Setting timeouts (wait net_read net_write):',
+           $wait_timeout, $net_read_timeout, $net_write_timeout);
   my @r;
   eval {
     my $dbh = get_dbh();
     $_ = $dbh->selectall_hashref("SHOW GLOBAL VARIABLES LIKE '%timeout'", 'Variable_name');
-    @r = $_->{'wait_timeout','net_read_timeout','net_write_timeout'};
+    $::PL->d('SQL: SHOW GLOBAL VARIABLES LIKE', "'%timeout'", 'Result:', Dumper($_));
+    $r[0] = $_->{'wait_timeout'}->{'Value'};
+    $r[1] = $_->{'net_read_timeout'}->{'Value'};
+    $r[2] = $_->{'net_write_timeout'}->{'Value'};
     $dbh->do(
       qq{SET GLOBAL wait_timeout=$wait_timeout,
                     net_read_timeout=$net_read_timeout,
@@ -763,15 +767,15 @@ sub set_mysql_timeouts {
       $::PL->e($_);
     }
   }
+  $::PL->d('Original timeouts (wait net_read net_write):', @r);
   return @r;
 }
 
 sub get_dbh {
-  my (%cfg) = @_;
-  my $socket = $cfg{'xtrabackup-agent:socket'};
+  my $socket = $HDR{'xtrabackup-agent:socket'};
   my $dbh = DBI->connect_cached(
     "DBI:mysql:host=localhost". ($socket ? ";mysql_socket=$socket" : ""),
-    $cfg{'user'}, $cfg{'password'},
+    $HDR{'user'}, $HDR{'password'},
     { RaiseError => 1, AutoCommit => 0, PrintError => 0,
       ShowErrorStatement => 1});
   return $dbh;
@@ -1182,8 +1186,8 @@ sub processRequest {
 
   if($action eq "copy from") {
     if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
-        or not exists $HDR{'password'}) {
-      printAndDie("Mandatory parameters missing: user, password, backup-level.")
+        or not exists $HDR{'password'} or not exists $HDR{'file'}) {
+      printAndDie("Mandatory parameters missing: user, password, backup-level, file.")
     }
     ##
     ## ZRM defines two kinds of backups: full and incremental.
@@ -1199,8 +1203,8 @@ sub processRequest {
           $dbh->do('START SLAVE');
         }
         eval {
-          $::PL->d("Setting up temporary directory:", $tmp_directory);
           $tmp_directory=getTmpName();
+          $::PL->d("Setting up temporary directory:", $tmp_directory);
           mkdir($tmp_directory);
           print($Output_FH makeKvBlock('status' => 'SENDING'));
           do_innobackupex($tmp_directory, %HDR);
