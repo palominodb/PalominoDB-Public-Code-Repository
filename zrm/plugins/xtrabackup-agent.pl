@@ -535,10 +535,11 @@ use IO::Select;
 use IO::Handle;
 use Sys::Hostname;
 use MIME::Base64;
+use Storable qw(store_fd retrieve_fd);
 
 use POSIX qw(floor);
 use Tie::File;
-use Fcntl qw(:flock);
+use Fcntl qw(:flock :seek);
 use Data::Dumper;
 use DBI;
 
@@ -931,6 +932,7 @@ sub do_innobackupex {
       if($fh == \*INNO_TAR) {
         my ($raw_sz, $packed_sz, @d) = encode(\*INNO_TAR);
         if( $raw_sz ) {
+          $backup_sz += $raw_sz;
           print($Output_FH @d);
         }
         else {
@@ -1004,6 +1006,7 @@ sub writeTarStream {
   binmode($tar_fh);
   my ($raw_sz, $packed_sz, @x) = encode($tar_fh);
   while($raw_sz) {
+    $backup_sz += $raw_sz;
     print($Output_FH @x);
     last if($Stop_Copy);
     ($raw_sz, $packed_sz, @x) = encode($tar_fh);
@@ -1031,100 +1034,156 @@ sub writeTarStream {
   record_backup("incremental", $start_tm, time(), $backup_sz, "success", $fileList);
 }
 
+##
+## The following subroutines:
+## - open_stats_db
+## - save_stats_db
+## - sort_db
+## - record_backup
+## - doMonitor
+##
+## Operate on a *very* simple database using the Storable module.
+## It's not very efficient, but I know it will work anywhere with
+## perl, unlike other options (including even DB_File).
+## At some point in the future, the plugins may be modified to use
+## a MySQL database or a similarly robust other option.
+##
+## The database is stored as a frozen hash which means for many
+## operations, the database needs to be sorted before use.
+## The format of the hash is as follows:
+## sid => { start_time => 0, end_time => 0, backup_size => 0,
+##          status => 'success|failure', type => 'incremental|full',
+##          files => [], client_status => 'success|failure', message => '',
+##          sid => '/backups/<set>/<date>' }
+## Where sid is the session-id associated with the backup, and
+## client_status is how the client thinks the backup completed.
+##
+
 sub open_stats_db {
-  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
   my $do_lock = shift || LOCK_EX;
-  my (@all_stats, $i) = ((), 0);
-  my $st = tie @all_stats, 'Tie::File', $stats_db or printAndDie("ERROR", "unable to open the stats database $stats_db");
+  my ($fh, $db, $newdb) = (undef, {}, 0);
+  my $db_path = $HDR{'xtrabackup-agent:stats-db-path'} . '/stats.db';
+  $::PL->d('Opening db:', $db_path);
+  if(-f $db_path) {
+    open($fh, "+<$db_path") or printAndDie("ERROR", "unable to open $db_path: $!");
+  }
+  else {
+    $newdb = 1;
+    open($fh, ">$db_path") or printAndDie("ERROR", "unable to create $db_path: $1");
+  }
   if($do_lock) {
     for(1...3) {
       eval {
         local $SIG{ALRM} = sub { die('ALARM'); };
         alarm(5);
-        $st->flock($do_lock);
+        flock($fh, $do_lock);
         alarm(0);
       };
       if($@ and $@ =~ /ALARM/) {
-        $::PL->e("on attempt", $_, "unable to flock $stats_db after 5 seconds.");
+        $::PL->e("on attempt", $_, "unable to flock $db_path after 5 seconds.");
       }
       else {
-        undef($st);
-        return \@all_stats;
+        ## Obtained our lock, return the filehandle and content.
+        if(!$newdb) {
+          eval {
+            $db = retrieve_fd($fh);
+          };
+          if($@ and $@ =~ /^File is not a perl storable/) {
+            $::PL->i('Throwing away legacy stats db. Unable to convert it.');
+            $db = {};
+          }
+        }
+        return ($fh, $db);
       }
     }
   }
-  undef($st);
-  untie(@all_stats);
+  close($fh);
   return undef;
 }
 
+sub save_stats_db {
+  my ($fh, $db) = @_;
+  ## Seek to the beginning and truncate the file.
+  ## This is so there isn't garbage left over at the end of the database
+  ## if our new content is shorter.
+  seek($fh, 0, SEEK_SET);
+  truncate($fh, 0);
+  return store_fd($db, $fh);
+  close($fh);
+}
+
+## Returns db records sorted by start time.
+sub sort_db {
+  my ($db) = @_;
+  return map {
+    $db->{$_};
+  } sort { $$db{$b}->{'start_time'} <=> $$db{$a}->{'start_time'} } keys %$db;
+}
+
 sub record_backup {
-  my ($type, $start_tm, $end_tm, $sz, $status, $info) = @_;
-  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
+  my ($type, $start_tm, $end_tm, $sz, $status, $info, $files) = @_;
+  $::PL->d('Recording backup data', '(type start end size status info files)',
+            $type, $start_tm, $end_tm, $sz, $status, $info, $files);
   my ($all_stats, $i, $upd) = (undef, 0, 0);
   my $cnt = 0;
   if(not defined $type or not defined $start_tm) {
     die("Programming error. record_backup() needs at least two parameters.");
   }
-  $end_tm = '-' if(not defined $end_tm);
-  $sz = '-' if(not defined $sz);
+
+  my ($fh, $db) = open_stats_db(LOCK_EX);
+  if(scalar(keys(%$db))) {
+    my $i = 0;
+    foreach my $r (sort_db($db)) {
+      $i++;
+      if($i > $HDR{'xtrabackup-agent:stats-history'}) {
+        delete($$db{$$r{'sid'}});
+      }
+    }
+  }
+
+  $end_tm = -1 if(not defined $end_tm);
+  $sz = -1 if(not defined $sz);
   $status = $$ if(not defined $status);
   $info = '-' if(not defined $info);
 
-  $all_stats = open_stats_db(LOCK_EX);
-  if(not defined $all_stats) {
-    untie(@$all_stats);
-    printAndDie("ERROR", "unable to get an exclusive lock on the stats db $stats_db");
-  }
+  $upd = $db->{$HDR{'sid'}};
+  $upd ||= {};
+  $upd->{'sid'} = $HDR{'sid'};
+  $upd->{'start_time'} = $start_tm;
+  $upd->{'end_time'} = $end_tm;
+  $upd->{'backup_size'} = $sz;
+  $upd->{'status'} = $status;
+  $upd->{'type'} = $type;
+  $upd->{'files'} = $files;
+  $upd->{'message'} = $info;
+  $db->{$HDR{'sid'}} = $upd;
 
-  for($i = 0; $i < @$all_stats; $i++) {
-    my $stat = $$all_stats[$i];
-    next if($stat =~ /^$/);
-    my ($stype, $sstart, $send, $ssize, $sstatus, $sinfo) = split(/\t/, $stat);
-    if(!$upd and $stype eq $type and $start_tm == $sstart) {
-      $$all_stats[$i] = join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
-      $upd = 1;
-      next;
-    }
-    if($stype eq $type) {
-      if($cnt > $HDR{'xtrabackup-agent:stats-history'}) {
-        delete $$all_stats[$i];
-      }
-      else {
-        $cnt++;
-      }
-    }
-  }
-  unless($upd) {
-    unshift @$all_stats, join("\t", $type, $start_tm, $end_tm, $sz, $status, $info);
-  }
-  untie(@$all_stats);
+  save_stats_db($fh, $db);
 }
 
 sub doMonitor {
-  my ($newer_than, $max_items) = (0, 0);
-  my ($all_stats, $i) = (undef, 0);
-  my $stats_db = $HDR{'xtrabackup-agent:stats-db-path'};
-  $newer_than = $HDR{newer_than};
-  $max_items = $HDR{max_items};
+  my ($newer_than, $max_items, $type) = (0, 0, undef);
+  my ($fh, $db, $i) = (undef, 0, 0);
+  $type       = $HDR{'type'};
+  $max_items  = $HDR{'max_items'} || 0;
+  $newer_than = $HDR{'newer_than'};
 
-  $all_stats = open_stats_db(LOCK_SH);
-  if(not defined $all_stats) {
-    untie(@$all_stats);
-    printAndDie("ERROR", "unable to get a lock on the stats db $stats_db");
+  ($fh, $db) = open_stats_db(LOCK_SH);
+  if(not defined $db) {
+    printAndDie("ERROR", "unable to get a lock on the stats db.");
   }
+  close($fh);
 
-  foreach my $stat (@$all_stats) {
-    my ($stype, $sstart, $send, $ssize, $sstatus, $info) = split(/\t/, $stat);
-    if($sstart >= $newer_than) {
-      print($Output_FH $stat, "\n");
+  foreach my $stat (sort_db($db)) {
+    next if(defined $type and $type ne $stat->{'type'});
+    if($stat->{'start_time'} >= $newer_than) {
+      print($Output_FH makeKvBlock(%$stat));
       $i++;
     }
-    if($i == $max_items) {
+    if($max_items and $i == $max_items) {
       last;
     }
   }
-  untie(@$all_stats);
 }
 
 sub checkXtraBackupVersion {
@@ -1167,7 +1226,7 @@ sub processRequest {
   checkXtraBackupVersion();
 
   ## Set default values.
-  $HDR{'xtrabackup-agent:stats-db-path'} ||= "$Log_Dir/stats.db";
+  $HDR{'xtrabackup-agent:stats-db-path'} ||= "$Log_Dir";
   $HDR{'xtrabackup-agent:stats-history'} ||= 1000;
   $HDR{'xtrabackup-agent:innobackupex-path'} ||= Which::which('innobackupex-1.5.1');
   $HDR{'xtrabackup-agent:innobackupex-opts'} ||= "";
@@ -1180,7 +1239,7 @@ sub processRequest {
   $HDR{'xtrabackup-client:nagios-service'} ||= "MySQL Backups";
   $HDR{'xtrabackup-client:send_nsca-path'} ||= Which::which("send_nsca");
   $HDR{'xtrabackup-client:send_nsca-config'} ||= "/usr/share/mysql-zrm/plugins/nsca.cfg";
-  $HDR{'agent-stream-block-size'} = DEFAULT_BLOCK_SIZE;
+  $HDR{'agent-stream-block-size'} ||= DEFAULT_BLOCK_SIZE;
 
   if(not exists $HDR{'xtrabackup-agent:must-set-mysql-timeouts'}) {
     $HDR{'xtrabackup-agent:must-set-mysql-timeouts'} = 1;
@@ -1188,16 +1247,18 @@ sub processRequest {
 
   $::PL->d('Adjusted Header:', Dumper(\%HDR));
 
-  eval {
-    $dbh = get_dbh();
-  };
-  if( $@ ) {
-    $_ = "$@";
-    record_backup($HDR{'backup-level'} ? "full" : "incremental", time(), time(), '-', "failure", $_);
-    printAndDie("ERROR", "Unable to open DBI handle.", "Error:", $_);
-  }
-
   if($action eq "copy from") {
+
+    eval {
+      $dbh = get_dbh();
+    };
+    if( $@ ) {
+      $_ = "$@";
+      record_backup($HDR{'backup-level'} ? "full" : "incremental",
+                    time(), time(), '-', "failure", $_);
+      printAndDie("ERROR", "Unable to open DBI handle.", "Error:", $_);
+    }
+
     if(not exists $HDR{'backup-level'} or not exists $HDR{'user'}
         or not exists $HDR{'password'} or not exists $HDR{'file'}) {
       printAndDie("Mandatory parameters missing: user, password, backup-level, file.")
