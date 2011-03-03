@@ -165,6 +165,7 @@ sub main {
   }
 
   $PL->start();
+  $PL->email_to($o{'email-to'});
   $parts = TablePartitions->new($PL, $dsn);
 
   if($o{'add'}) {
