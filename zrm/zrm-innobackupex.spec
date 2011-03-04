@@ -45,7 +45,7 @@ echo ""
 echo "The original ZRM socket-server has been disabled, if it was enabled."
 
 %postun
-if [[ -f /etc/xinetd.d/mysql-zrm-socket-server ]]; then
+if [[ "x$1" = "x0" && -f /etc/xinetd.d/mysql-zrm-socket-server ]]; then
   %{__sed} -i -e '/disable/ s/yes/no/' /etc/xinetd.d/mysql-zrm-socket-server
 fi
 
