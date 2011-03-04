@@ -839,11 +839,14 @@ sub read_uuencoded {
     return undef;
   }
   $buf = unpack('N', $buf);
-  # Buffer should never be larger than this.
-  # So, we abort if it is.
-  # This handles the case where the other side dies
-  # and garbage is sent.
-  if($buf > $c{'xtrabackup-client:stream-block-size'}) {
+  # Incoming blocks should never be larger than this.
+  # If we receive a block more than 38% of the requested block size
+  # then we abort. The other hand has more than likely failed anyway.
+  # The reason for 38% is that uuencoding adds roughly 37.8% to the
+  # blocksize.
+  if($buf > 1.38*$c{'xtrabackup-client:stream-block-size'}) {
+    $::PL->e('Invalid block of size', $buf, 'when expected size is',
+             $c{'xtrabackup-client:stream-block-size'});
     return undef;
   }
   read($fh, $buf, $buf);
