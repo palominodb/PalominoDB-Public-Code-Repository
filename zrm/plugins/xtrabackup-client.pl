@@ -720,13 +720,15 @@ $SIG{'TERM'} = sub { close SOCK; $::PL->end; die "TERM broke\n"; };
 $SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); $::PL->end; exit(1); };
 
 # This validates all incoming data, to ensure it's sane.
-# This will only allow and a-z A-Z 0-9 _ - / . = " ' ; + * and space.
+# This prohibits any control characters other than \n or \r.
+# This is incompatible with unicode, but, we don't expect
+# unicode characters at the moment, anyway.
 sub checkIfTainted {
-  if( $_[0] =~ /^([-\*\w\/"\'.\@\:;\+\s=\^\$]+)$/) {
+  if( $_[0] =~ /^((?:[:^cntrl:]|[\n\r])+)$/) {
     return $1;
   }
   else {
-    printAndDie("Bad data in $_[0]\n");
+    printAndDie("Strange control characters in: $_[0]\n");
   }
 }
 
