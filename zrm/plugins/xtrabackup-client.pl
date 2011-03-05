@@ -724,7 +724,7 @@ $SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); $::PL->end; exit(1); };
 # This is incompatible with unicode, but, we don't expect
 # unicode characters at the moment, anyway.
 sub checkIfTainted {
-  if( $_[0] =~ /^((?:[:^cntrl:]|[\n\r])+)$/) {
+  if( $_[0] =~ /^([[:^cntrl:]\n\r]+)$/) {
     return $1;
   }
   else {
