@@ -1,16 +1,45 @@
 #!/usr/bin/env perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
 use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# YAMLDSN package GIT_VERSION
+# YAMLDSN package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End YAMLDSN package
@@ -56,6 +85,7 @@ my $cluster = undef;
 
 my $cli_chunk_size = 0;
 my $cli_since = '';
+my $dp;
 
 sub main {
   my (@ARGV) = @_;
@@ -92,7 +122,7 @@ sub main {
   }
 
   my $dsn = YAMLDSN->new($dsnuri);
-  my $dp = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
+  $dp       = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
   $csum_dsn = $dp->parse($central_dsn);
   $csum_dbh = $dp->get_dbh($dp->get_cxn_params($csum_dsn));
 
@@ -135,6 +165,8 @@ sub main {
       # key exists
       if(scalar @do_tables) {
         my %w_vals = ();
+        ## Group tables by their where clause so that we can checksum
+        ## several tables at one time, if they have identical conditions.
         foreach my $t (@do_tables) {
           foreach my $k (keys %$t) {
             $w_vals{$t->{$k}} ||= [];
@@ -142,6 +174,7 @@ sub main {
           }
         }
         foreach my $w (keys %w_vals) {
+          ## Tables with where clause $w
           my @tbls = @{$w_vals{$w}};
           my @mk_args = (
             $pretend ? ('--explain') : (),
@@ -153,13 +186,13 @@ sub main {
             '--password', $password,
             scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
             scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
-            scalar @do_tables ? ('--tables', join(',',@tbls)) : (),
+            scalar @tbls ? ('--tables', join(',',@tbls)) : (),
             $since ? ('--since', $since) : (),
             '--chunk-size', $c_size,
             '--where', $w,
             $cm
           );
-          run_mk_checksum(@mk_args);
+          run_mk_checksum($cm, @mk_args);
         }
       }
       else {
@@ -181,23 +214,6 @@ sub main {
       }
     }
   }
-
-  foreach my $cm (@checksum_masters) {
-    my $ms = MasterSlave->new();
-    my $master_dsn = $dp->parse("h=$cm,u=$user,p=$password");
-    my $master_dbh = $dp->get_dbh($dp->get_cxn_params($master_dsn));
-    $pl->i("RETRIEVING CLUSTER CHECKSUMS:", $cm);
-    $ms->recurse_to_slaves(
-      {
-        dbh  => $master_dbh,
-        dsn  => $master_dsn,
-        dsn_parser => $dp,
-        callback => \&save_to_central_server
-      }
-    );
-    $master_dbh->disconnect;
-  }
-  $csum_dbh->commit;
 
   (my $sql = <<"EOF") =~ s/\s+/ /gm;
    SELECT host, db, tbl, chunk, boundaries,
@@ -234,6 +250,8 @@ EOF
 }
 
 sub run_mk_checksum {
+  my $cm = shift;
+  my $master_dbh = undef;
   $pl->d("CHECKSUM ARGUMENTS:", Dumper(\@_));
   my $r = $pl->x(\&mk_table_checksum::main, @_);
   {
@@ -242,7 +260,30 @@ sub run_mk_checksum {
     $pl->d(<$fh>);
   }
   if($r->{rcode}) {
-    $pl->e("Error calling mk-table-checksum:", 'exit:', $r->{rcode}, $r->{error});
+    $pl->ed("Error calling mk-table-checksum:", 'exit:', $r->{rcode}, $r->{error});
+  }
+
+  eval {
+    my $ms = MasterSlave->new();
+    my $master_dsn = $dp->parse("h=$cm,u=$user,p=$password");
+    $master_dbh = $dp->get_dbh($dp->get_cxn_params($master_dsn));
+    $pl->i("RETRIEVING CHECKSUMS FROM:", $cm);
+    $ms->recurse_to_slaves(
+      {
+        dbh  => $master_dbh,
+        dsn  => $master_dsn,
+        dsn_parser => $dp,
+        callback => \&save_to_central_server
+      }
+    );
+    $master_dbh->disconnect();
+    $csum_dbh->commit();
+    $csum_dbh->{AutoCommit} = 0;
+  };
+  if($@) {
+    $csum_dbh->rollback();
+    $master_dbh->disconnect();
+    $pl->ed("Error during retrieval of checksum results: $@");
   }
 }
 
