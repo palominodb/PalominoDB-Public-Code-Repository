@@ -719,19 +719,6 @@ $SIG{'TERM'} = sub { close SOCK; $::PL->end; die "TERM broke\n"; };
 
 $SIG{'__DIE__'} = sub { die(@_) if($^S); $::PL->e(@_); $::PL->end; exit(1); };
 
-# This validates all incoming data, to ensure it's sane.
-# This prohibits any control characters other than \n or \r.
-# This is incompatible with unicode, but, we don't expect
-# unicode characters at the moment, anyway.
-sub checkIfTainted {
-  if( $_[0] =~ /^([[:^cntrl:]\n\r]+)$/) {
-    return $1;
-  }
-  else {
-    printAndDie("Strange control characters in: $_[0]\n");
-  }
-}
-
 # Reads a key=value block from the incoming stream.
 # The format of a key=value block is as follows:
 # <number of lines(N) to follow>\n
@@ -745,13 +732,11 @@ sub readKvBlock {
   my %kv = ();
   my ($i, $N) = ((), 0, 0);
   chomp($N = <$fh>);
-  checkIfTainted($N);
   if($N !~ /^\d+$/) {
     printAndDie("Bad input: $_");
   }
   for($i = 0; $i < $N; $i++) {
     chomp($_ = <$fh>);
-    checkIfTainted($_);
     my ($k, $v) = split(/=/, $_, 2);
     $v = undef if($v eq '');
     $kv{$k} = $v;
