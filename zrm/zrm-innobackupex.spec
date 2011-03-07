@@ -1,8 +1,8 @@
 Name: zrm-innobackupex
 Summary: xtrabackup copy plugin for ZRM
-Version: 0.81.2
+Version: 0.81.3
 Vendor: PalominoDB
-Release: 2
+Release: 1
 License: GPL
 Group: Application/System
 Source: http://dev.palominodb.com/src/zrm-innobackupex-%{version}.tar.gz
@@ -20,8 +20,9 @@ true mysql hotcopy.
 
 %build
 
-%{__rm} examples/pre-backup.pdb.pl
-%{__rm} examples/post-backup.pdb.pl
+%{__rm} -f examples/pre-backup.pdb.pl
+%{__rm} -f examples/post-backup.pdb.pl
+%{__rm} -f exmamples/socket-server.conf
 
 %install
 
@@ -44,16 +45,10 @@ echo "if this is the first time it's been installed."
 echo ""
 echo "The original ZRM socket-server has been disabled, if it was enabled."
 
-%postun
-if [[ "x$1" = "x0" && -f /etc/xinetd.d/mysql-zrm-socket-server ]]; then
-  %{__sed} -i -e '/disable/ s/yes/no/' /etc/xinetd.d/mysql-zrm-socket-server
-fi
-
 %files
 %defattr(0644,root,root)
-/etc/xinetd.d/xtrabackup-agent
+%config /etc/xinetd.d/xtrabackup-agent
 %defattr(0755,mysql,mysql)
-%attr(0644, mysql,mysql) %config /usr/share/mysql-zrm/plugins/socket-server.conf
 /usr/share/mysql-zrm/plugins/stub-snapshot.pl
 /usr/share/mysql-zrm/plugins/xtrabackup-client.pl
 /usr/share/mysql-zrm/plugins/xtrabackup-agent.pl
