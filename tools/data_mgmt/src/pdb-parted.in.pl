@@ -143,8 +143,8 @@ sub main {
 
   unless($o{'drop'}) {
     # interval is not necessary for --drop.
-    unless($o{'interval'} and $o{'interval'} =~ /^[hdmqy]$/) {
-      pod2usage("interval must be one of: h,d,m,q,y");
+    unless($o{'interval'} and $o{'interval'} =~ /^[hdwmqy]$/) {
+      pod2usage("interval must be one of: h,d,w,m,q,y");
     }
   }
 
