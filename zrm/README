@@ -1,11 +1,21 @@
-README For the innobackupex ZRM plugin.
+= README For the xtrabackup ZRM plugin =
 
 For configuration examples/usage. See the included mysql-zrm.conf file
 under the examples directory.
 
-Upgrading from legacy socket-server based plugins (version 0.72 or 1.87b_palomino) to 0.80.2:
-  If you were using the legacy plugins, the following is a bullet point summary
-  of things that have changed:
+== General usage notes ==
+
+When the plugins are configured to not unpack backups (write a tar directly),
+for fulls, you MUST use the '-i' option when extracting the backup. This is
+because innobackupex creates a semi-nonstandard tar-stream. This may be fixed
+in a later release.
+
+
+== Legacy upgrades ==
+  Upgrading from legacy socket-server based plugins (0.72 or 1.87b_palomino)
+  to 0.80 or above. If you were using the legacy plugins, the following is a
+  bullet point summary of the things that have changed:
+
   * The logfile /var/log/mysql-zrm/socket-server.log is now /var/log/mysql-zrm/xtrabackup-agent.log
 
   * The "snapshot plugin" inno-snapshot.pl has been renamed stub-snapshot.pl and only needs to be
@@ -34,7 +44,7 @@ Upgrading from legacy socket-server based plugins (version 0.72 or 1.87b_palomin
     using any, be aware that they will be over the coming releases, and then that file will
     not be read anymore.
 
-Installing:
+== Installing ==
   Place all of the perl scripts in /usr/share/mysql-zrm/plugins,
   or to whatever root you have installed zrm in. (So /usr/local/share/mysql-zrm/plugins,
   if your root is /usr/local.)
@@ -60,16 +70,12 @@ Installing:
   plugins. The version number was changed to protect you against any badness from
   possible incompatibilities introduced.
 
-Files:
+== Files and permissions ==
   The scripts MUST have the ability to create and read files in /tmp.
-  Specifically, the directory /tmp/zrm-innosnap, and the file 'running' underneath it.
-  That file is used to forward data to the copy plugin after the snapshot has been made.
-  Innobackupex also creates a directory under /tmp, that contains state for while it's running.
-  It doesn't appear to clean it up, but it also appears to be harmless between runs to leave it.
-  The script also creates /tmp/innobackupex-log, which is a fifo for reading the logs from innobackupex
-  so that it can alert nagios in the event of failure.
+  The plugins create /tmp/innobackupex-log, which is a fifo for reading the logs from innobackupex
+  so that it can monitor the state of the backup.
 
-Logs/Troubleshooting:
+== Logs/Troubleshooting ==
   - /var/log/mysql-zrm/xtrabackup-agent.log, xtrabackup-client.log
     These contain detailed error and debugging entries for tracking down the
     source of problems.
