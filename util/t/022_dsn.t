@@ -1,7 +1,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 14;
+use Test::More tests => 15;
 BEGIN {
   use_ok('DSN');
 }
