@@ -29,7 +29,7 @@ sub new {
     SHOW DATABASES, CREATE TEMPORARY TABLES, LOCK TABLES,
     EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT,
     CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE
-      ON *.* TO 'nosuper'@'%' IDENTIFIED BY 'superpw' 
+      ON *.* TO 'nosuper'@'%' IDENTIFIED BY 'superpw'
   |);
 
   return $args;
@@ -67,6 +67,31 @@ sub user {
 sub password {
   my ($self) = @_;
   return $self->{dsn}->get('p');
+}
+
+sub rand_data {
+  my ($self, $file, $always_new, @args) = @_;
+  my $fh;
+  unshift(@args, '-o', $file);
+  if(! -f $file || $always_new) {
+    system($ENV{'PDB_CODE_ROOT'} . '/tools/gen_tbdata.pl', @args);
+  }
+  eval {
+    $self->{dbh}->{AutoCommit} = 0;
+    open($fh, '<', $file);
+    while(<$fh>) {
+      chomp;
+      next unless($_);
+      $self->{dbh}->do($_);
+    }
+    $self->{dbh}->commit;
+    $self->{dbh}->{AutoCommit} = 0;
+  };
+  if($@) {
+    $_ = "$@";
+    $self->{dbh}->rollback;
+    croak($_);
+  }
 }
 
 sub use {

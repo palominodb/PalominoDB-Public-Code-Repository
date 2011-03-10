@@ -42,7 +42,7 @@ sub get_files_dir () {
 sub get_test_data ($;$) {
   my ($test_dir, $ext) = @_;
   $ext ||= 'txt';
-  my @files = glob(get_test_dir(1) . "files" . "/$test_dir/*.$ext"); 
+  my @files = glob(get_test_dir(1) . "files" . "/$test_dir/*.$ext");
   return wantarray ? @files : scalar @files;
 }
 
