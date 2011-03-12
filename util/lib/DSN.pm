@@ -395,6 +395,11 @@ MySQL Password.
 
 Defaults file.
 
+=item C<G>
+
+Defaults file group to read.
+Normally 'client'.
+
 =item C<S>
 
 MySQL socket.
@@ -418,6 +423,26 @@ SSH user.
 =item C<sK>
 
 SSH key.
+
+=item C<SSL_key>
+
+SSL client key.
+
+=item C<SSL_cert>
+
+SSL client certificate.
+
+=item C<SSL_CA>
+
+SSL client CA file.
+
+=item C<SSL_CA_path>
+
+SSL client CA path.
+
+=item C<SSL_cipher>
+
+SSL cipher.
 
 =back
 
