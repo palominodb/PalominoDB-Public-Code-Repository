@@ -144,6 +144,9 @@ sub get_dbh {
     $dbh = DBI->connect($dbh_str, $self->get('u'), $self->get('p'),
       $options);
   }
+  if($self->has('N')) {
+    $dbh->do('SET NAMES '. $dbh->quote($self->get('N')));
+  }
   return $dbh;
 }
 
@@ -302,6 +305,11 @@ sub default {
       'default' => '',
       'mandatory' => 0
     },
+    'N' => {
+      'desc' => 'Client character set',
+      'default' => '',
+      'mandatory' => 0
+    },
     'sU' => {
       'desc' => 'SSH User',
       'default' => '',
@@ -415,6 +423,15 @@ Database name.
 =item C<t>
 
 Table name.
+
+=item C<N>
+
+Set client character set variables via C<SET NAMES x>.
+Normally the client defaults to C<latin1>, this should
+be used any time C<latin1> is insufficient.
+
+Refer to L<http://dev.mysql.com/doc/refman/5.1/en/charset-connection.html>
+for more.
 
 =item C<sU>
 
