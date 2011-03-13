@@ -147,6 +147,14 @@ sub get_dbh {
   if($self->has('N')) {
     $dbh->do('SET NAMES '. $dbh->quote($self->get('N')));
   }
+  if($self->has('vars')) {
+    my $vars = join(', ', map {
+        my ($k, $v) = split(/=/, $_, 2);
+        $_ = $k . ' = ' . ($v =~ /^\d+$/ ? $v : $dbh->quote($v, 1));
+        $_;
+      } split(/;/, $self->get('vars')));
+    $dbh->do('SET '. $vars);
+  }
   return $dbh;
 }
 
@@ -310,6 +318,11 @@ sub default {
       'default' => '',
       'mandatory' => 0
     },
+    'vars' => {
+      'desc' => 'Extra client variables',
+      'default' => '',
+      'mandatory' => 0
+    },
     'sU' => {
       'desc' => 'SSH User',
       'default' => '',
@@ -355,7 +368,7 @@ sub parse {
   $Data::Dumper::Indent = 0;
   my $dsn = DSN->_create($self->{'keys'});
   foreach my $kv ( split(/,/, $str) ) {
-    my ($key, $val) = split(/=/, $kv);
+    my ($key, $val) = split(/=/, $kv, 2);
     croak('Unknown key: '. $key .' in dsn')
     unless($self->{'allow_unknown'} or exists($self->{'keys'}->{$key}) );
     $dsn->{$key}->{'value'} = $val;
@@ -460,6 +473,16 @@ SSL client CA path.
 =item C<SSL_cipher>
 
 SSL cipher.
+
+=item C<vars>
+
+Set any arbitrary mysql variables on connect.
+The variables must be separated by a semi-colon ';', so that
+they are not mis-interpreted as keys in the DSN.
+This key should be used with care since improper use could adversely
+affect server and tool operation.
+
+Example: h=localhost,u=root,p=...,vars=wait_timeout=10000;sql_log_bin=0
 
 =back
 
