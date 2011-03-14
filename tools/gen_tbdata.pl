@@ -34,6 +34,7 @@ use warnings FATAL => 'all';
 use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use Data::Dumper;
+use POSIX qw(floor);
 
 my $out="random_test_data.sql";
 my $table="test_data";
@@ -132,6 +133,15 @@ sub generate_linear_timestamp {
   return $grator;
 }
 
+sub generate_linear_integer {
+  my $mshift = shift || 100;
+  my $base   = 1;
+  my $grator = sub {
+    return ($base += (floor(rand($mshift))||1));
+  };
+  return $grator;
+}
+
 unless($out eq "-") {
   open SQL, ">$out";
 }
@@ -145,6 +155,9 @@ map {
   my $t = $columns{$c};
   if($t =~ /linear_timestamp(?:\((\d*)\))?/) {
     $gen{$c} = generate_linear_timestamp($1);
+  }
+  if($t =~ /linear_integer(?:\((\d*)\))?/) {
+    $gen{$c} = generate_linear_integer($1);
   }
   if($t =~ /words/) {
     open my $dict_fh, "</usr/share/dict/words" or die($!);
@@ -195,6 +208,14 @@ foreach my $i ($pk_start..$n_rows) {
       }
     }
     elsif($t =~ /linear_timestamp(?:\((\d*)\))?/) {
+      if($for_infile) {
+        $vals .= $gen{$k}->() .",";
+      }
+      else {
+        $vals .= "'". $gen{$k}->() ."',";
+      }
+    }
+    elsif($t =~ /linear_integer(?:\((\d*)\))?/) {
       if($for_infile) {
         $vals .= $gen{$k}->() .",";
       }
@@ -288,6 +309,10 @@ that have specific alternate behavior other than 'random':
     If max_shift specified, it indicates how much the timestamp is allowed
     to increase, in seconds.
     It defaults to 300 seconds.
+
+  linear_int(max_shift):
+    This produces an integer column that increases monotonically in random
+    amounts. Normally max_shift is 100.
 
   words(count):
     This type is very similar to the varchar() type above, but, instead
