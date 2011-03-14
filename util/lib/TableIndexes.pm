@@ -253,6 +253,11 @@ C<columns> - A list of columns (either an SQL fragment or an arrayref)
              to select instead of '*', this is helpful if you don't need
              the entire row.
 
+C<fetch_bulk> - Alters the behavior of the callback so that it's called
+                once per batch of rows fetched and left to iterate on it's
+                own. Useful for reducing subroutine call overhead, if you've
+                got it.
+
 Returns the number of rows iterated over and the maximum index value examined.
 
 =cut
@@ -294,6 +299,9 @@ sub walk_table_base {
     }
     $min_idx = $dbh->selectrow_array("SELECT MIN(`$idx_col`) FROM `$a{'db'}`.`$a{'table'}`");
     $last_idx = $dbh->selectrow_array("SELECT MAX(`$idx_col`) FROM `$a{'db'}`.`$a{'table'}`");
+    if(not defined $min_idx or not defined $last_idx) {
+      die("No rows, or invalid index column for $a{'db'}.$a{'table'}");
+    }
     $min_idx = $a{'start'} if(exists $a{'start'});
     $max_idx = $min_idx+$a{'size'};
     $sth = $dbh->prepare("SELECT ". join(',', @{$a{'columns'}}) .
@@ -303,9 +311,16 @@ sub walk_table_base {
 
     do {
       $sth->execute($min_idx, $max_idx);
-      while($row = $sth->fetchrow_hashref) {
-        $rows++;
-        &$cb($idx_col, $dbh, $min_idx, $max_idx, $row, @data);
+      if($a{'fetch_bulk'}) {
+        my $results = $sth->fetchall_arrayref({ });
+        $rows += scalar @$results;
+        &$cb($idx_col, $dbh, $min_idx, $max_idx, $results, @data);
+      }
+      else {
+        while($row = $sth->fetchrow_hashref) {
+          $rows++;
+          &$cb($idx_col, $dbh, $min_idx, $max_idx, $row, @data);
+        }
       }
       $min_idx = $max_idx+1;
       $max_idx += $a{'size'};
