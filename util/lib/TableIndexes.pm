@@ -249,6 +249,10 @@ C<data> - Array ref of additional data to pass to the callback.
 
 C<start> - What row to start at.
 
+C<columns> - A list of columns (either an SQL fragment or an arrayref)
+             to select instead of '*', this is helpful if you don't need
+             the entire row.
+
 Returns the number of rows iterated over and the maximum index value examined.
 
 =cut
@@ -268,6 +272,10 @@ sub walk_table_base {
 
   $idx_col = $a{'index'}{'column'};
   $a{'filter_clause'} ||= '1=1';
+  $a{'columns'} ||= ['*'];
+  if(!ref($a{'columns'})) {
+    $a{'columns'} = [$a{'columns'}];
+  }
 
 
   eval {
@@ -288,9 +296,10 @@ sub walk_table_base {
     $last_idx = $dbh->selectrow_array("SELECT MAX(`$idx_col`) FROM `$a{'db'}`.`$a{'table'}`");
     $min_idx = $a{'start'} if(exists $a{'start'});
     $max_idx = $min_idx+$a{'size'};
-    $sth = $dbh->prepare("SELECT * FROM `$a{'db'}`.`$a{'table'}` ".
-                         "WHERE (`$idx_col` >= ? AND `$idx_col` <= ?) ".
-                         "AND ($a{'filter_clause'})");
+    $sth = $dbh->prepare("SELECT ". join(',', @{$a{'columns'}}) .
+                         " FROM `$a{'db'}`.`$a{'table'}`".
+                         "  WHERE (`$idx_col` >= ? AND `$idx_col` <= ?) ".
+                         "   AND ($a{'filter_clause'})");
 
     do {
       $sth->execute($min_idx, $max_idx);
