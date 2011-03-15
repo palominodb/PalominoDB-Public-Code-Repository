@@ -291,7 +291,7 @@ sub save_to_central_server {
   my ( $dsn, $dbh, $level, $parent ) = @_;
   my $central_table = "`$csum_dsn->{D}`.`$csum_dsn->{t}`";
   my $host = $dbh->quote($dsn->{h});
-  my $del_sql = qq#DELETE FROM $central_table WHERE host=$host AND ts < NOW() - INTERVAL 1 WEEK#;
+  my $del_sql = qq#DELETE FROM $central_table WHERE host=$host AND ts < NOW() - INTERVAL 12 HOUR#;
   $pl->d('SQL:', $del_sql);
   RETRY:
   eval {
