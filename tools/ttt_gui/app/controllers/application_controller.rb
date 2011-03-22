@@ -26,8 +26,8 @@ class ApplicationController < ActionController::Base
     elsif session[:since_string]
       @since_string=session[:since_string]
     else
-      session[:since_string] = "24h"
-      @since_string="24h"
+      session[:since_string] = "72h"
+      @since_string="72h"
     end
   end
 end
