@@ -49,7 +49,7 @@ sub get_test_data ($;$) {
 sub slurp ($) {
   my $file = shift;
   my $content;
-  open(my $fh, '<', $file);
+  open(my $fh, '<', $file) or die("slurp: $file: $!");
   { local $/; $content = <$fh>; }
   close($fh);
   $content;
