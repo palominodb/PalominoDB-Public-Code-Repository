@@ -122,6 +122,7 @@ sub main {
   }
 
   my $dsn = YAMLDSN->new($dsnuri);
+  ## This DSNParser is not the PalominoDB one, but the Maatkit one.
   $dp       = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
   $csum_dsn = $dp->parse($central_dsn);
   $csum_dbh = $dp->get_dbh($dp->get_cxn_params($csum_dsn));

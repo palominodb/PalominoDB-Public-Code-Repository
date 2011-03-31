@@ -3,14 +3,21 @@ use strict;
 use warnings;
 
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# TablePartitions package GIT_VERSION
+# DSN package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End DSN package
+# ###########################################################################
+
+# ###########################################################################
+# TablePartitions package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End TablePartitions package
@@ -20,10 +27,9 @@ package main;
 use strict;
 use warnings;
 use English qw(-no_match_vars);
-
 use ProcessLog;
 use TablePartitions;
-
+use DSN;
 use DBI;
 use Getopt::Long;
 use Pod::Usage;
@@ -67,10 +73,11 @@ unless($range =~ /^(?:days|weeks|months)$/) {
   pod2usage(-message => "Range must be one of: days, weeks, or months.", -verboes => 1);
 }
 
-my $dbh =  DBI->connect("DBI:mysql:$db_schema;host=$db_host", $db_user, $db_pass, { RaiseError => 1, PrintError => 0, AutoCommit => 0});
+my $dsn = DSNParser->default()->parse("h=$db_host,u=$db_user,p=$db_pass,D=$db_schema,t=$db_table");
+my $dbh =  $dsn->get_dbh(1);
 
 my $pl = ProcessLog->null;
-my $parts = TablePartitions->new($pl, $dbh, $db_schema, $db_table);
+my $parts = TablePartitions->new($pl, $dsn);
 my $last_ptime = 0;
 my $req_date = 0;
 my $last_p = $parts->last_partition;
