@@ -175,10 +175,16 @@ sub main {
   unless ($only_report) {
     foreach my $cm (@checksum_masters) {
       $pl->i("CHECKSUMMING CLUSTER PRIMARY:",$cm);
+      my $c_size = undef;
       my @ignore_databases = (@{$checksum_master_opts{$cm}{ignore_databases} || []}, @global_ignore_databases);
       my @ignore_tables    = (@{$checksum_master_opts{$cm}{ignore_tables} || []}, @global_ignore_tables);
       my %do_tables        = %{$checksum_master_opts{$cm}{tables} || {}};
-      my $c_size           = $checksum_master_opts{$cm}{chunk_size} || $default_chunk_size;
+      if(exists $checksum_master_opts{$cm}{chunk_size}) {
+        $c_size = $checksum_master_opts{$cm}{chunk_size};
+      }
+      else {
+        $c_size = $default_chunk_size;
+      }
       my $since            = $checksum_master_opts{$cm}{since};
       my $ignore_indexes   = 0;
 
