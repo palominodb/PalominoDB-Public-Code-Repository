@@ -83,8 +83,6 @@ my $csum_dbh = undef;
 my $default_chunk_size = 50_000;
 my $cluster = undef;
 
-my $cli_chunk_size = 0;
-my $cli_since = '';
 my $dp;
 
 sub main {
@@ -102,8 +100,6 @@ sub main {
     'pretend' => \$pretend,
     'mk-table-checksum-path=s' => \$mk_table_checksum_path,
     'cluster=s' => \$cluster,
-    'chunk-size=s' => \$cli_chunk_size,
-    'since=s' => \$cli_since
   ) or die('Try --help');
 
   unless(defined($central_dsn) and defined($dsnuri) and defined($user) and defined($password) and defined($repl_table)) {
@@ -158,25 +154,40 @@ sub main {
       $pl->i("CHECKSUMMING CLUSTER PRIMARY:",$cm);
       my @ignore_databases = (@{$checksum_master_opts{$cm}{ignore_databases} || []}, @global_ignore_databases);
       my @ignore_tables    = (@{$checksum_master_opts{$cm}{ignore_tables} || []}, @global_ignore_tables);
-      my @do_tables        = @{$checksum_master_opts{$cm}{tables} || []};
-      my $c_size           = $cli_chunk_size || $checksum_master_opts{$cm}{chunk_size} || $default_chunk_size;
-      my $since            = $cli_since || $checksum_master_opts{$cm}{since};
+      my %do_tables        = %{$checksum_master_opts{$cm}{tables} || {}};
+      my $c_size           = $checksum_master_opts{$cm}{chunk_size} || $default_chunk_size;
+      my $since            = $checksum_master_opts{$cm}{since};
+      my $ignore_indexes   = 0;
 
       # Run through individual tables if 'tables:'
       # key exists
-      if(scalar @do_tables) {
-        my %w_vals = ();
-        ## Group tables by their where clause so that we can checksum
-        ## several tables at one time, if they have identical conditions.
-        foreach my $t (@do_tables) {
-          foreach my $k (keys %$t) {
-            $w_vals{$t->{$k}} ||= [];
-            push @{$w_vals{$t->{$k}}}, $k;
+      if(scalar %do_tables) {
+        foreach my $t (keys %do_tables) {
+          ## Per-table config values. May be just a where clause (plain string),
+          ## or could be a hash-ref, in which case it contains option overrides.
+          my $tv = $do_tables{$t};
+          my $where = undef;
+
+          if(ref($tv) eq 'HASH') {
+            $where = $$tv{'where'};
+            if(exists $$tv{'chunk_size'}) {
+              $c_size = $$tv{'chunk_size'};
+            }
+            if(exists $$tv{'since'}) {
+              $since = $$tv{'since'};
+            }
+            if(exists $$tv{'no_use_index'}) {
+              $ignore_indexes = $$tv{'no_use_index'};
+            }
           }
-        }
-        foreach my $w (keys %w_vals) {
-          ## Tables with where clause $w
-          my @tbls = @{$w_vals{$w}};
+          elsif(!ref($do_tables{$t})) {
+            $where = $tv;
+          }
+          else {
+            $pl->ed($cm. ' checksum_options.tables contained an invalid entry '.
+                    'for '. $t, 'Not a string or key value list.');
+          }
+
           my @mk_args = (
             $pretend ? ('--explain') : (),
             !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
@@ -187,31 +198,33 @@ sub main {
             '--password', $password,
             scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
             scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
-            scalar @tbls ? ('--tables', join(',',@tbls)) : (),
+            '--tables', $t,
             $since ? ('--since', $since) : (),
-            '--chunk-size', $c_size,
-            '--where', $w,
+            $c_size ? ('--chunk-size', $c_size) : (),
+            $ignore_indexes ? ('--no-use-index') : (),
+            $where ? ('--where', $where) : (),
             $cm
           );
           run_mk_checksum($cm, @mk_args);
         }
       }
       else {
-          my @mk_args = (
-            $pretend ? ('--explain') : (),
-            !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
-            '--create-replicate-table',
-            '--empty-replicate-table',
-            '--replicate', $repl_table,
-            '--user', $user,
-            '--password', $password,
-            scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
-            scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
-            $since ? ('--since', $since) : (),
-            '--chunk-size', $c_size,
-            $cm
-          );
-          run_mk_checksum(@mk_args);
+        my @mk_args = (
+          $pretend ? ('--explain') : (),
+          !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
+          '--create-replicate-table',
+          '--empty-replicate-table',
+          '--replicate', $repl_table,
+          '--user', $user,
+          '--password', $password,
+          scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
+          scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
+          $since ? ('--since', $since) : (),
+          $c_size ? ('--chunk-size', $c_size) : (),
+          $ignore_indexes ? ('--no-use-index') : (),
+          $cm
+        );
+        run_mk_checksum(@mk_args);
       }
     }
   }
@@ -483,6 +496,7 @@ This tool recognizes the following keys in a YAML DSN:
 These all go on primary hosts, not clusters.
 
 =over 4
+
 =item checksum
 
 type: boolean (y/n)
