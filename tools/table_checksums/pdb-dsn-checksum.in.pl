@@ -498,6 +498,14 @@ to log to syslog.
 
 Default: ./pdb-dsn-checksum.log
 
+=item --lock <file>
+
+Use file as a lockfile to prevent multiple concurrent runs.
+
+=item --lock-timeout <seconds>
+
+Only wait up to seconds for the lock to become available.
+
 =item --allow-slave-lag,-a
 
 Normally pdb-dsn-checksum will spin on each slave until it's caught
