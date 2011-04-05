@@ -14,12 +14,21 @@ sub get {
 		die("Lockfile: Missing mandatory argument: file\n");
 	}
 	eval {
+		my $flocked = 0;
 		local $SIG{'ALRM'} = sub { die("timeout.\n"); };
 		if( $timeout ) {
 			alarm($timeout);
 		}
-		sysopen($lock_fh, $file, O_RDWR | O_CREAT) or die("failed to open $file: $!\n");
-		flock($lock_fh, LOCK_EX);
+		# Attempt indefinitely (up to alarm time) to get a lock
+		# that also has an existing file.
+		while(!$flocked) {
+			sysopen($lock_fh, $file, O_RDWR | O_CREAT) or die("failed to open $file: $!\n");
+			flock($lock_fh, LOCK_EX) or die("failed to flock $file: $!\n");
+			if(! -f $file) {
+				close($file);
+			}
+			$flocked = 1;
+		}
 		alarm(0) if( $timeout );
 	};
 	if($@ and $@ =~ /timeout/) {
@@ -29,6 +38,10 @@ sub get {
 	elsif($@ and $@ =~ /failed to open/) {
 		alarm(0) if( $timeout );
 		die("Lockfile: Unable to open lock $file");
+	}
+	elsif($@ and $@ =~ /failed to flock/) {
+		alarm(0) if( $timeout );
+		die("Lockfile: Unable to flock $file");
 	}
 	elsif($@) {
 		chomp($_ = "$@");
