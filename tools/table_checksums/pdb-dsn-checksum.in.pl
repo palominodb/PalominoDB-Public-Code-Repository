@@ -45,6 +45,13 @@ use warnings FATAL => 'all';
 # End YAMLDSN package
 # ###########################################################################
 
+# ###########################################################################
+# Lockfile package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Lockfile package
+# ###########################################################################
+
 package pdb_dsn_checksum;
 
 use strict;
@@ -82,11 +89,14 @@ my $csum_dbh = undef;
 
 my $default_chunk_size = 50_000;
 my $cluster = undef;
+my $lock = undef;
+my $lock_timeout = undef;
 
 my $dp;
 
 sub main {
   my (@ARGV) = @_;
+  my $program_lock;
   GetOptions(
     'help|?'  => sub { pod2usage(-verbose => 99); },
     'dsn|d=s' => \$dsnuri,
@@ -100,6 +110,8 @@ sub main {
     'pretend' => \$pretend,
     'mk-table-checksum-path=s' => \$mk_table_checksum_path,
     'cluster=s' => \$cluster,
+    'lock' => \$lock,
+    'lock-timeout' => \$lock_timeout
   ) or die('Try --help');
 
   unless(defined($central_dsn) and defined($dsnuri) and defined($user) and defined($password) and defined($repl_table)) {
@@ -109,6 +121,17 @@ sub main {
 
   $pl = ProcessLog->new($0, $loguri, undef);
   $pl->start;
+
+  if($lock) {
+    eval {
+      $program_lock = Lockfile->get($lock, $lock_timeout);
+    };
+    if($@) {
+      $pl->e("$@");
+      $pl->end();
+      return 1;
+    }
+  }
 
   $ENV{MKDEBUG} = exists $ENV{MKDEBUG} ? $ENV{MKDEBUG} : $pretend;
   eval "require '$mk_table_checksum_path'";
