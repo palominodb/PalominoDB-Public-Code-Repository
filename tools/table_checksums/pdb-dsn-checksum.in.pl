@@ -110,8 +110,8 @@ sub main {
     'pretend' => \$pretend,
     'mk-table-checksum-path=s' => \$mk_table_checksum_path,
     'cluster=s' => \$cluster,
-    'lock' => \$lock,
-    'lock-timeout' => \$lock_timeout
+    'lock=s' => \$lock,
+    'lock-timeout=i' => \$lock_timeout
   ) or die('Try --help');
 
   unless(defined($central_dsn) and defined($dsnuri) and defined($user) and defined($password) and defined($repl_table)) {
@@ -355,8 +355,9 @@ sub save_to_central_server {
         master_crc char(40)         NULL,
         master_cnt int              NULL,
         ts         timestamp    NOT NULL,
-        PRIMARY KEY (host, db, tbl, chunk, ts)
-      ) ENGINE=InnoDB
+        PRIMARY KEY (host, db, tbl, chunk, ts),
+        KEY `host_and_ts` (`host`,`ts`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8
     EOF
     $pl->d('SQL:', $creat_sql);
     $csum_dbh->do($creat_sql);
