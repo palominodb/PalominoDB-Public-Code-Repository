@@ -165,7 +165,7 @@ sub read_config {
       chomp($k); chomp($v);
 
       # numbered option keys create a list in the result.
-      if($k =~ /^(.*?)\s*\[\s*\d+\s*\]/) {
+      if($k =~ /^(.*?)\s*\[\s*(\d+)?\s*\]/) {
         $k = $1;
         push @{$cfg{$cur_sec}{$k}}, $v;
         next;
