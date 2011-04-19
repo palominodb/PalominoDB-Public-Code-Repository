@@ -520,11 +520,12 @@ Nicely indented for easy viewing.
 =cut
 
 sub stack {
-  my ($self, $level) = @_;
+  my ($self, $level, $top) = @_;
   $level = $self->{stack_depth} ||= 10 unless($level);
+  $top   = (defined $top ? $top : 2);
   my $out = "";
   my $i=0;
-  my ($package, $file, $line, $sub) = caller($i+2); # +2 hides ProcessLog from the stack trace.
+  my ($package, $file, $line, $sub) = caller($i+$top); # +2 hides ProcessLog from the stack trace.
   $i++;
   if($package) {
     $out .= "Stack trace:\n";
@@ -534,7 +535,7 @@ sub stack {
   }
   while($package and $i < $level) {
     $out .= " "x$i . "$package  $file:$line  $sub\n";
-    ($package, $file, $line, $sub) = caller($i+2);
+    ($package, $file, $line, $sub) = caller($i+$top);
     $i++;
   }
   chomp($out);
