@@ -1,4 +1,4 @@
-#!/usr/bin/env perl -w
+#!/usr/bin/perl -w
 ### work around for ePn until I can refactor completely.
 # nagios: -epn
 ###
@@ -31,7 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 $| = 1;
-our $VERSION = "1.1.0";
+our $VERSION = "1.1.2";
 
 use strict;
 use Nagios::Plugin;
@@ -132,13 +132,16 @@ sub mode_varcomp
   my $do_math = 0;
   foreach my $word (split(/\b/, $np->opts->expression)) 
   {
+    pdebug("parsing $word\n");
     if(exists($meta_data->{varstatus}->{$word})) 
     {
+      pdebug("found $word in metadata, value is $meta_data->{varstatus}->{$word} \n");
       $parsed_expr .= $meta_data->{varstatus}->{$word};
     }
-    elsif($word =~ m%(\*|\+|\-|/|)%)
+    elsif($word =~ m%(\*|\+|\-|/|\.|\(|\)|\%\ |\d)%)
     {
       $do_math = 1;
+      pdebug("doing math because $1 is present in $word\n");
       $parsed_expr .= $word;
     }
     else
@@ -155,7 +158,7 @@ sub mode_varcomp
   }
   else
   {
-    $expr_res = eval($parsed_expr);
+    $expr_res = "'$parsed_expr'";
   }
   
   my $comp_expr = $expr_res . $np->opts->comparison;
