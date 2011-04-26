@@ -66,7 +66,6 @@ if($@) {
   $mail_available = 0;
 }
 use Sys::Hostname;
-use Sys::Syslog;
 use Digest::MD5 qw(md5_hex);
 use Time::HiRes qw(time);
 use File::Spec;
@@ -107,6 +106,13 @@ sub new {
   bless $self,$class;
   $self->logpath($logpath);
   return $self;
+}
+
+sub DESTROY {
+  my ($self) = @_;
+  if(ref($$self{'LOG'}) and ref($$self{'LOG'}) eq 'GLOB') {
+    $$self{'LOG'}->flush();
+  }
 }
 
 =pod
@@ -230,7 +236,8 @@ sub logpath {
   my $script_name = $$self{script_name};
   $self->{log_path} = $logpath;
   if($logpath =~ /^syslog:(\w+)/) {
-    openlog($script_name, "", $1);
+    require Sys::Syslog;
+    Sys::Syslog::openlog($script_name, "", $1);
     $self->{logsub} = sub {
       my $self = shift;
       $_[3] = '';
@@ -238,7 +245,7 @@ sub logpath {
       $lvl = 'LOG_INFO' if($_[0] eq "msg");
       $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
       $lvl = 'LOG_ERR'  if($_[0] eq "err");
-      syslog($lvl, _p(@_));
+      Sys::Syslog::syslog($lvl, _p(@_));
       print _p(@_) unless $self->{quiet};
     };
   }
@@ -252,6 +259,7 @@ sub logpath {
   }
   else {
     open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    binmode($self->{LOG});
     $self->{logsub} = sub {
       my $self = shift;
       my $fh  = $self->{LOG};
