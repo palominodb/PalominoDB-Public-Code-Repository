@@ -64,8 +64,6 @@ sub DESTROY {
 	unlink($$self{'file'}) or die("Lockfile: Unable to remove lock $$self{'file'}: $!");
 }
 
-1;
-
 =pod
 
 =head1 NAME
@@ -100,3 +98,5 @@ held. The file is unlocked and removed as soon as the object goes out of scope.
 If C<$timeout> is not specified, then C<get> will wait indefinitely for a lock.
 
 =cut
+
+1;
