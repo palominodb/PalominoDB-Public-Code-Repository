@@ -103,6 +103,7 @@ sub main {
   my (
     $r,
     $dsn,
+    $remote_dsn,
     $parts,
     $timespec,
     $requested_dt,
@@ -124,6 +125,7 @@ sub main {
     "drop",
     "archive",
     "archive-path=s",
+    "archive-database=s",
     "i-am-sure",
   );
 
@@ -162,6 +164,15 @@ sub main {
 
   if($o{'email-activity'} and !$o{'email-to'}) {
     pod2usage("--email-activity can only be used with --email-to.");
+  }
+
+  if($o{'archive-database'}) {
+    eval {
+      $remote_dsn = DSNParser->default()->parse($o{'archive-database'});
+    };
+    if($@) {
+        pod2usage($@);
+    }
   }
 
   $PL->start();
@@ -204,7 +215,7 @@ sub main {
       "." . $dsn->get('D') . "." . $dsn->get('t') . ":\n";
 
     eval {
-      @partitions = drop_partitions($dsn, $parts, $requested_dt, %o);
+      @partitions = drop_partitions($dsn, $remote_dsn, $parts, $requested_dt, %o);
       $r = 0;
     };
     if($@) {
@@ -333,7 +344,7 @@ sub add_partitions {
 }
 
 sub drop_partitions {
-  my ($dsn, $parts, $requested_dt, %o) = @_;
+  my ($dsn, $remote_dsn, $parts, $requested_dt, %o) = @_;
   my @drops;
   foreach my $part (@{$parts->partitions()}) {
     $part->{date} = to_date($parts->desc_from_datelike($part->{name}));
@@ -349,7 +360,7 @@ sub drop_partitions {
 
   foreach my $part (@drops) {
     if($o{'archive'}) {
-      archive_partition($dsn, $parts, $part, %o);
+      archive_partition($dsn, $remote_dsn, $parts, $part, %o);
     }
     if(!$parts->drop_partition($part->{name}, $o{'dryrun'})) {
       die("$part->{name} $part->{date}");
@@ -359,7 +370,7 @@ sub drop_partitions {
 }
 
 sub archive_partition {
-  my ($dsn, $parts, $part, %o) = @_;
+  my ($dsn, $remote_dsn, $parts, $part, %o) = @_;
   my $path = $o{'archive-path'} || "";
   if($path) {
     $path =~ s/[^\/]$/\//;
@@ -373,6 +384,15 @@ sub archive_partition {
   my $dfile = $dsn->get('F');
   my $r;
 
+  my ($remote_host, $remote_user, $remote_pw, $remote_schema, $remote_table);
+  if($remote_dsn) {
+    $remote_host = $remote_dsn->get('h');
+    $remote_user = $remote_dsn->get('u');
+    $remote_pw = $remote_dsn->get('p');
+    $remote_schema = $remote_dsn->get('D');
+    $remote_table = $remote_dsn->get('t');
+  }
+
   my ($desc, $fn, $cfn) = $parts->expr_datelike();
   if($cfn) {
     $desc = "$cfn(". $part->{description} . ")";
@@ -380,17 +400,51 @@ sub archive_partition {
   else {
     $desc = $part->{description};
   }
-  my @dump_EXEC = ("mysqldump",
-                   ( $dfile ? ("--defaults-file=$dfile") : () ),
-                   "--no-create-info",
-                   "--result-file=". "${path}$host.$schema.$table.". $part->{name} . ".sql",
-                   ($host ? ("-h$host") : () ),
-                   ($user ? ("-u$user") : () ),
-                   ($pw ? ("-p$pw") : () ),
-                   "-w ". $parts->expression_column() . "<$desc",
-                   $schema,
-                   $table);
-  $PL->i("Archiving:", $part->{name}, "to", "${path}$host.$schema.$table.". $part->{name} . ".sql");
+  my @dump_EXEC;
+  if($remote_dsn) {
+    # Archive to another database
+    @dump_EXEC = ("mysqldump",
+                  ( $dfile ? ("--defaults-file=$dfile") : () ),
+                  "--no-create-info",
+                  "--result-file=". "${path}$host.$schema.$table.". $part->{name} . ".sql",
+                  ($host ? ("-h$host") : () ),
+                  ($user ? ("-u$user") : () ),
+                  ($pw ? ("-p$pw") : () ),
+                  "-w ". $parts->expression_column() . "<$desc",
+                  $schema,
+                  $table,
+                  # Pipe to target database
+                  # FIXME: Please review that this command is actually the one we intend to use to
+                  # archive the data.
+                  "|",
+                  "mysql",
+                  ( $dfile ? ("--defaults-file=$dfile") : () ),
+                  "--no-create-info",
+                  # FIXME: I don't know what the default behaviour should be when these have not been declared.
+                  ($remote_host ? ("-h$remote_host") : () ),
+                  ($remote_user ? ("-u$remote_user") : () ),
+                  ($remote_pw ? ("-p$remote_pw") : () ),
+                  "-w ". $parts->expression_column() . "<$desc",
+                  $remote_schema,
+                  $remote_table,
+        );
+    $PL->i("Archiving:", $part->{name}, "to", "${path}$host.$schema.$table.". $part->{name} . ".sql");
+  }
+  else {
+    # Archive to file
+    my $output_file = "${path}$host.$schema.$table.". $part->{name} . ".sql";
+    @dump_EXEC = ("mysqldump",
+                  ( $dfile ? ("--defaults-file=$dfile") : () ),
+                  "--no-create-info",
+                  "--result-file=". $output_file,
+                  ($host ? ("-h$host") : () ),
+                  ($user ? ("-u$user") : () ),
+                  ($pw ? ("-p$pw") : () ),
+                  "-w ". $parts->expression_column() . "<$desc",
+                  $schema,
+                  $table);
+    $PL->i("Archiving:", $part->{name}, "to", $output_file);
+  }
   $PL->d("Executing:", @dump_EXEC);
   unless($o{'dryrun'}) {
     $r = $PL->x(sub { system(@_) }, @dump_EXEC);
@@ -452,6 +506,10 @@ pdb-parted - MySQL partition management script
   pdb-parted --drop --archive --archive-path /backups -2q \
              h=locahost,D=test,t=part_table
 
+  # Same as above, but archived to a separate database.
+  pdb-parted --drop --archive --archive-database h=remotehost,D=test_archives,t=part_table -2q \
+             h=locahost,D=test,t=part_table
+
   # Logging to syslog
   pdb-parted --logfile syslog:LOCAL0 --add --interval d 1y \
              h=localhost,D=test,t=part_table
@@ -478,6 +536,8 @@ It creates partitions in regular intervals up to some maximum future date.
   --archive             Archive partitions before dropping them.
   --archive-path        Directory to place mysqldumps.
                         Default: current directory.
+  --archive-database    Database to archive partitions to.
+                        Default: none
 
   --limit,         -m   Limit the number of actions to be performed.
                         Default: 0 (unlimited)
@@ -635,6 +695,10 @@ There is not currently a way to archive without dropping a partition.
 =item --archive-path
 
 What directory to place the SQL dumps of partition data in.
+
+=item --archive-database
+
+What database to place the archived partitions in.
 
 =back
 
