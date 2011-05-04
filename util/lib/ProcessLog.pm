@@ -234,6 +234,7 @@ Sets the logpath for this ProcessLog.
 sub logpath {
   my ($self, $logpath) = @_;
   my $script_name = $$self{script_name};
+  return $self->{log_path} if(not $logpath);
   $self->{log_path} = $logpath;
   if($logpath =~ /^syslog:(\w+)/) {
     require Sys::Syslog;
