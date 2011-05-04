@@ -862,17 +862,36 @@ sub read_null {
 
 sub decode {
   my ($fh) = @_;
-  if(not exists $c{'xtrabackup-client:stream-encoding'}
-      or $c{'xtrabackup-client:stream-encoding'} eq 'uuencode'
-      or $c{'xtrabackup-client:stream-encoding'} eq 'default') {
-    return read_uuencoded($fh);
+  my $buf = '';
+  for(my $i=0; $i<$c{'xtrabackup-client:network-failure-retry'}; $i++) {
+    eval {
+      local $SIG{'ALRM'} = sub { die("ALARM\n"); };
+      alarm($c{'xtrabackup-client:network-timeout'});
+      if(not exists $c{'xtrabackup-client:stream-encoding'}
+          or $c{'xtrabackup-client:stream-encoding'} eq 'uuencode'
+          or $c{'xtrabackup-client:stream-encoding'} eq 'default') {
+        $buf = read_uuencoded($fh);
+      }
+      elsif($c{'xtrabackup-client:stream-encoding'} eq 'base64') {
+        $buf = read_base64($fh);
+      }
+      elsif($c{'xtrabackup-client:stream-encoding'} eq 'null') {
+        $buf = read_null($fh);
+      }
+      alarm(0);
+    };
+    if($@ and $@ =~ /ALARM/) {
+      alarm(0);
+      if($c{'xtrabackup-client:on-network-failure'} eq 'retry') {
+        next;
+      }
+      elsif($c{'xtrabackup-client:on-network-failure'} eq 'abort') {
+        die("Network timeout after $c{'xtrabackup-client:network-timeout'} seconds");
+      }
+    }
+    return $buf;
   }
-  elsif($c{'xtrabackup-client:stream-encoding'} eq 'base64') {
-    return read_base64($fh);
-  }
-  elsif($c{'xtrabackup-client:stream-encoding'} eq 'null') {
-    return read_null($fh);
-  }
+  die("Network timeout after $c{'xtrabackup-client:network-failure-retry'} tries");
 }
 
 # This will read the data from the socket and pipe the output to tar
@@ -921,10 +940,6 @@ sub readTarStream {
   }
   binmode($tar_fh);
 
-  # Initially read the length of data to read
-  # This will be packed in network order
-  # Then read that much data which is uuencoded
-  # Then write the unpacked data to tar
   while($_ = decode(\*SOCK)){
     ProcessLog::_PdbDEBUG >= ProcessLog::Level3
     && $::PL->d('Writing to tar:', length($_), 'bytes');
@@ -1086,6 +1101,33 @@ sub main {
   }
   if( not exists $c{'xtrabackup-client:run-apply-log'} ) {
     $c{'xtrabackup-client:run-apply-log'} = 0;
+  }
+
+  ## Set the default network failure handling.
+  if( not exists $c{'xtrabackup-client:on-network-failure'} ) {
+    $c{'xtrabackup-client:on-network-failure'} = 'abort';
+  }
+  if( not exists $c{'xtrabackup-client:network-failure-retry'} ) {
+    $c{'xtrabackup-client:network-failure-retry'} = 3;
+  }
+  if( not exists $c{'xtrabackup-client:network-timeout'} ) {
+    $c{'xtrabackup-client:network-timeout'} = 30;
+  }
+
+  if( $c{'xtrabackup-client:on-network-failure'} !~ /^(abort|retry)$/ ) {
+    $::PL->e('Unknown network-failure handling mode:',
+             $1, ', defaulting to abort.');
+    $c{'xtrabackup-client:on-network-failure'} = 'abort';
+  }
+  if( $c{'xtrabackup-client:network-failure-retry'} !~ /^(\d+)$/ ) {
+    $::PL->e('Unknown network-failure-retry value:',
+             $1, 'defaulting to 3.');
+    $c{'xtrabackup-client:network-failure-retry'} = 3;
+  }
+  if( $c{'xtrabackup-client:network-timeout'} !~ /^(\d+)$/ ) {
+    $::PL->e('Unknown network-timeout value:',
+             $1, 'defaulting to 30.');
+    $c{'xtrabackup-client:network-timeout'} = 30;
   }
 
   if( not exists $c{'xtrabackup-client:innobackupex-path'} ) {
