@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 use strict;
 use warnings FATAL => 'all';
-use Test::More tests => 22;
+use Test::More tests => 25;
 BEGIN {
   $ENV{Pdb_DEBUG} = 1;
 }
@@ -21,6 +21,7 @@ require_ok('src/pdb-parted.in.pl');
 BEGIN {
   my $tdb = TestDB->new();
   $tdb->clean_db();
+  $tdb->use('remote_pdb_parted');
   $tdb->use('pdb_parted');
   $tdb->dbh()->do(qq|
 CREATE TABLE test_table_3d (
@@ -68,6 +69,9 @@ my $end  = DateTime->new( year => 2011, month => 1, day => 20 );
 
 my $dsn  = DSNParser->default()->parse($tdb->dsn() . ",D=pdb_parted,t=test_table_3d");
 my $parts = TablePartitions->new($::PL, $dsn);
+
+my $remote_dsn;
+my $remote_parts;
 
 ok(@parts = pdb_parted::add_partitions($dsn, $parts, $end, %o), '(days) add_partitions() claims success');
 
@@ -120,13 +124,33 @@ $dsn  = DSNParser->default()->parse($tdb->dsn() . ",D=pdb_parted,t=test_table_3d
 $parts = TablePartitions->new($::PL, $dsn);
 $end  = DateTime->new( year => 2011, month => 1, day => 18 );
 
-ok(@parts = pdb_parted::drop_partitions($dsn, $parts, $end, %o), '(days) drop_partitions() claims success');
+ok(@parts = pdb_parted::drop_partitions($dsn, undef, $parts, $end, %o), '(days) drop_partitions() claims success');
 $parts = TablePartitions->new($::PL, $dsn);
 
 is($parts->first_partition()->{name}, 'p3', '(days) found expected first partition');
 is_deeply(
   [ map { $_->{date} } @parts ],
   [ map { DateTime->new(year => 2011, month => 1, day => $_) } (15,16,17) ],
+  '(days) found expected dates');
+
+
+# Test remote archiving
+@parts = ();
+$o{'interval'} = 'd';
+$o{'limit'} = 0;
+$o{'archive'} = 1;
+$dsn  = DSNParser->default()->parse($tdb->dsn() . ",D=pdb_parted,t=test_table_3d");
+$remote_dsn  = DSNParser->default()->parse($tdb->dsn() . ",D=remote_pdb_parted,t=test_table_3d");
+$parts = TablePartitions->new($::PL, $dsn);
+$end  = DateTime->new( year => 2011, month => 1, day => 23 );
+
+ok(@parts = pdb_parted::drop_partitions($dsn, $remote_dsn, $parts, $end, %o), '(days) drop_partitions() claims success');
+$remote_parts = TablePartitions->new($::PL, $remote_dsn);
+
+is($remote_parts->first_partition()->{name}, 'p3', '(days) found expected first partition');
+is_deeply(
+  [ map { $_->{date} } @parts ],
+  [ map { DateTime->new(year => 2011, month => 1, day => $_) } (18,19,20,21,22) ],
   '(days) found expected dates');
 
 
