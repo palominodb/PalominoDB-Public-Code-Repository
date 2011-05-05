@@ -169,6 +169,8 @@ sub main {
   if($o{'archive-database'}) {
     eval {
       $remote_dsn = DSNParser->default()->parse($o{'archive-database'});
+      $remote_dsn->mand_key('D');
+      $remote_dsn->mand_key('t');
     };
     if($@) {
         pod2usage($@);
@@ -393,6 +395,9 @@ sub archive_partition {
     $remote_table = $remote_dsn->get('t');
   }
 
+  my $create_file = "${path}$host.$schema.$table.". $part->{name} . ".CREATE.sql";
+  my $create_clean_file = "${path}$host.$schema.$table.". $part->{name} . ".CREATE.CLEAN.sql";
+
   my ($desc, $fn, $cfn) = $parts->expr_datelike();
   if($cfn) {
     $desc = "$cfn(". $part->{description} . ")";
@@ -401,50 +406,21 @@ sub archive_partition {
     $desc = $part->{description};
   }
   my @dump_EXEC;
-  if($remote_dsn) {
-    # Archive to another database
-    @dump_EXEC = ("mysqldump",
-                  ( $dfile ? ("--defaults-file=$dfile") : () ),
-                  "--no-create-info",
-                  "--result-file=". "${path}$host.$schema.$table.". $part->{name} . ".sql",
-                  ($host ? ("-h$host") : () ),
-                  ($user ? ("-u$user") : () ),
-                  ($pw ? ("-p$pw") : () ),
-                  "-w ". $parts->expression_column() . "<$desc",
-                  $schema,
-                  $table,
-                  # Pipe to target database
-                  # FIXME: Please review that this command is actually the one we intend to use to
-                  # archive the data.
-                  "|",
-                  "mysql",
-                  ( $dfile ? ("--defaults-file=$dfile") : () ),
-                  "--no-create-info",
-                  # FIXME: I don't know what the default behaviour should be when these have not been declared.
-                  ($remote_host ? ("-h$remote_host") : () ),
-                  ($remote_user ? ("-u$remote_user") : () ),
-                  ($remote_pw ? ("-p$remote_pw") : () ),
-                  "-w ". $parts->expression_column() . "<$desc",
-                  $remote_schema,
-                  $remote_table,
-        );
-    $PL->i("Archiving:", $part->{name}, "to", "${path}$host.$schema.$table.". $part->{name} . ".sql");
-  }
-  else {
-    # Archive to file
-    my $output_file = "${path}$host.$schema.$table.". $part->{name} . ".sql";
-    @dump_EXEC = ("mysqldump",
-                  ( $dfile ? ("--defaults-file=$dfile") : () ),
-                  "--no-create-info",
-                  "--result-file=". $output_file,
-                  ($host ? ("-h$host") : () ),
-                  ($user ? ("-u$user") : () ),
-                  ($pw ? ("-p$pw") : () ),
-                  "-w ". $parts->expression_column() . "<$desc",
-                  $schema,
-                  $table);
-    $PL->i("Archiving:", $part->{name}, "to", $output_file);
-  }
+
+  # Archive to file
+  my $output_file = "${path}$host.$schema.$table.". $part->{name} . ".sql";
+  @dump_EXEC = ("mysqldump",
+                ( $dfile ? ("--defaults-file=$dfile") : () ),
+                "--no-create-info",
+                "--result-file=". $output_file,
+                ($host ? ("-h$host") : () ),
+                ($user ? ("-u$user") : () ),
+                ($pw ? ("-p$pw") : () ),
+                "-w ". $parts->expression_column() . "<$desc",
+                $schema,
+                $table);
+  $PL->i("Archiving:", $part->{name}, "to", $output_file);
+
   $PL->d("Executing:", @dump_EXEC);
   unless($o{'dryrun'}) {
     $r = $PL->x(sub { system(@_) }, @dump_EXEC);
@@ -457,6 +433,80 @@ sub archive_partition {
     while (<$_>) { $PL->e($_); }
     $PL->e("got:", ($$r{rcode} >> 8), "from mysqldump.");
     die("archiving $host.$schema.$table.$part->{name}\n");
+  }
+
+  if($remote_dsn) {
+    # Archive to another database
+
+    # Dump the table create statement
+    @dump_EXEC = ("mysqldump",
+                  ( $dfile ? ("--defaults-file=$dfile") : () ),
+                  "--no-data",
+                  "--no-create-db",
+                  "--result-file=". $create_file,
+                  ($host ? ("-h$host") : () ),
+                  ($user ? ("-u$user") : () ),
+                  ($pw ? ("-p$pw") : () ),
+                  "-w ". $parts->expression_column() . "<$desc",
+                  $schema,
+                  $table);
+    $PL->i("Archiving create statement:", $part->{name}, "to", $create_file);
+
+    $PL->d("Executing:", @dump_EXEC);
+    unless($o{'dryrun'}) {
+      $r = $PL->x(sub { system(@_) }, @dump_EXEC);
+    }
+    else {
+      $r = { rcode => 0, error => '', fh => undef };
+    }
+    if(($$r{rcode} >> 8) != 0) {
+      $_ = $$r{fh};
+      while (<$_>) { $PL->e($_); }
+      $PL->e("got:", ($$r{rcode} >> 8), "from mysqldump.");
+      die("archiving $host.$schema.$table.$part->{name}\n");
+    }
+
+    # Clean up the create file. We don't want to drop existing tables or databases. We don't want to fail
+    # when trying to crate a table if it already exists.
+    open(INFILE, "<$create_file") || die("Failed to open $create_file: $!\n");
+    open(OUTFILE, ">$create_clean_file") || die("Failed to open $create_clean_file: $!\n");
+    while(my $line = <INFILE>) {
+      chomp($line);
+      if($line =~ /^DROP/) {
+        $line = '/*'.$line.'*/'."\n";
+      } elsif($line =~ /^CREATE TABLE/) {
+        $line =~ s/CREATE TABLE/CREATE TABLE IF NOT EXISTS/;
+      }
+      print OUTFILE $line."\n";
+    }
+    close(INFILE);
+    close(OUTFILE);
+    $PL->d("Wrote safe table create statement to $create_clean_file");
+
+    # Invoke the commands on the remote database and archive our data.
+    my @archive_EXEC = ("mysql",
+                        ( $dfile ? ("--defaults-file=$dfile") : () ),
+                        ($remote_host ? ("-h$remote_host") : () ),
+                        ($remote_user ? ("-u$remote_user") : () ),
+                        ($remote_pw ? ("-p$remote_pw") : () ),
+                        $remote_schema,
+        );
+
+    my $cmd = "cat $create_clean_file $output_file | ".join(' ', @archive_EXEC);
+    $PL->d("Calling command: $cmd");
+    unless($o{'dryrun'}) {
+        eval {
+            my $result = `$cmd`;
+            chomp($result);
+            if($result) {
+              $PL->e("Result: ".$result);
+              die("Received unexpected response from command");
+            }
+        };
+        if($@) {
+            die($@);
+        }
+    }
   }
 }
 
