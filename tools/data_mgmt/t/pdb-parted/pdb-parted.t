@@ -21,7 +21,19 @@ require_ok('src/pdb-parted.in.pl');
 BEGIN {
   my $tdb = TestDB->new();
   $tdb->clean_db();
+
+  # Create remote server tables.
   $tdb->use('remote_pdb_parted');
+  $tdb->dbh()->do(qq|
+CREATE TABLE test_table_3d (
+  ts DATE NOT NULL PRIMARY KEY
+)
+PARTITION BY RANGE( TO_DAYS(ts) ) (
+  PARTITION p0 VALUES LESS THAN ( TO_DAYS('2011-01-15') )
+);
+|);
+
+  # Create local tables
   $tdb->use('pdb_parted');
   $tdb->dbh()->do(qq|
 CREATE TABLE test_table_3d (
@@ -147,7 +159,7 @@ $end  = DateTime->new( year => 2011, month => 1, day => 23 );
 ok(@parts = pdb_parted::drop_partitions($dsn, $remote_dsn, $parts, $end, %o), '(days) drop_partitions() claims success');
 $remote_parts = TablePartitions->new($::PL, $remote_dsn);
 
-is($remote_parts->first_partition()->{name}, 'p3', '(days) found expected first partition');
+is($remote_parts->first_partition()->{name}, 'p0', '(days) found expected first partition');
 is_deeply(
   [ map { $_->{date} } @parts ],
   [ map { DateTime->new(year => 2011, month => 1, day => $_) } (18,19,20,21,22) ],

@@ -438,23 +438,20 @@ sub archive_partition {
   if($remote_dsn) {
     # Archive to another database
 
-    # Dump the table create statement
-    @dump_EXEC = ("mysqldump",
-                  ( $dfile ? ("--defaults-file=$dfile") : () ),
-                  "--no-data",
-                  "--no-create-db",
-                  "--result-file=". $create_file,
-                  ($host ? ("-h$host") : () ),
-                  ($user ? ("-u$user") : () ),
-                  ($pw ? ("-p$pw") : () ),
-                  "-w ". $parts->expression_column() . "<$desc",
-                  $schema,
-                  $table);
-    $PL->i("Archiving create statement:", $part->{name}, "to", $create_file);
+    # Invoke the commands on the remote database and archive our data.
+    # This assumes that the remote database and table have already been created.
+    $PL->i("Archiving:", $part->{name}, "to $remote_schema on $remote_host");
+    my @archive_EXEC = ("mysql",
+                        ( $dfile ? ("--defaults-file=$dfile") : () ),
+                        ($remote_host ? ("-h$remote_host") : () ),
+                        ($remote_user ? ("-u$remote_user") : () ),
+                        ($remote_pw ? ("-p$remote_pw") : () ),
+                        '--execute=source '.$output_file,
+                        $remote_schema,
+        );
 
-    $PL->d("Executing:", @dump_EXEC);
     unless($o{'dryrun'}) {
-      $r = $PL->x(sub { system(@_) }, @dump_EXEC);
+      $r = $PL->x(sub { system(@_) }, @archive_EXEC);
     }
     else {
       $r = { rcode => 0, error => '', fh => undef };
@@ -464,48 +461,6 @@ sub archive_partition {
       while (<$_>) { $PL->e($_); }
       $PL->e("got:", ($$r{rcode} >> 8), "from mysqldump.");
       die("archiving $host.$schema.$table.$part->{name}\n");
-    }
-
-    # Clean up the create file. We don't want to drop existing tables or databases. We don't want to fail
-    # when trying to crate a table if it already exists.
-    open(INFILE, "<$create_file") || die("Failed to open $create_file: $!\n");
-    open(OUTFILE, ">$create_clean_file") || die("Failed to open $create_clean_file: $!\n");
-    while(my $line = <INFILE>) {
-      chomp($line);
-      if($line =~ /^DROP/) {
-        $line = '/*'.$line.'*/'."\n";
-      } elsif($line =~ /^CREATE TABLE/) {
-        $line =~ s/CREATE TABLE/CREATE TABLE IF NOT EXISTS/;
-      }
-      print OUTFILE $line."\n";
-    }
-    close(INFILE);
-    close(OUTFILE);
-    $PL->d("Wrote safe table create statement to $create_clean_file");
-
-    # Invoke the commands on the remote database and archive our data.
-    my @archive_EXEC = ("mysql",
-                        ( $dfile ? ("--defaults-file=$dfile") : () ),
-                        ($remote_host ? ("-h$remote_host") : () ),
-                        ($remote_user ? ("-u$remote_user") : () ),
-                        ($remote_pw ? ("-p$remote_pw") : () ),
-                        $remote_schema,
-        );
-
-    my $cmd = "cat $create_clean_file $output_file | ".join(' ', @archive_EXEC);
-    $PL->d("Calling command: $cmd");
-    unless($o{'dryrun'}) {
-        eval {
-            my $result = `$cmd`;
-            chomp($result);
-            if($result) {
-              $PL->e("Result: ".$result);
-              die("Received unexpected response from command");
-            }
-        };
-        if($@) {
-            die($@);
-        }
     }
   }
 }
