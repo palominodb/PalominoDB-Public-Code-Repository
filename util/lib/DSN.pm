@@ -90,7 +90,8 @@ sub str {
 }
 
 sub get_dbi_str {
-  my ($self) = @_;
+  my ($self, $extra_opts) = @_;
+  $extra_opts ||= {};
   my %set_implied = ();
   my %dsn_conv = (
     'h' => 'host',
@@ -126,12 +127,16 @@ sub get_dbi_str {
     $dbh_str .= $dsn_conv{$_} .'='. ($self->get($_) || '') .';'
     if(exists($dsn_conv{$_}) and $self->has($_));
   }
+  if(%$extra_opts) {
+    $dbh_str .= join(';',
+      map { "$_=". $$extra_opts{$_} } sort keys(%$extra_opts));
+  }
   return $dbh_str;
 }
 
 sub get_dbh {
-  my ($self, $cached, $extra_opts) = @_;
-  my $dbh_str = $self->get_dbi_str();
+  my ($self, $cached, $extra_opts, $extra_dbi_opts) = @_;
+  my $dbh_str = $self->get_dbi_str($extra_dbi_opts);
   my $options = _merge({ 'AutoCommit' => 0, 'RaiseError' => 1,
         'PrintError' => 0, 'ShowErrorStatement' => 1 }, ($extra_opts || {}));
   my $dbh;

@@ -1,7 +1,7 @@
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
-use Test::More tests => 15;
+use Test::More tests => 17;
 BEGIN {
   use_ok('DSN');
 }
@@ -62,6 +62,20 @@ eval {
 };
 diag($@);
 like($@, qr/Unknown database/, 'exception contains info');
+
+is(
+	$dsn4->get_dbi_str({'mysql_local_infile' => 1}),
+	'DBI:mysql:mysql_ssl=1;mysql_ssl_cipher=AES;mysql_ssl_client_key=/path/to/key;host=remote-box;mysql_local_infile=1',
+	'get_dbi_str supports extra option'
+);
+
+is(
+	$dsn4->get_dbi_str({'mysql_local_infile' => 1, 'mysql_use_result' => 1}),
+	'DBI:mysql:mysql_ssl=1;mysql_ssl_cipher=AES;'
+	.'mysql_ssl_client_key=/path/to/key;host=remote-box;'
+	.'mysql_local_infile=1;mysql_use_result=1',
+	'get_dbi_str supports extra options'
+);
 
 
 
