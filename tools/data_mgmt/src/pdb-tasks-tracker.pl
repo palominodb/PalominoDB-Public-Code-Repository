@@ -28,9 +28,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
@@ -43,196 +43,209 @@ use warnings;
 # End DSN package
 # ###########################################################################
 
+# ###########################################################################
+# Lockfile package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Lockfile package
+# ###########################################################################
+
+# ###########################################################################
+# CrashReporter package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End CrashReporter package
+# ###########################################################################
+
 package pdb_tasks_tracker;
 use strict;
-use POSIX ":sys_wait_h";
 use warnings FATAL => 'all';
+use POSIX ":sys_wait_h";
 use DBI;
 use ProcessLog;
 use DSN;
+use Lockfile;
+use CrashReporter;
 use Data::Dumper;
 use Time::HiRes qw(gettimeofday tv_interval);
+use DateTime;
+use IO::Dir;
+use File::Spec::Functions;
 
-use Getopt::Long;
+use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 
-my $pl; # ProcessLog.
-my $dbh;
 my $dsn;
 my %o;
-my $quiet = 0;
-my $sqldir;
-my $condition_filename;
-my $output_filename = './output.'.$$.'.dat';
-my $abort_on_error = 0;
-
-my %results;
-my $email = undef;
 
 sub get_current_timestamp {
-  my ($sec, $min, $hour, $mday, $mon, $year, $wday, $yday, $isdst) = localtime();
-  $year += 1900;
-  $mon  += 1;
-  return sprintf('%d-%0.2d-%0.2d %0.2d:%0.2d:%0.2d', $year, $mon, $mday, $hour, $min, $sec);
+  return DateTime->now(time_zone => 'local')->strftime("%Y-%m-%d %H:%M:%S");
 }
 
 sub main {
   my @ARGV = @_;
+  %o = ('jobs' => 1);
+  my (@files, @commands, $sqldir, $prog_lock);
   GetOptions(\%o,
     'help',
     'sqldir=s',
     'condition=s',
     'dsn=s',
+    'stats=s',
     'abort-on-error',
-    'logfile',
+    'logfile|L=s',
     'quiet',
+    'dryrun|n',
+    'lockfile=s',
+    'jobs|j=i'
   );
 
   if($o{'help'}) {
-    pod2usage();
+    pod2usage(-verbose => 1);
   }
 
   if(!$o{'sqldir'}) {
-    pod2usage('sqldir required');
+    pod2usage('Error: --sqldir required');
   }
-  $sqldir = $o{'sqldir'};
-
-  if($o{'logfile'}) {
-    $::PL->logpath($o{'logfile'});
+  if(!$o{'dsn'}) {
+    pod2usage("Error: --dsn required");
   }
-
-  if($o{'quiet'}) {
-    $quiet = 1;
+  if(!$o{'stats'}) {
+    pod2usage("Error: --stats required");
   }
 
-  if($o{'abort-on-error'}) {
-    $abort_on_error = 1;
-  }
-
-  if($o{'condition'}) {
-    $condition_filename = $o{'condition'};
-  }
-
-  if(! $o{'dsn'}) {
-    pod2usage("DSN required");
-  }
+  $::PL->logpath($o{'logfile'});
+  $::PL->quiet($o{'quiet'});
   $dsn = $o{'dsn'};
 
   eval {
-    $dsn          = DSNParser->default()->parse($dsn);
+    $dsn = DSNParser->default()->parse($dsn);
     # Do we have mandatory fields? FIXME
   };
   if($@) {
     pod2usage($@);
   }
 
-  if($condition_filename) {
-    $::PL->i("Waiting for conditional file ".$condition_filename);
-    while(! -f $condition_filename) {
+  if($o{'condition'}) {
+    $::PL->i("Waiting for conditional file", $o{'condition'});
+    while(! -f $o{'condition'}) {
       sleep(2);
     }
     # We don't need this file anymore. Minimize
     # The chance of another process coming in behind us and duplicating the work.
-    unlink($condition_filename);
-    $::PL->i("Remove condition file $condition_filename") unless $quiet;
+    unlink($o{'condition'});
+    $::PL->i("Remove condition file", $o{'condition'});
   }
 
-  my @files;
-  opendir(DIR, $sqldir) or die("Couldn't open $sqldir: $!\n");
-  while(my $filename = readdir(DIR)) {
-    $filename = $sqldir.'/'.$filename;
+  ## Acquire our main program lock, when we leave main()
+  ## this will go out of scope and the lock will be released.
+  $prog_lock = Lockfile->new($o{'lockfile'});
+
+  ## Fetch our list of SQL files.
+  $sqldir = IO::Dir->new($o{'sqldir'}) or die("Couldn't open $o{'sqldir'}: $!\n");
+  while(my $filename = $sqldir->read()) {
     next if $filename eq '.' or $filename eq '..';
+    $filename = catfile($o{'sqldir'}, $filename);
     if(! -f $filename or ! -r $filename) {
-      $::PL->e("Skipping file [$filename]") unless $quiet;
+      $::PL->m("Skipping file [$filename]");
       next;
     }
     push(@files, $filename);
   }
-  close(DIR);
+  $sqldir->close();
 
-  $::PL->i("Found ".scalar(@files)." command files");
-
+  $::PL->i("Found", scalar(@files), "command files");
   @files = sort @files; # Sort by filename, natural ordering.
 
-  my @commands;
   foreach my $filename (@files) {
-    open(FILE, "<$filename") || die("Failed to open [$filename]");
-    my @data = <FILE>;
-    close(FILE);
-    my $command = join('', @data);
-    if($command =~ /^[\s\n\t]*$/) {
-      $::PL->i("Skipping file [$filename]. No content") unless $quiet;
+    my $fh;
+    local $/; # set record separator to undef to enable slurp.
+    open($fh, "<$filename") || die("Failed to open [$filename]");
+    $_ = <$fh>;
+    if(/^[\s\n\t]*$/) {
+      $::PL->i("Skipping file [$filename]. No content.");
       next;
     }
-    push(@commands, { 'filename' => $filename,
-                      'command' => $command,
-                      }
+    push(@commands, {
+                      'filename' => $filename,
+                      'command' => $_,
+                    }
         );
+
   }
 
-  $::PL->i("Will write results to ".$output_filename);
-  open(OUTPUTFILE, ">$output_filename") or die("Couldn't open $output_filename");
+  ## Test connectivity to target, and stats connections
+  ## before attempting to execute any SQL. Early failure is good for you.
+  eval {
+    my $dbh = $dsn->get_dbh(0);
+    $dbh->disconnect();
+    my $sdsn = DSNParser->default()->parse($o{'stats'});
+    $sdsn->fill_in($dsn);
+    $dbh = $sdsn->get_dbh();
+  };
+  if($@) {
+    pod2usage($@);
+  }
+
+  $::PL->i("Will write results to ".$o{'stats'});
 
   my $done = 0;
   my $drain_and_exit = 0;
-  my $max_children = 4;
   my %children;
   $::PL->i("Processing ".scalar(@commands)." commands");
   while(!$done) {
-    $::PL->i("In Queue [".scalar(@commands)."] In Flight [".scalar(keys %children)."]") unless $quiet;
-    if(!$drain_and_exit && scalar(@commands) > 0 && scalar(keys %children) < $max_children) {
+    $::PL->i("In Queue [".scalar(@commands)."] In Flight [".scalar(keys %children)."]");
+    if(!$drain_and_exit && scalar(@commands) > 0 && scalar(keys %children) < $o{'jobs'}) {
       # Fork off a new one
       my $pid = fork();
       my $command_data = shift(@commands);
       if($pid) {
         # Parent
         $children{$pid} = 1;
-      } else {
+      }
+      else {
         # Child
-        my $error = 0;
-        my @warnings;
-        my $rows = 0;
-        my $start = get_current_timestamp();
-        my $t0 = [gettimeofday];
+        my ($status, $rows, $start, $elapsed, $t0, @warnings)
+          = ('', 0, get_current_timestamp(), 0.0, [gettimeofday()], ());
 
-        my $dbh;
         eval {
           # Execute the query
-          $::PL->i("Executing [".$command_data->{'command'}."] from file [".$command_data->{'filename'}."]") unless $quiet;
-          $dbh = $dsn->get_dbh(1);
+          my $dbh;
+          $::PL->i("Executing [".$command_data->{'command'}."]\n",
+                   "from file [".$command_data->{'filename'}."]");
+          $dbh = $dsn->get_dbh(0);
           $rows = $dbh->do($command_data->{'command'});
           $rows = 0 if $rows eq '0E0';
+
+          my $sth = $dbh->prepare('SHOW WARNINGS');
+          $sth->execute();
+          while(my $warning = $sth->fetchrow_hashref) {
+            push(@warnings, $warning);
+          }
+
+          $dbh->commit();
+          $dbh->disconnect();
         };
-        my $status = $@;
+        $status = "$@";
 
-        my $t1 = [gettimeofday];
-        my $elapsed = tv_interval($t0, $t1);
-        my $end = get_current_timestamp();
-
+        $elapsed = tv_interval($t0);
         if($status) {
-          my $errstr = defined($dbh) && $dbh->errstr() ? $dbh->errstr() : $status;
-          $::PL->e("Command [".$command_data->{'command'}."] returned error [".$errstr."]");
-          $error = 1;
-        }
-
-        my $sth = $dbh->prepare('SHOW WARNINGS');
-        $sth->execute();
-        while(my $warning = $sth->fetchrow_hashref) {
-          push(@warnings, $warning);
+          $::PL->e("Command [".$command_data->{'command'}."]\n",
+                   "returned error [".$status."] after",
+                   $elapsed, "seconds.");
         }
 
         # Our results
-        my @out = ($command_data->{'filename'},
-                   $rows,
-                   scalar(@warnings) > 0 ? scalar(@warnings) : 'NULL',
-                   $error ? $error : 'NULL',
-                   $elapsed, $start, $end);
+        save_statistics(
+          $command_data->{'filename'},
+          $start,
+          $elapsed,
+          $rows,
+          $status,
+          join("\n", @warnings)
+        );
 
-        flock(OUTPUTFILE, 2); # Exclusive lock
-        print OUTPUTFILE join('|', @out)."\n";
-        flock(OUTPUTFILE, 8); # Unlock
-
-        exit($error == 1 ? -1 : 0); # Child exits
+        exit($status ? 1 : 0);
       }
     }
 
@@ -242,52 +255,74 @@ sub main {
       if($stiff == 0) {
         # Nothing finished yet, take a break
         sleep(2);
-      } else {
+      }
+      else {
         my $exit_value = $? >> 8;
         if($exit_value == 0) {
           # Finished without problems
-        } else {
-          if($abort_on_error) {
+        }
+        else {
+          if($o{'abort-on-error'}) {
             # Wait for the children in progress and exit without spawning new ones
-            $::PL->e("### Caught an error. Will wait for in-flight processes to finish and then will abort processing");
+            $::PL->e("Caught an error. Will wait for in-flight processes to finish and then will abort processing");
             $drain_and_exit = 1;
           }
         }
-        $::PL->i("Process [".$stiff."] finished with exit code [".$exit_value."]") unless $quiet;
+        $::PL->i("Process [".$stiff."] finished with exit code [".$exit_value."]");
         delete $children{$stiff};
       }
-    } elsif($drain_and_exit or scalar(@commands) == 0) {
+    }
+    elsif($drain_and_exit or scalar(@commands) == 0) {
       # We are done
       $done = 1;
     }
   }
 
-  close(OUTPUTFILE);
-  $::PL->i("Wrote results to $output_filename");
+  return 0;
 }
 
-if(!caller) { exit(main(@ARGV)); }
-1;
+sub save_statistics {
+  my (@args) = @_;
+  eval {
+    my ($dbh, $tbl);
+    my $sdsn = DSNParser->default()->parse($o{'stats'});
+    $sdsn->fill_in($dsn);
+    $dbh = $sdsn->get_dbh();
+    $tbl = $dbh->quote_identifier(undef, $sdsn->get('D'), $sdsn->get('t'));
 
-__END__
+    $dbh->do(
+      qq|INSERT INTO $tbl (`file`, `start_time`, `elapsed`, `rows`, `error`, `warnings`)
+          VALUES (?, ?, ?, ?)|
+    );
+    $dbh->commit();
+    $dbh->disconnect();
+  };
+  if($@) {
+    $::PL->e('Error saving statistics:', "$@");
+  }
+}
+
+if(!caller) { CrashReporter->install(); exit(main(@ARGV)); }
+
+=pod
 
 =head1 NAME
 
 pdb-tasks-tracker - run tasks and compile information about them
 
-=head1 RISKS AND BUGS
+=head1 EXAMPLES
 
-All software has bugs. This software is no exception. Care has been taken to ensure the safety of your data, however, no guarantees can be made. You are strongly advised to test run on a staging area before using this in production.
-
-At the time of this writing, this software could use substantially more argument error checking. The program SHOULD simply die if incorrect arguments are passed, but, it could also delete unintended things. You have been warned.
+  # Run 4 concurrent jobs out of sql_1/
+  pdb-tasks-tracker --sqldir sql_1/ --dsn h=localhost \
+                    --stats D=stats,t=tasks --jobs 4
 
 =head1 SYNOPSIS
 
-pdb-tasks-tracker [-h]
+pdb-tasks-tracker [-h] --sqldir DIR --dsn DSN --stats
 
 Run with -h or --help for options.
 
-=head1 OPTIONS
+=head2 OPTIONS
 
 =over 8
 
@@ -297,26 +332,82 @@ This help.
 
 Help is most awesome. It's like soap for your brain.
 
+=item --logfile,-L
+
+Path to a file for logging, or, C<< syslog:<facility> >>
+Where C<< <facility> >> is a pre-defined logging facility for this machine.
+
+See also: L<syslog(3)>, L<syslogd(8)>, L<syslog.conf(5)>
+
+=item --quiet
+
+Suppress output to the console.
+
 =item --condition
 
-File to read commands from. This script will sit in a sleep loop until this file become available.
+File to read commands from. This script will sit in a sleep loop until this
+file become available. B<NOTE:> This script will B<REMOVE> the condition file
+upon picking it up, so, do not set this to a data file.
 
 =item --dsn
 
 DSN of MySQL server to perform commands against.
 
+=item --stats
+
+DSN for where to store SQL run statistics. This need only contain the
+D and t keys, since, missing values will be filled in from --dsn.
+
+The table that the results are inserted into must have the form, or a form
+compatible with:
+
+  CREATE TABLE `task_stats` (
+    `id` INTEGER PRIMARY KEY AUTO_INCREMENT,
+    `file` VARCHAR(64) NOT NULL,
+    `start_time` DATETIME NOT NULL,
+    `elapsed` DECIMAL(10,4) NOT NULL,
+    `rows` INTEGER NOT NULL,
+    `error` TEXT NOT NULL,
+    `warnings` TEXT NOT NULL,
+    UNIQUE KEY `file_start` (`file`, `start_time`)
+  );
+
+=item --sqldir
+
+Directory of SQL statements to run.
+If you need to enforce some ordering, prefix the files with NN_.
+This tool will sort the files the way you expect ( 02 < 10 ).
+
+=item --jobs,-j
+
+Number of concurrent SQL queries to run.
+The default number of jobs to run is 1, which means: not parallel.
+
 =item --abort-on-error
 
 Processing will immediately stop if an error is encountered.
+Normally, this tool will run all available SQL regardless of errors, so
+as to collect as much information about the failure as possible (in theory).
 
-=item --quiet
+=item --lockfile
 
-Suppress some of the output
-
-=item --logfile
-
-File to log the output to
+Acquire flock the given file to ensure that multiple concurrent runs of this
+tool do not occur.
 
 =back
+
+=head2 DSN KEYS
+
+All of the standard keys apply. Here a few samples:
+
+  h=localhost,u=root,p=pass,S=/tmp/my.sock,D=db,t=tbl
+  h=remotehost,u=bill,p=Zork,N=utf8
+  F=params.cnf,h=host
+
+=cut
+
+1;
+
+
 
 
