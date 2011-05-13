@@ -62,10 +62,7 @@ use strict;
 use warnings FATAL => 'all';
 use POSIX ":sys_wait_h";
 use DBI;
-use ProcessLog;
-use DSN;
-use Lockfile;
-use CrashReporter;
+
 use Data::Dumper;
 use Time::HiRes qw(gettimeofday tv_interval);
 use DateTime;
@@ -139,7 +136,9 @@ sub main {
 
   ## Acquire our main program lock, when we leave main()
   ## this will go out of scope and the lock will be released.
-  $prog_lock = Lockfile->new($o{'lockfile'});
+  if($o{'lockfile'}) {
+    $prog_lock = Lockfile->get($o{'lockfile'});
+  }
 
   ## Fetch our list of SQL files.
   $sqldir = IO::Dir->new($o{'sqldir'}) or die("Couldn't open $o{'sqldir'}: $!\n");
@@ -168,7 +167,7 @@ sub main {
     }
     push(@commands, {
                       'filename' => $filename,
-                      'command' => $_,
+                      'commands' => $_,
                     }
         );
 
@@ -205,47 +204,59 @@ sub main {
       }
       else {
         # Child
+        my $dbh;
+        my $had_error = 0;
+        my $i = 0;
         my ($status, $rows, $start, $elapsed, $t0, @warnings)
           = ('', 0, get_current_timestamp(), 0.0, [gettimeofday()], ());
 
-        eval {
-          # Execute the query
-          my $dbh;
-          $::PL->i("Executing [".$command_data->{'command'}."]\n",
-                   "from file [".$command_data->{'filename'}."]");
-          $dbh = $dsn->get_dbh(0);
-          $rows = $dbh->do($command_data->{'command'});
-          $rows = 0 if $rows eq '0E0';
+        ## Split queries based on something that Probably will never occur.
+        my @cmds = split(/\/\/# ###########################################################################/,
+            $command_data->{'commands'}
+          );
 
-          my $sth = $dbh->prepare('SHOW WARNINGS');
-          $sth->execute();
-          while(my $warning = $sth->fetchrow_hashref) {
-            push(@warnings, $warning);
+        foreach my $cmd (@cmds) {
+          eval {
+            # Execute the query
+            $::PL->i("Executing [$cmd]\n",
+                     "from file [".$command_data->{'filename'}."]");
+            $dbh = $dsn->get_dbh(0);
+            $rows = $dbh->do($cmd);
+            $rows = 0 if $rows eq '0E0';
+
+            my $sth = $dbh->prepare('SHOW WARNINGS');
+            $sth->execute();
+            while(my $wa = $sth->fetchrow_hashref) {
+              push(@warnings, "$wa->{'Message'} ($wa->{'Code'})");
+            }
+
+            $dbh->commit();
+          };
+
+          $status = "$@";
+
+          $elapsed = tv_interval($t0);
+          if($status) {
+            $had_error = 1;
+            $::PL->e("Command [$cmd]\n",
+                     "returned error [".$status."] after",
+                     $elapsed, "seconds.");
           }
 
-          $dbh->commit();
-          $dbh->disconnect();
-        };
-        $status = "$@";
-
-        $elapsed = tv_interval($t0);
-        if($status) {
-          $::PL->e("Command [".$command_data->{'command'}."]\n",
-                   "returned error [".$status."] after",
-                   $elapsed, "seconds.");
+          # Our results
+          save_statistics(
+            $command_data->{'filename'} .':'. $i,
+            $start,
+            $elapsed,
+            $rows,
+            $status,
+            join("\n", @warnings)
+          );
+          $i++;
         }
+        $dbh->disconnect();
 
-        # Our results
-        save_statistics(
-          $command_data->{'filename'},
-          $start,
-          $elapsed,
-          $rows,
-          $status,
-          join("\n", @warnings)
-        );
-
-        exit($status ? 1 : 0);
+        exit($had_error);
       }
     }
 
@@ -292,7 +303,9 @@ sub save_statistics {
 
     $dbh->do(
       qq|INSERT INTO $tbl (`file`, `start_time`, `elapsed`, `rows`, `error`, `warnings`)
-          VALUES (?, ?, ?, ?)|
+          VALUES (?, ?, ?, ?, ?, ?)|,
+      undef,
+      @args
     );
     $dbh->commit();
     $dbh->disconnect();
@@ -370,7 +383,7 @@ compatible with:
     `error` TEXT NOT NULL,
     `warnings` TEXT NOT NULL,
     UNIQUE KEY `file_start` (`file`, `start_time`)
-  );
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 =item --sqldir
 
