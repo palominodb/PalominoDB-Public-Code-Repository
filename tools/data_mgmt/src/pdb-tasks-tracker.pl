@@ -204,7 +204,7 @@ sub main {
       }
       else {
         # Child
-        my $dbh;
+        my $dbh = $dsn->get_dbh(1);
         my $had_error = 0;
         my $i = 0;
         my ($status, $rows, $start, $elapsed, $t0, @warnings)
@@ -217,10 +217,10 @@ sub main {
 
         foreach my $cmd (@cmds) {
           eval {
+            $dbh->{AutoCommit} = 0;
             # Execute the query
             $::PL->i("Executing [$cmd]\n",
                      "from file [".$command_data->{'filename'}."]");
-            $dbh = $dsn->get_dbh(0);
             $rows = $dbh->do($cmd);
             $rows = 0 if $rows eq '0E0';
 
