@@ -6,7 +6,7 @@ use Test::More tests => 6;
 
 my @COMMON_ARGS = ('--logfile=pdb-test-harness');
 
-require_ok('src/pdb-munch.in.pl');
+require_ok('src/pdb-munch');
 is(pdb_munch::main(@COMMON_ARGS, '--dump-spec'), 0, '--dump-spec returns 0');
 ok(-f "default_spec.conf", "default_spec.conf exists");
 is(pdb_munch::main(@COMMON_ARGS), 1, 'missing --spec returns 1');

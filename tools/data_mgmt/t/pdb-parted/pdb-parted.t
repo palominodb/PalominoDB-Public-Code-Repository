@@ -16,7 +16,7 @@ use Data::Dumper;
   $Data::Dumper::SortKeys = 1;
 }
 
-require_ok('src/pdb-parted.in.pl');
+require_ok('src/pdb-parted');
 
 BEGIN {
   my $tdb = TestDB->new();

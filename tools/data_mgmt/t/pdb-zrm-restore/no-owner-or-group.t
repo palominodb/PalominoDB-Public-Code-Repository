@@ -6,7 +6,7 @@ use TestDB;
 use File::Basename;
 use File::Path qw(make_path remove_tree);
 
-require_ok('src/pdb-zrm-restore.in.pl');
+require_ok('src/pdb-zrm-restore');
 
 my $tdb = new TestDB;
 my $backups = $ENV{PDB_CODE_ROOT} ."/tools/data_mgmt/t/pdb-zrm-restore/20100512025732";

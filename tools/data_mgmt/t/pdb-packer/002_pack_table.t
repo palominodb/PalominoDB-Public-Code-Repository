@@ -6,7 +6,7 @@ use DSN;
 use Carp;
 
 BEGIN {
-  require_ok('src/pdb-packer.in.pl');
+  require_ok('src/pdb-packer');
   my $tdb = TestDB->new();
   $tdb->clean_db();
   $tdb->use('pdb_packer');
@@ -32,7 +32,7 @@ my $dsn2 = DSNParser->default()->parse($tdb->dsn() .
 
 my $dsn3 = DSNParser->default()->parse($tdb->dsn() .
   ",D=pdb_packer,t=prfx_5,sU=$ssh_user,sK=$ssh_key");
-  
+
 my $dsn4 = DSNParser->default()->parse($tdb->dsn() .
   ",u=nosuper,p=superpw,D=pdb_packer,t=prfx_4,sU=$ssh_user,sK=$ssh_key");
 
@@ -40,7 +40,7 @@ is_deeply(pdb_packer::pack_table($tdb->datadir(), $dsn1), [ undef, undef ], 'pac
 is($tdb->dbh()->selectrow_arrayref("SHOW TABLE STATUS FROM `pdb_packer` LIKE 'prfx_1'")->[3],
   'Compressed', 'mysql agrees about the packing');
 is_deeply(pdb_packer::pack_table($tdb->datadir(), $dsn1),
-  [ 
+  [
     $dsn1->get('t') .' is already compressed.',
     0
   ],

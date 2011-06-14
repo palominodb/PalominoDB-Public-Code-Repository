@@ -4,7 +4,7 @@ use Test::More tests => 2;
 use TestDB;
 
 BEGIN {
-  require_ok('src/pdb-packer.in.pl');
+  require_ok('src/pdb-packer');
   my $tdb = TestDB->new();
   $tdb->clean_db();
   $tdb->use('table_rotate');

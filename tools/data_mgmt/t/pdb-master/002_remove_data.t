@@ -4,7 +4,7 @@ use Test::More tests => 11;
 use File::Path qw(rmtree);
 
 BEGIN {
-  require_ok('src/pdb-master.in.pl');
+  require_ok('src/pdb-master');
   mkdir("testdir");
   mkdir("testdir/empty_dir");
   system("echo > testdir/file1");
