@@ -2,7 +2,7 @@
 ### work around for ePn until I can refactor completely.
 # nagios: -epn
 ###
-# Copyright (c) 2009-2010, PalominoDB, Inc.
+# Copyright (c) 2009-2011, PalominoDB, Inc.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,7 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 $| = 1;
-our $VERSION = "1.1.2";
+our $VERSION = "1.1.4";
 
 use strict;
 use Nagios::Plugin;
@@ -90,12 +90,22 @@ switch ($np->opts->mode)
     my ($comp_res, $expr_res) = mode_varcomp($meta_data);
     if($comp_res)
     {
-      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      $np->add_message(CRITICAL, $msg);
+      my $msg;
+      if ($np->opts->comparison) {
+        $msg = sprintf("Comparison check failed: (%s)   %s   = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      } else {
+        $msg = sprintf("Comparison check failed: (%s)   %s   %s   = %s", $np->opts->expression, $np->opts->warning, $np->opts->critical, $expr_res);
+        }
+      $np->add_message($comp_res, $msg);
     }
     else
     {
-      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      my $msg;
+      if ($np->opts->comparison) {
+        $msg = sprintf("Comparison check passed: (%s)   %s   = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      } else {
+        $msg = sprintf("Comparison check passed: (%s)   %s   %s   = %s", $np->opts->expression, $np->opts->warning, $np->opts->critical, $expr_res);
+      }
       $np->add_message(OK, $msg);
     }
   }
@@ -104,7 +114,6 @@ switch ($np->opts->mode)
     $np->nagios_die("Unknown run mode.");
   }
 }
-#print "WHEEE: $meta_data->{varstatus}->{max_allowed_packet}\n";
 
 cleanup();
 
@@ -126,8 +135,10 @@ sub mode_varcomp
   my $expr_res = '';
   my $comp_res = '';
 
-  pdebug("expr (" . $np->opts->expression . ")\n"); 
-  pdebug("comp (" . $np->opts->comparison . ")\n"); 
+  if ($np->opts->expression) { pdebug("expr (" . $np->opts->expression . ")\n"); }
+  if ($np->opts->comparison) { pdebug("comp (" . $np->opts->comparison . ")\n"); }
+  if ($np->opts->warning) { pdebug("comp (" . $np->opts->warning . ")\n"); }
+  if ($np->opts->critical) { pdebug("comp (" . $np->opts->critical . ")\n"); }
 
   my $do_math = 0;
   foreach my $word (split(/\b/, $np->opts->expression)) 
@@ -161,11 +172,24 @@ sub mode_varcomp
     $expr_res = "'$parsed_expr'";
   }
   
-  my $comp_expr = $expr_res . $np->opts->comparison;
-  $comp_res = eval($comp_expr);  
+  if ($np->opts->comparison) {
+    my $comp_expr = $expr_res . $np->opts->comparison;
+    $comp_res = eval($comp_expr);  
 
-  pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
-  return $comp_res, $expr_res; 
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
+    return $comp_res, $expr_res;
+  }
+  if ($np->opts->warning && $np->opts->critical) {
+    my $code=3;
+    my $comp_expr_warn = $expr_res . $np->opts->warning;
+    my $comp_expr_crit = $expr_res . $np->opts->critical;
+    my $comp_res_crit = eval($comp_expr_crit) || 0;  
+    my $comp_res_warn = eval($comp_expr_warn) || 0;  
+    if ($comp_res_crit==0 && $comp_res_warn==0) { $code=0; }
+    elsif ($comp_res_crit==1) { $code=2; }
+    elsif ($comp_res_warn==1) { $code=1; }
+    return $code, $expr_res;
+  }
 }
 
 #####
@@ -200,8 +224,8 @@ sub fetch_server_meta_data
   pdebug("Getting meta data...\n");
   pdebug("\tSHOW FULL PROCESSLIST...\n");
   $meta_data{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
-  pdebug("\tSHOW ENGINE INNODB STATUS...\n");
-  $meta_data{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
+#  pdebug("\tSHOW ENGINE INNODB STATUS...\n");
+#  $meta_data{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
   pdebug("\tSHOW GLOBAL VARIABLES...\n");
   $meta_data{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
   pdebug("\tSHOW GLOBAL STATUS...\n");
@@ -309,7 +333,7 @@ sub dbi_connect
 {
   my $np = shift;
   
-  my $dsn = sprintf("DBI:mysql:database=%s:host=%s:port=%d", $np->opts->database, $np->opts->hostname, $np->opts->port);
+  my $dsn = sprintf("DBI:mysql:database=%s:host=%s:port=%d;mysql_read_default_file=$ENV{HOME}/.my.cnf", $np->opts->database, $np->opts->hostname, $np->opts->port);
   my $dbh = DBI->connect($dsn, $np->opts->user, $np->opts->password, { RaiseError => 0, AutoCommit => 1 });
   unless($dbh) { $np->nagios_exit(CRITICAL, "Can't connect to MySQL: $DBI::errstr") }
   return $dbh;
@@ -329,10 +353,10 @@ sub init_plugin
 	license => "Copyright (c) 2009-2010, PalominoDB, Inc.",
 );
 
-  $np->add_arg(spec => 'hostname|H=s', required => 1, help => "-H, --hostname\n\tMySQL server hostname");
+  $np->add_arg(spec => 'hostname|H=s', default => 'localhost', help => "-H, --hostname\n\tMySQL server hostname");
   $np->add_arg(spec => 'port|P=i', default => 3306, help => "-P, --port\n\tMySQL server port");
-  $np->add_arg(spec => 'user|u=s', required => 1, help => "-u, --user\n\tMySQL username");
-  $np->add_arg(spec => 'password|p=s', required => 0, default => '', help => "-p, --password\n\tMySQL password");
+  $np->add_arg(spec => 'user|u=s', required => 0, help => "-u, --user\n\tMySQL username");
+  $np->add_arg(spec => 'password|p=s', required => 0, help => "-p, --password\n\tMySQL password");
   $np->add_arg(spec => 'database|d=s', required => 0, default => '', help => "-d, --database\n\tMySQL database");
   $np->add_arg(spec => 'warning|w=s', required => 0, default => '', help => "-w, --warning\n\tWarning Threshold");
   $np->add_arg(spec => 'critical|c=s', required => 0, default => '', help => "-c, --critical\n\tCritical Threshold");
@@ -372,9 +396,9 @@ sub init_plugin
     case "varcomp"
     {
       $np->shortname('mysql_varcomp') unless($np->opts->shortname);
-      unless($np->opts->comparison && $np->opts->expression)
+      unless(($np->opts->comparison && $np->opts->expression && !$np->opts->warning && !$np->opts->critical) || ($np->opts->expression && $np->opts->warning && $np->opts->critical && !$np->opts->comparison) )
       {
-        $np->nagios_die("ERROR: run mode 'varcomp' requires --comparison and --expression params.");
+       $np->nagios_die("ERROR: run mode 'varcomp' requires --expression and EITHER --comparison OR --warning and --critical params.");
       }
     }    
   } 
