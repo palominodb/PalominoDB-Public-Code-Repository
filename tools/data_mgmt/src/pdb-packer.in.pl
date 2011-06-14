@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -214,7 +214,7 @@ sub main {
     my $dbh = $d->get_dbh(1);
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
-    $pl->d('tables:', join(',', @tbls) );  
+    $pl->d('tables:', join(',', @tbls) );
     my ($status, $cfg) = @{MysqlInstance->remote($d, 'config', $d->get('rF'))};
     $pl->d('status:', $status, 'cfg:', $cfg);
     unless($status eq 'EXIT') {
@@ -426,6 +426,9 @@ pdb-packer - Rotate and Compress tables.
 
 pdb-packer [options] DSN ...
 
+Each set of tables specified by each DSN will be packed
+in the order they are listed.
+
 =head1 DSN
 
 A Maatkit style DSN.
@@ -505,7 +508,7 @@ Example:
 
 It's not currently possible to post or pre-date tables
 - rotation always dates based on the time when the tool started.
-So, even if the tool starts at 23:59 on 2010-03-17 and runs till 
+So, even if the tool starts at 23:59 on 2010-03-17 and runs till
 01:01 on 2010-03-18, all rotated tables will be dated 2010-03-17.
 
 Default: C<_%Y%m%d>
@@ -535,7 +538,7 @@ This method is the default.
 
 =back
 
-This option only needs to be specified when L<--age> is specified and 
+This option only needs to be specified when L<--age> is specified and
 the default format is insufficient for some reason. To use the datestamp
 method the value of this option should be a string with C<strftime(3)> flags.
 To use the createtime method, the value of this option should be C<'createtime'>.
