@@ -30,43 +30,1142 @@
 use strict;
 use warnings;
 # ###########################################################################
-# ProcessLog package FSL_VERSION
+# ProcessLog package 876f85f39dfeb6100fbb852f82cbf61c1e4d739a
 # ###########################################################################
+package ProcessLog;
+use strict;
+use warnings FATAL => 'all';
+
+
+my $mail_available = 1;
+eval 'use Mail::Send';
+if($@) {
+  $mail_available = 0;
+}
+use Sys::Hostname;
+use Digest::MD5 qw(md5_hex);
+use Time::HiRes qw(time);
+use File::Spec;
+use Fcntl qw(:seek);
+use English qw(-no_match_vars);
+
+use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
+use constant Level1 => 1;
+use constant Level2 => 2;
+use constant Level3 => 3;
+
+
+sub new {
+  my $class = shift;
+  my ($script_name, $logpath, $email_to) = @_;
+  my $self = {};
+
+  $self->{run_id} = md5_hex(time . rand() . $script_name);
+
+  $self->{script_name} = $script_name;
+  $self->{log_path} = $logpath;
+  $self->{email_to} = $email_to;
+  $self->{stack_depth} = 10; # Show traces 10 levels deep.
+  $self->{logsub} = 0;
+  $self->{quiet} = 0;
+
+  bless $self,$class;
+  $self->logpath($logpath);
+  return $self;
+}
+
+sub DESTROY {
+  my ($self) = @_;
+  if(ref($$self{'LOG'}) and ref($$self{'LOG'}) eq 'GLOB') {
+    $$self{'LOG'}->flush();
+  }
+}
+
+
+sub null {
+  my $class = shift;
+  $class->new('', '/dev/null', undef);
+}
+
+
+sub name {
+  my $self = shift;
+  $self->{script_name};
+}
+
+
+sub runid {
+  my $self = shift;
+  $self->{run_id};
+}
+
+
+sub start {
+  my $self = shift;
+  $self->m("BEGIN $self->{run_id}");
+}
+
+
+sub end {
+  my $self = shift;
+  $self->m("END $self->{run_id}");
+}
+
+
+sub stack_depth {
+  my ($self, $opts) = @_;
+  my $old = $self->{stack_depth};
+  $self->{stack_depth} = $opts if( defined $opts );
+  $old;
+}
+
+
+sub quiet {
+  my ($self, $new) = @_;
+  my $old = $self->{quiet};
+  $self->{quiet} = $new if( defined $new );
+  $old;
+}
+
+
+sub logpath {
+  my ($self, $logpath) = @_;
+  my $script_name = $$self{script_name};
+  return $self->{log_path} if(not $logpath);
+  $self->{log_path} = $logpath;
+  if($logpath =~ /^syslog:(\w+)/) {
+    require Sys::Syslog;
+    Sys::Syslog::openlog($script_name, "", $1);
+    $self->{logsub} = sub {
+      my $self = shift;
+      $_[3] = '';
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
+      Sys::Syslog::syslog($lvl, _p(@_));
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      my @args = @_;
+      $args[0] =~ s/^/# /;
+      print STDERR _p(@args);
+    }
+  }
+  else {
+    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    binmode($self->{LOG});
+    $self->{logsub} = sub {
+      my $self = shift;
+      my $fh  = $self->{LOG};
+      print $fh _p(@_);
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  return $self;
+}
+
+
+sub email_to {
+  my ($self, @emails) = @_;
+  my $old = $$self{email_to};
+  if(@emails) {
+    $$self{email_to} = [@emails];
+  }
+  return $old;
+}
+
+
+sub m {
+  my ($self,$m) = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
+}
+
+
+sub ms {
+  my $self = shift;
+  $self->m(@_);
+  $self->m($self->stack());
+}
+
+
+sub p {
+  my ($self) = shift;
+  my $fh = \*STDIN;
+  my $regex = qr/.*/;
+  my $default = undef;
+  my @prompt = ();
+  if(ref($_[0]) eq 'GLOB') {
+    $fh = shift;
+  }
+  if(ref($_[-1]) eq 'Regexp') {
+    $regex = pop;
+  }
+  elsif(ref($_[-2]) eq 'Regexp') {
+    $default = pop;
+    $regex = pop;
+  }
+  @prompt = @_;
+  $self->m(@prompt);
+  chomp($_ = <$fh>);
+  if($default and $_ eq '') {
+    $self->m('Using default:', $default);
+    return $default;
+  }
+  while($_ !~ $regex) {
+    $self->d("Input doesn't match:", $regex);
+    $self->m(@prompt);
+    chomp($_ = <$fh>);
+  }
+
+  $self->m('Using input:', $_);
+  return $_;
+}
+
+
+sub e {
+  my ($self,$m) = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
+}
+
+
+sub es {
+  my $self = shift;
+  $self->e(@_);
+  $self->e($self->stack());
+}
+
+
+sub i {
+  my $self = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
+}
+
+
+sub is {
+  my $self = shift;
+  $self->i(@_);
+  $self->i($self->stack());
+}
+
+
+sub d {
+  my $self = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  if(_PdbDEBUG) {
+    my $t = sprintf("%.3f", time());
+    $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
+  }
+}
+
+
+sub ds {
+  my $self = shift;
+  $self->d(@_);
+  $self->d($self->stack());
+}
+
+
+sub x {
+  my ($self, $subref, @args) = @_;
+  my $r = undef;
+  my $saved_fhs = undef;
+  my $proc_fh = undef;
+  eval {
+    $saved_fhs = $self->_save_stdfhs();
+    open($proc_fh, '+>', undef) or die("Unable to open anonymous tempfile");
+    open(STDOUT, '>&', $proc_fh) or die("Unable to dup anon fh to STDOUT");
+    open(STDERR, '>&', \*STDOUT) or die("Unable to dup STDOUT to STDERR");
+    $r = $subref->(@args);
+  };
+  $self->_restore_stdfhs($saved_fhs);
+  seek($proc_fh, 0, SEEK_SET);
+  return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
+}
+
+
+sub stack {
+  my ($self, $level, $top) = @_;
+  $level = $self->{stack_depth} ||= 10 unless($level);
+  $top   = (defined $top ? $top : 2);
+  my $out = "";
+  my $i=0;
+  my ($package, $file, $line, $sub) = caller($i+$top); # +2 hides ProcessLog from the stack trace.
+  $i++;
+  if($package) {
+    $out .= "Stack trace:\n";
+  }
+  else {
+    $out .= "No stack data available.\n";
+  }
+  while($package and $i < $level) {
+    $out .= " "x$i . "$package  $file:$line  $sub\n";
+    ($package, $file, $line, $sub) = caller($i+$top);
+    $i++;
+  }
+  chomp($out);
+  $out;
+}
+
+sub _p {
+  my $mode = shift;
+  my $package = shift;
+  my $line = shift;
+  my $time = shift;
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
+  @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
+       map { defined $_ ? $_ : 'undef' } @_;
+  $prefix. join(' ',@_). "\n";
+}
+
+sub _flush {
+  my ($self) = @_;
+  unless($self->{log_path} =~ /^syslog:/) {
+    $self->{LOG}->flush;
+  }
+  1;
+}
+
+sub _save_stdfhs {
+  my ($self) = @_;
+  open my $stdout_save, ">&", \*STDOUT or die("Unable to dup stdout");
+  open my $stderr_save, ">&", \*STDERR or die("Unable to dup stderr");
+  return { o => $stdout_save, e => $stderr_save };
+}
+
+sub _restore_stdfhs {
+  my ($self, $fhs) = @_;
+  my $o = $fhs->{o};
+  my $e = $fhs->{e};
+  open STDOUT, ">&", $o;
+  open STDERR, ">&", $e;
+  return 1;
+}
+
+
+sub email_and_die {
+  my ($self, $extra) = @_;
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
+  $self->failure_email($extra);
+  die($extra);
+}
+
+
+sub failure_email {
+  my ($self,$extra) = @_;
+  $self->send_email("$self->{script_name} FAILED", $extra);
+}
+
+sub success_email {
+  my ($self, $extra) = @_;
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
+}
+
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
+  my $fh = $msg->open;
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
+  $fh->close;
+}
+
+
+{
+  no strict 'refs';
+  no warnings 'once';
+  *::PL = \(ProcessLog->new($0, '/dev/null'));
+}
+
+
+1;
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# ZRMBackup package FSL_VERSION
+# ZRMBackup package eff67837be96b6ab0faba30b78749ada27ec12db
 # ###########################################################################
+package ZRMBackup;
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+use File::Spec;
+
+
+sub new {
+  my ( $class, $pl, $backup_dir ) = @_;
+  my $self = {};
+  $self->{backup_dir} = ($backup_dir ? $backup_dir : $pl);
+  bless $self, $class;
+
+  unless( $self->_load_index() ) {
+    return undef;
+  }
+  return $self;
+}
+
+sub DESTROY {}
+
+sub backup_dir {
+  my ($self) = @_;
+  return $self->{backup_dir};
+}
+
+sub open_last_backup {
+  my ($self) = @_;
+  if(not defined $self->last_backup) {
+    die("No last backup present.\n");
+  }
+  return ZRMBackup->new(undef, $self->last_backup);
+};
+
+sub find_full {
+  my ($self, $strip, $rel_base) = @_;
+  my @backups;
+  unshift @backups, $self;
+  while($backups[0] && $backups[0]->backup_level != 0) {
+    $::PL->d("unadjusted lookup:", $backups[0]->last_backup);
+    my @path = File::Spec->splitdir($backups[0]->last_backup);
+    my $path;
+    if($strip and $strip =~ /^\d+$/) {
+      for(my $i=0; $i<$strip; $i++) { shift @path; }
+    }
+    elsif($strip) {
+      $_ = $backups[0]->last_backup;
+      s/^$strip//;
+      @path = File::Spec->splitdir($_);
+    }
+    if($rel_base) {
+      unshift @path, $rel_base;
+    }
+    $path = File::Spec->catdir(@path);
+    $::PL->d("adjusted lookup:", $path);
+    unshift @backups, ZRMBackup->new(undef, $path);
+  }
+  shift @backups unless($backups[0]);
+  if($backups[0]->backup_level != 0) {
+    croak('No full backup present in chain');
+  }
+  return @backups;
+}
+
+sub extract_to {
+  my ($self, $xdir) = @_;
+  my @args = ();
+  if($self->compress =~ /gzip/) {
+    @args = ("tar","-xzf", $self->backup_dir . "/backup-data", "-C", $xdir);
+  }
+  elsif($self->compress =~ /bzip2/) {
+     @args = ("tar","-xjf", $self->backup_dir . "/backup-data", "-C", $xdir);
+  }
+  else {
+    @args = ($self->compress ." -d ". $self->backup_dir ."/backup-data". " | tar -C $xdir -xf -");
+  }
+  my $r = $::PL->x(sub { system(@_) }, @args);
+  return wantarray ? ($r->{rcode}, $r->{fh}) : $r->{rcode};
+}
+
+
+sub _load_index() {
+  my ($self) = @_;
+  my $fIdx;
+  unless(open $fIdx, "<$self->{backup_dir}/index") {
+    return undef;
+  }
+  $self->{idx} = ();
+  while(<$fIdx>) {
+    chomp;
+    next if $_ eq ""; # Skip empty lines.
+    my ($k, $v) = split(/=/, $_, 2);
+    next if ($k eq "");
+    $k =~ s/-/_/g;
+    next if $k =~ /\//; # File lists are useless to us right now.
+    if($k eq "backup_size" or $k eq "backup_size_compressed") {
+      if($v =~ / MB$/) {
+        $v =~ s/ MB$//;
+        $v *= 1024;
+      }
+      elsif($v =~ / GB$/) {
+        $v =~ s/ GB$//;
+        $v *= 1024;
+        $v *= 1024;
+      }
+    }
+    elsif($k eq "backup_status") {
+      if($v eq "Backup succeeded") {
+        $v = 1;
+      }
+      else {
+        $v = 0;
+      }
+    }
+    elsif($k =~ /_time$/) {
+      my ($h, $m, $s) = split(/:/, $v);
+      $v  = $h*3600;
+      $v += $m*60;
+      $v += $s;
+    }
+    elsif($k eq "raw_databases_snapshot" or $k eq "replication") {
+      my @t = split(/\s+/, $v);
+      $v = \@t;
+    }
+    $self->{idx}{$k} = $v;
+  }
+  return 1;
+}
+
+our $AUTOLOAD;
+sub AUTOLOAD {
+  my ($self) = @_;
+  my $name = $AUTOLOAD;
+  $name =~ s/.*:://;
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level2
+    && $::PL->d("AUTOLOAD:", $name, '->', $self->{idx}{$name});
+  if(exists $self->{idx}{$name}) {
+    return $self->{idx}{$name};
+  }
+  return undef;
+};
+
+1;
 # ###########################################################################
 # End ZRMBackup package
 # ###########################################################################
 
 # ###########################################################################
-# MysqlBinlogParser package FSL_VERSION
+# MysqlBinlogParser package 32f75331689a9f1e63dd16a6972c8901e93696ef
 # ###########################################################################
+
+package MysqlBinlogParser;
+use strict;
+use warnings FATAL => 'all';
+use MIME::Base64;
+use Fcntl qw(:seek);
+use Carp;
+
+use constant {
+  MAGIC_LEN => 4,
+  MAGIC_BYTES => "\xfe\x62\x69\x6e",
+  V1_HEADER_LEN => 13,
+  V3_HEADER_LEN => 19,
+  V4_HEADER_LEN => 19,
+  SERVER_VERSION_LEN => 50,
+
+  V1_EVENT_START_LEN => 69,
+  V3_EVENT_START_LEN => 75,
+  EVENT_FORMAT_DESC_LEN => 91
+};
+
+use constant {
+  LOG_EVENT_BINLOG_IN_USE_F => 0x01,
+  LOG_EVENT_THREAD_SPECIFIC_F => 0x04,
+  LOG_EVENT_SUPPRESS_USE_F => 0x08,
+  LOG_EVENT_UPDATE_TABLE_MAP_VERSION_F => 0x10,
+  LOG_EVENT_ARTIFICIAL_F => 0x20,
+  LOG_EVENT_RELAY_LOG_F => 0x40
+};
+
+use constant {
+  EVENT_UNKNOWN=> 0,
+  EVENT_START_V3=> 1,
+  EVENT_QUERY=> 2,
+  EVENT_STOP=> 3,
+  EVENT_ROTATE=> 4,
+  EVENT_INTVAR=> 5,
+  EVENT_LOAD=> 6,
+  EVENT_SLAVE=> 7,
+  EVENT_CREATE_FILE=> 8,
+  EVENT_APPEND_BLOCK=> 9,
+  EVENT_EXEC_LOAD=> 10,
+  EVENT_DELETE_FILE=> 11,
+  EVENT_NEW_LOAD=> 12,
+  EVENT_RAND=> 13,
+  EVENT_USER_VAR=> 14,
+  EVENT_FORMAT_DESCRIPTION=> 15,
+  EVENT_XID=> 16,
+  EVENT_BEGIN_LOAD_QUERY=> 17,
+  EVENT_EXECUTE_LOAD_QUERY=> 18,
+  EVENT_TABLE_MAP => 19,
+  EVENT_PRE_GA_WRITE_ROWS => 20,
+  EVENT_PRE_GA_UPDATE_ROWS => 21,
+  EVENT_PRE_GA_DELETE_ROWS => 22,
+  EVENT_WRITE_ROWS => 23,
+  EVENT_UPDATE_ROWS => 24,
+  EVENT_DELETE_ROWS => 25,
+  EVENT_INCIDENT=> 26,
+};
+
+use constant {
+  Q_FLAGS2_CODE => 0,
+  Q_SQL_MODE_CODE => 1,
+  Q_CATALOG_CODE => 2,
+  Q_AUTO_INCREMENT => 3,
+  Q_CHARSET_CODE => 4,
+  Q_TIME_ZONE_CODE => 5,
+  Q_CATALOG_NZ_CODE => 6,
+  Q_LC_TIME_NAMES_CODE => 7,
+  Q_CHARSET_DATABASE_CODE => 8,
+  Q_TABLE_MAP_FOR_UPDATE_CODE => 9
+};
+
+use constant {
+  U_STRING_RESULT => 0,
+  U_REAL_RESULT   => 1,
+  U_INT_RESULT    => 2,
+  U_ROW_RESULT    => 4,
+  U_DECIMAL_RESULT => 5
+};
+
+sub new {
+  my $class = shift;
+  return $class->open(@_);
+}
+
+sub open {
+  my ($class, $path_or_fh) = @_;
+  my $self = {};
+  bless $self, $class;
+  if(ref($path_or_fh) and ref($path_or_fh) eq 'GLOB') {
+    $$self{fh} = $path_or_fh;
+    $$self{path} = '';
+  }
+  else {
+    my $tmpfh;
+    open($tmpfh, "<", $path_or_fh) or croak($!);
+    binmode($tmpfh);
+    $$self{fh} = $tmpfh;
+    $$self{path} = $path_or_fh;
+  }
+
+  $$self{header_length} = 0;
+  $$self{log_version} = -1;
+  $$self{closed_properly} = -1;
+  $$self{created_at} = -1;
+  $self->_read_header;
+  return $self;
+}
+
+sub _new_event {
+  my ($evt_time, $evt_type, $evt_len, $srv_id, $next, $flags) = @_;
+  return { ts => $evt_time, type => $evt_type,
+           len => $evt_len, server_id => $srv_id,
+           next_position => $next, flags => $flags
+         };
+}
+
+sub _read_header {
+  my ($self) = @_;
+  my $fh = $$self{fh};
+  my ($buf, $evt_type, $srv_id, $evt_len);
+  my $header_event;
+  CORE::read($fh, $buf, MAGIC_LEN) or croak($!);
+  croak("Invalid binlog magic '$buf'") unless($buf eq MAGIC_BYTES);
+  CORE::read($fh, $buf, V1_HEADER_LEN) or croak($!);
+  ($$self{created_at}, $evt_type, $srv_id, $evt_len) = unpack('LCLL', $buf);
+  $header_event = _new_event($$self{created_at}, $evt_type, $evt_len, $srv_id);
+
+
+  if($evt_type == EVENT_START_V3 and $evt_len == V1_EVENT_START_LEN) {
+    $$self{log_version} = 1;
+    croak('Binlogs in v1 format not supported');
+  }
+  elsif($evt_type == EVENT_START_V3 and $evt_len == V3_EVENT_START_LEN) {
+    $$self{log_version} = 3;
+    croak('Binlogs in v3 format not supported');
+  }
+  elsif($evt_type == EVENT_FORMAT_DESCRIPTION) {
+    $$self{log_version} = 4;
+    $self->_format_description_event($header_event);
+    $$self{header_length} = V4_HEADER_LEN;
+    $$self{header} = $header_event;
+
+    $$self{handlers} = [];
+    $$self{handlers}->[EVENT_QUERY] = \&_v4_query_event;
+    $$self{handlers}->[EVENT_XID] = \&_v4_xid_event;
+    $$self{handlers}->[EVENT_BEGIN_LOAD_QUERY] = \&_v4_append_block_event;
+    $$self{handlers}->[EVENT_EXECUTE_LOAD_QUERY] = \&_v4_execute_load_query_event;
+    $$self{handlers}->[EVENT_ROTATE] = \&_v4_rotate_event;
+    $$self{handlers}->[EVENT_RAND] = \&_v4_rand_event;
+    $$self{handlers}->[EVENT_INTVAR] = \&_v4_intvar_event;
+    $$self{handlers}->[EVENT_APPEND_BLOCK] = \&_v4_append_block_event;
+    $$self{handlers}->[EVENT_USER_VAR] = \&_v4_user_var_event;
+    $$self{handlers}->[EVENT_DELETE_FILE] = \&_delete_file_event;
+    $$self{handlers}->[EVENT_WRITE_ROWS] = \&_v4_write_rows_event;
+    $$self{handlers}->[EVENT_UPDATE_ROWS] = \&_v4_write_rows_event;
+    $$self{handlers}->[EVENT_DELETE_ROWS] = \&_v4_write_rows_event;
+    $$self{handlers}->[EVENT_TABLE_MAP] = \&_v4_table_map_event;
+  }
+  else {
+    $$self{log_version} = 3;
+    croak('Binlogs in v3 format not supported');
+  }
+
+}
+
+sub seek {
+  my ($self, $pos) = @_;
+  unless(CORE::seek($$self{fh}, SEEK_SET, $pos)) {
+    croak($!);
+  }
+  return 0;
+}
+
+sub read {
+  my ($self) = @_;
+  my $raw = '';
+  my $buf;
+  my $evt;
+  my ($evt_time, $evt_type, $srv_id, $evt_len, $evt_next, $evt_flags);
+  $_ = CORE::read($$self{fh}, $buf, $$self{header_length});
+  if(defined($_) and $_ == 0) { # end of file reached
+    return undef;
+  }
+  elsif(not defined($_)) {
+    croak($!);
+  }
+  $raw .= $buf;
+
+  if($$self{log_version} == 4) {
+     ($evt_time, $evt_type, $srv_id, $evt_len, $evt_next, $evt_flags)
+       = unpack('LCLLLS', $buf);
+     $evt = _new_event($evt_time, $evt_type, $evt_len,
+                       $srv_id, $evt_next, $evt_flags);
+     if($evt_len - $$self{header_length} == 0) {
+       return $evt;
+     }
+
+     $_ = CORE::read($$self{fh}, $buf, $evt_len - $$self{header_length});
+     if(defined($_) and $_ == 0) {
+       return undef;
+     }
+     elsif(not defined($_)) {
+       croak($!);
+     }
+     $raw .= $buf;
+     $$evt{data} = $buf;
+     eval {
+       &{$$self{handlers}->[$$evt{type}]}($evt, $raw);
+     };
+     if($@ and $@ =~ /Use of uninitialized value in subroutine entry/) {
+       croak("No handler for event type $$evt{type}");
+     }
+     elsif($@) {
+       croak($@);
+     }
+  }
+  else {
+    croak('Old log format');
+  }
+
+  return $evt;
+}
+
+
+sub _format_description_event {
+  my ($self, $evt) = @_;
+  my $fh = $$self{fh};
+  my $buf;
+  $$evt{server_version} = '';
+  $$evt{create_timestamp} = -1;
+  $$evt{header_length} = -1;
+  $$evt{event_lengths} = [];
+
+  CORE::read($fh, $buf, V4_HEADER_LEN-(V1_HEADER_LEN)) or croak($!);
+  ($$evt{next_position}, $$evt{flags}) = unpack('LS', $buf);
+
+  CORE::read($fh, $buf, $$evt{len} - V4_HEADER_LEN) or croak($!);
+
+  ($$self{log_version}, $$evt{server_version},
+   $$evt{create_timestamp}, $$evt{header_length})
+    = unpack('Sa['. SERVER_VERSION_LEN .']LC', $buf);
+  $$evt{server_version} =~ s/\0//g; # remove the null padding from the server_version field.
+
+  $$evt{event_lengths} = [unpack('x[S]x['. SERVER_VERSION_LEN .']x[L]xC/C', $buf)];
+
+  unshift @{$$evt{event_lengths}}, 0;
+  unshift @{$$evt{event_lengths}}, 0;
+
+  $$self{closed_properly} = !($$evt{flags} & LOG_EVENT_BINLOG_IN_USE_F);
+}
+
+sub _parse_status_variables {
+  my ($evt, $stat_vars_len, $stat_vars) = @_;
+  for(my $i = 0; $i < $stat_vars_len; $i++) {
+    ($_) = unpack("x[$i]C", $stat_vars);
+    if($_ == Q_FLAGS2_CODE) {
+      ($$evt{flags2}) = unpack("x[$i]xL", $stat_vars);
+      $i += 4;
+    }
+    elsif($_ == Q_SQL_MODE_CODE) {
+      ($$evt{sql_mode}) = unpack("x[$i]xQ", $stat_vars);
+      $i += 8;
+    }
+    elsif($_ == Q_CATALOG_CODE or $_ == Q_CATALOG_NZ_CODE) {
+      my $len;
+      ($len, $$evt{catalog_code}) = unpack("x[$i]xCXC/a", $stat_vars);
+      $i += $len+1;
+    }
+    elsif($_ == Q_CHARSET_CODE) {
+      ($$evt{character_set_client},
+       $$evt{collation_connection},
+       $$evt{collation_server}) = unpack("x[$i]xSSS", $stat_vars);
+      $i += 6;
+    }
+    elsif($_ == Q_AUTO_INCREMENT) {
+      ($$evt{auto_increment_increment},
+       $$evt{auto_increment_offset}) = unpack("x[$i]xSS", $stat_vars);
+    }
+    elsif($_ == Q_TIME_ZONE_CODE) {
+      my $len;
+      ($len, $$evt{timezone}) = unpack("x[$i]xCXC/a", $stat_vars);
+      $i += $len+1;
+    }
+    elsif($_ == Q_LC_TIME_NAMES_CODE) {
+      ($$evt{lc_time_names}) = unpack("x[$i]xS", $stat_vars);
+      $i += 2;
+    }
+    elsif($_ == Q_CHARSET_DATABASE_CODE) {
+      ($$evt{database_charset}) = unpack("x[$i]xS", $stat_vars);
+      $i += 2;
+    }
+    elsif($_ == Q_TABLE_MAP_FOR_UPDATE_CODE) {
+      ($$evt{table_map_for_update_bitmap}) = unpack("x[$i]xQ", $stat_vars);
+      $i += 8;
+    }
+    else {
+      croak("Unknown status variable $_");
+    }
+  }
+}
+
+sub _unpack_int {
+  my ($bytes) = @_;
+  my $u; # consumed bytes
+  ($_) = unpack('C', $bytes);
+  if($_ == 252) {
+    ($_) = unpack('x[C]S', $bytes);
+    $u = 3;
+  }
+  elsif($_ == 253) {
+    ($_) = unpack('L', $bytes);
+    $_ &= 0x00ffffff;
+    $u = 4;
+  }
+  elsif($_ == 254) {
+    ($_) = unpack('x[C]Q', $bytes);
+    $u = 9;
+  }
+  else {
+    $u = 1;
+  }
+  return ($u, $_);
+}
+
+sub _v4_query_event {
+  my ($evt) = @_;
+  my ($stat_vars_len, $stat_vars, $db_len);
+  ($$evt{thread_id}, $$evt{exec_time},
+   $db_len, $$evt{error_code}, $stat_vars_len) = unpack('LLCSS', $$evt{data});
+  ($stat_vars) = unpack("x[LLCSS]a[$stat_vars_len]", $$evt{data});
+  _parse_status_variables($evt, $stat_vars_len, $stat_vars);
+  ($$evt{database}, $$evt{stmt}) = unpack("x[LLCSS]x[$stat_vars_len]Z*a*", $$evt{data});
+  delete $$evt{data};
+}
+
+
+sub _v4_rotate_event {
+  my ($evt) = @_;
+  ($$evt{rotate_pos}) = unpack('Q', $$evt{data});
+  ($$evt{rotate_file}) = unpack('x[Q]a*', $$evt{data});
+  delete $$evt{data};
+}
+
+sub _v4_intvar_event {
+  my ($evt) = @_;
+  ($$evt{intvar_type}, $$evt{intvar_value}) = unpack('CQ', $$evt{data});
+  delete $$evt{data};
+}
+
+sub _v4_append_block_event {
+  my ($evt) = @_;
+  ($$evt{file_id}, $$evt{file_data}) = unpack('La*', $$evt{data});
+  delete $$evt{data};
+}
+
+sub _delete_file_event {
+  my ($evt) = @_;
+  ($$evt{file_id}) = unpack('L', $$evt{data});
+  delete $$evt{data};
+}
+
+sub _v4_rand_event {
+  my ($evt) = @_;
+  ($$evt{rand_seed1}, $$evt{rand_seed2}) = unpack('QQ', $$evt{data});
+  delete $$evt{data};
+}
+
+sub _v4_user_var_event {
+  my ($evt) = @_;
+  ($$evt{variable_name}, $$evt{variable_null},
+   $$evt{variable_type}, $$evt{variable_character_set},
+   $$evt{variable_length}, $$evt{variable_value}) = unpack('L/aCCLLa*', $$evt{data});
+  use Data::Dumper;
+  if($$evt{variable_null} == 0) {
+    if($$evt{variable_type} == U_INT_RESULT) {
+      ($$evt{variable_value}) = unpack('Q', $$evt{variable_value});
+    }
+    elsif($$evt{variable_type} == U_REAL_RESULT) {
+      ($$evt{variable_value}) = unpack('f', $$evt{variable_value});
+    }
+    elsif($$evt{variable_type} == U_DECIMAL_RESULT) {
+      ($$evt{variable_value}) = unpack('d', $$evt{variable_value});
+    }
+  }
+  delete $$evt{data};
+}
+
+sub _v4_xid_event {
+  my ($evt) = @_;
+  ($$evt{xid}) = unpack('Q', $$evt{data});
+  delete $$evt{data};
+}
+
+
+sub _v4_execute_load_query_event {
+  my ($evt) = @_;
+  my ($stat_vars_len, $stat_vars, $db_len);
+  ($$evt{thread_id}, $$evt{exec_time},
+   $db_len, $$evt{error_code}, $stat_vars_len,
+   $$evt{file_id}, $$evt{file_name_start},
+   $$evt{file_name_end}, $$evt{dup_handling}
+  ) = unpack('LLCSSLLLC', $$evt{data});
+  ($stat_vars) = unpack("x[LLCSSLLLC]a[$stat_vars_len]", $$evt{data});
+  _parse_status_variables($evt, $stat_vars_len, $stat_vars);
+ ($$evt{database}, $$evt{stmt}) = unpack("x[LLCSSLLLC]x[$stat_vars_len]Z*a*", $$evt{data});
+  delete $$evt{data};
+}
+
+sub _hex_dump {
+  my ($mem) = @_;
+  my $i = 0;
+  map( ++$i % 16 ? $_." " : $_ ."\n",
+             unpack( 'H2' x length( $mem ), $mem ) ),
+               length( $mem ) % 16 ? "\n" : '';
+}
+
+sub _v4_table_map_event {
+  my ($evt, $raw) = @_;
+  my ($s1, $s2, $s3, $i);
+  ($s1, $s2, $s3, $$evt{reserved_flags}, $$evt{database}, $$evt{table}, $i)
+    = unpack('SSSSxZ*xZ*a[9]', $$evt{data});
+  $$evt{table_id} =  $s1 + (($s2 << 16) + ($s3 << 32));
+  ($_, $i) = _unpack_int($i);
+  $s1 = $_ + length($$evt{database}) + length($$evt{table})+12;
+  $$evt{column_types} = [unpack("x[$s1]C[$i]", $$evt{data})];
+  $s1 += $i;
+  ($i) = unpack("x[$s1]a[9]", $$evt{data});
+  ($_, $i) = _unpack_int($i);
+
+  $$evt{data} = encode_base64($raw);
+}
+
+sub _v4_write_rows_event {
+  my ($evt, $raw) = @_;
+  $$evt{data} = encode_base64($raw);
+}
+
+1;
 # ###########################################################################
 # End MysqlBinlogParser package
 # ###########################################################################
 
 # ###########################################################################
-# IniFile package FSL_VERSION
+# IniFile package d70faf2773ed7da1be74ef0675cf06f3f0c57122
 # ###########################################################################
+package IniFile;
+use strict;
+use warnings FATAL => 'all';
+use File::Glob;
+
+
+sub read_config {
+  my $file = shift;
+  my %cfg;
+  my $inif;
+  unless(open $inif, "<$file") {
+    return undef;
+  }
+  my $cur_sec = '';
+  while(<$inif>) {
+    chomp;
+    next if(/^\s*(?:;|#)/);
+    next if(/^$/);
+    if(/^\s*\[(\w+)\]/) { # Group statement
+      $cfg{$1} = {};
+      $cur_sec = $1;
+    }
+    elsif(/^!(include(?:dir)?)\s+([^\0]+)/) { # include directives
+      my $path = $2;
+      my @files;
+      if($1 eq 'includedir') {
+        @files = glob($path . "/*.cnf");
+      }
+      else {
+        @files = ($path);
+      }
+      for(@files) { _merge(\%cfg, {read_config($_)}); }
+    }
+    else { # options and flags
+      my ($k, $v) = split(/=/, $_, 2);
+      $k =~ s/\s+$//;
+      $k =~ s/^\s+//;
+      if(defined($v)) {
+        $v =~ s/^\s+//;
+        $v =~ s/\s?#.*?[^"']$//;
+        $v =~ s/^(?:"|')//;
+        $v =~ s/(?:"|')$//;
+      }
+      else {
+        if($k =~ /^(?:no-|skip-)(.*)/) {
+          $k = $1;
+          $v = 0;
+        }
+        else {
+          $v = 1;
+        }
+      }
+      chomp($k); chomp($v);
+
+      if($k =~ /^(.*?)\s*\[\s*(\d+)?\s*\]/) {
+        $k = $1;
+        push @{$cfg{$cur_sec}{$k}}, $v;
+        next;
+      }
+      $cfg{$cur_sec}{$k} = $v;
+    }
+  }
+  return %cfg;
+}
+
+sub _merge {
+  my ($h1, $h2, $p) = @_;
+  foreach my $k (keys %$h2) {
+    if(not $p and not exists $h1->{$k}) {
+      $h1->{$k} = $h2->{$k};
+    }
+    elsif(not $p and exists $h1->{$k}) {
+      _merge($h1->{$k}, $h2->{$k}, $h1);
+    }
+    elsif($p) {
+      $h1->{$k} = $h2->{$k};
+    }
+  }
+  $h1;
+}
+
+1;
 # ###########################################################################
 # End IniFile package
 # ###########################################################################
 
 # ###########################################################################
-# Path package FSL_VERSION
+# Path package fce50b360e525d020cafb366ba404a74b1fbddb5
 # ###########################################################################
+package Path;
+use File::Find;
+
+sub dir_empty {
+  my $dir = shift;
+  eval "use File::Find;";
+  my $rmtree_sub = sub {
+    if(-d $File::Find::name && $File::Find::name ne $dir) {
+      rmdir $File::Find::name or die('rmtree: unable to remove directory '. $File::Find::name);
+    }
+    elsif($_ ne $dir) {
+      unlink $File::Find::name or die('rmtree: unable to delete file '. $File::Find::name);
+    }
+    elsif($_ eq $dir) {
+      return;
+    }
+    else {
+      die('rmtree: unexpected error when attempting to remove ' . $File::Find::name);
+    }
+  };
+  find( { wanted => $rmtree_sub, no_chdir => 1, bydepth => 1 }, $dir );
+
+  return 0;
+}
+1;
 # ###########################################################################
 # End Path package
 # ###########################################################################
 
 # ###########################################################################
-# Which package FSL_VERSION
+# Which package fb3b29095206245c761e7099703527cd7483ab5d
 # ###########################################################################
+package Which;
+use strict;
+use warnings FATAL => 'all';
+use Carp;
+
+sub which($) {
+  my $cmd = shift;
+  croak "No command to which specified" if(!$cmd);
+  if( $cmd =~ /^\.?\// or $cmd =~ /\// ) {
+    return $cmd if(-f $cmd and -x $cmd);
+    return undef;
+  }
+  for(split(/:/, $ENV{'PATH'})) {
+    return "$_/$cmd" if(-f "$_/$cmd" and -x "$_/$cmd");
+  }
+  return undef;
+}
+
+1;
 # ###########################################################################
 # End Which package
 # ###########################################################################
@@ -83,11 +1182,6 @@ use File::Path;
 use File::Basename;
 use Sys::Hostname;
 
-use IniFile;
-use ProcessLog;
-use ZRMBackup;
-use Path;
-use Which;
 
 my $pl;
 

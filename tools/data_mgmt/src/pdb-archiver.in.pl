@@ -30,29 +30,1050 @@
 use strict;
 use warnings;
 # ###########################################################################
-# ProcessLog package FSL_VERSION
+# ProcessLog package 876f85f39dfeb6100fbb852f82cbf61c1e4d739a
 # ###########################################################################
+package ProcessLog;
+use strict;
+use warnings FATAL => 'all';
+
+
+my $mail_available = 1;
+eval 'use Mail::Send';
+if($@) {
+  $mail_available = 0;
+}
+use Sys::Hostname;
+use Digest::MD5 qw(md5_hex);
+use Time::HiRes qw(time);
+use File::Spec;
+use Fcntl qw(:seek);
+use English qw(-no_match_vars);
+
+use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
+use constant Level1 => 1;
+use constant Level2 => 2;
+use constant Level3 => 3;
+
+
+sub new {
+  my $class = shift;
+  my ($script_name, $logpath, $email_to) = @_;
+  my $self = {};
+
+  $self->{run_id} = md5_hex(time . rand() . $script_name);
+
+  $self->{script_name} = $script_name;
+  $self->{log_path} = $logpath;
+  $self->{email_to} = $email_to;
+  $self->{stack_depth} = 10; # Show traces 10 levels deep.
+  $self->{logsub} = 0;
+  $self->{quiet} = 0;
+
+  bless $self,$class;
+  $self->logpath($logpath);
+  return $self;
+}
+
+sub DESTROY {
+  my ($self) = @_;
+  if(ref($$self{'LOG'}) and ref($$self{'LOG'}) eq 'GLOB') {
+    $$self{'LOG'}->flush();
+  }
+}
+
+
+sub null {
+  my $class = shift;
+  $class->new('', '/dev/null', undef);
+}
+
+
+sub name {
+  my $self = shift;
+  $self->{script_name};
+}
+
+
+sub runid {
+  my $self = shift;
+  $self->{run_id};
+}
+
+
+sub start {
+  my $self = shift;
+  $self->m("BEGIN $self->{run_id}");
+}
+
+
+sub end {
+  my $self = shift;
+  $self->m("END $self->{run_id}");
+}
+
+
+sub stack_depth {
+  my ($self, $opts) = @_;
+  my $old = $self->{stack_depth};
+  $self->{stack_depth} = $opts if( defined $opts );
+  $old;
+}
+
+
+sub quiet {
+  my ($self, $new) = @_;
+  my $old = $self->{quiet};
+  $self->{quiet} = $new if( defined $new );
+  $old;
+}
+
+
+sub logpath {
+  my ($self, $logpath) = @_;
+  my $script_name = $$self{script_name};
+  return $self->{log_path} if(not $logpath);
+  $self->{log_path} = $logpath;
+  if($logpath =~ /^syslog:(\w+)/) {
+    require Sys::Syslog;
+    Sys::Syslog::openlog($script_name, "", $1);
+    $self->{logsub} = sub {
+      my $self = shift;
+      $_[3] = '';
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
+      Sys::Syslog::syslog($lvl, _p(@_));
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      my @args = @_;
+      $args[0] =~ s/^/# /;
+      print STDERR _p(@args);
+    }
+  }
+  else {
+    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    binmode($self->{LOG});
+    $self->{logsub} = sub {
+      my $self = shift;
+      my $fh  = $self->{LOG};
+      print $fh _p(@_);
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  return $self;
+}
+
+
+sub email_to {
+  my ($self, @emails) = @_;
+  my $old = $$self{email_to};
+  if(@emails) {
+    $$self{email_to} = [@emails];
+  }
+  return $old;
+}
+
+
+sub m {
+  my ($self,$m) = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
+}
+
+
+sub ms {
+  my $self = shift;
+  $self->m(@_);
+  $self->m($self->stack());
+}
+
+
+sub p {
+  my ($self) = shift;
+  my $fh = \*STDIN;
+  my $regex = qr/.*/;
+  my $default = undef;
+  my @prompt = ();
+  if(ref($_[0]) eq 'GLOB') {
+    $fh = shift;
+  }
+  if(ref($_[-1]) eq 'Regexp') {
+    $regex = pop;
+  }
+  elsif(ref($_[-2]) eq 'Regexp') {
+    $default = pop;
+    $regex = pop;
+  }
+  @prompt = @_;
+  $self->m(@prompt);
+  chomp($_ = <$fh>);
+  if($default and $_ eq '') {
+    $self->m('Using default:', $default);
+    return $default;
+  }
+  while($_ !~ $regex) {
+    $self->d("Input doesn't match:", $regex);
+    $self->m(@prompt);
+    chomp($_ = <$fh>);
+  }
+
+  $self->m('Using input:', $_);
+  return $_;
+}
+
+
+sub e {
+  my ($self,$m) = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
+}
+
+
+sub es {
+  my $self = shift;
+  $self->e(@_);
+  $self->e($self->stack());
+}
+
+
+sub i {
+  my $self = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
+}
+
+
+sub is {
+  my $self = shift;
+  $self->i(@_);
+  $self->i($self->stack());
+}
+
+
+sub d {
+  my $self = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  if(_PdbDEBUG) {
+    my $t = sprintf("%.3f", time());
+    $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
+  }
+}
+
+
+sub ds {
+  my $self = shift;
+  $self->d(@_);
+  $self->d($self->stack());
+}
+
+
+sub x {
+  my ($self, $subref, @args) = @_;
+  my $r = undef;
+  my $saved_fhs = undef;
+  my $proc_fh = undef;
+  eval {
+    $saved_fhs = $self->_save_stdfhs();
+    open($proc_fh, '+>', undef) or die("Unable to open anonymous tempfile");
+    open(STDOUT, '>&', $proc_fh) or die("Unable to dup anon fh to STDOUT");
+    open(STDERR, '>&', \*STDOUT) or die("Unable to dup STDOUT to STDERR");
+    $r = $subref->(@args);
+  };
+  $self->_restore_stdfhs($saved_fhs);
+  seek($proc_fh, 0, SEEK_SET);
+  return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
+}
+
+
+sub stack {
+  my ($self, $level, $top) = @_;
+  $level = $self->{stack_depth} ||= 10 unless($level);
+  $top   = (defined $top ? $top : 2);
+  my $out = "";
+  my $i=0;
+  my ($package, $file, $line, $sub) = caller($i+$top); # +2 hides ProcessLog from the stack trace.
+  $i++;
+  if($package) {
+    $out .= "Stack trace:\n";
+  }
+  else {
+    $out .= "No stack data available.\n";
+  }
+  while($package and $i < $level) {
+    $out .= " "x$i . "$package  $file:$line  $sub\n";
+    ($package, $file, $line, $sub) = caller($i+$top);
+    $i++;
+  }
+  chomp($out);
+  $out;
+}
+
+sub _p {
+  my $mode = shift;
+  my $package = shift;
+  my $line = shift;
+  my $time = shift;
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
+  @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
+       map { defined $_ ? $_ : 'undef' } @_;
+  $prefix. join(' ',@_). "\n";
+}
+
+sub _flush {
+  my ($self) = @_;
+  unless($self->{log_path} =~ /^syslog:/) {
+    $self->{LOG}->flush;
+  }
+  1;
+}
+
+sub _save_stdfhs {
+  my ($self) = @_;
+  open my $stdout_save, ">&", \*STDOUT or die("Unable to dup stdout");
+  open my $stderr_save, ">&", \*STDERR or die("Unable to dup stderr");
+  return { o => $stdout_save, e => $stderr_save };
+}
+
+sub _restore_stdfhs {
+  my ($self, $fhs) = @_;
+  my $o = $fhs->{o};
+  my $e = $fhs->{e};
+  open STDOUT, ">&", $o;
+  open STDERR, ">&", $e;
+  return 1;
+}
+
+
+sub email_and_die {
+  my ($self, $extra) = @_;
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
+  $self->failure_email($extra);
+  die($extra);
+}
+
+
+sub failure_email {
+  my ($self,$extra) = @_;
+  $self->send_email("$self->{script_name} FAILED", $extra);
+}
+
+sub success_email {
+  my ($self, $extra) = @_;
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
+}
+
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
+  my $fh = $msg->open;
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
+  $fh->close;
+}
+
+
+{
+  no strict 'refs';
+  no warnings 'once';
+  *::PL = \(ProcessLog->new($0, '/dev/null'));
+}
+
+
+1;
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# TableAge package FSL_VERSION
+# TableAge package b6b340d3dab50d36e0cd373caa4f7393616cab2c
 # ###########################################################################
+package TableAge;
+use strict;
+use warnings FATAL => 'all';
+use Data::Dumper;
+use DateTime::Format::Strptime;
+
+sub new {
+  my $class = shift;
+  my ($dbh, $pattern) = @_;
+  my $self = {};
+  $self->{dbh} = $dbh;
+  $self->{pattern} = $pattern;
+  $self->{status_dft} = DateTime::Format::Strptime->new(
+    pattern => '%F %T', time_zone => "local");
+  $self->{name_dft} =  DateTime::Format::Strptime->new(
+    pattern => $pattern, time_zone => "local");
+  return bless $self, $class;
+}
+
+sub age_by_status {
+  my ($self, $schema, $table) = @_;
+  my $status = $self->{dbh}->selectrow_hashref(qq|SHOW TABLE STATUS FROM `$schema` LIKE '$table'|);
+  return $self->{status_dft}->parse_datetime($status->{'Create_time'});
+}
+
+sub age_by_name {
+  my ($self, $table, $pattern) = @_;
+  if($pattern) {
+    $self->{name_dft}->pattern($pattern);
+  }
+  return $self->{name_dft}->parse_datetime($table);
+}
+
+sub older_than {
+  my ($self, $tbl_age, $when) = @_;
+  if(DateTime->compare($tbl_age, $when) == -1) {
+    return 1;
+  }
+  return 0;
+}
+
+sub newer_than {
+  my ($self, $tbl_age, $when) = @_;
+  if(DateTime->compare($tbl_age, $when) == 1) {
+    return 1;
+  }
+  return 0;
+}
+
+1;
 # ###########################################################################
 # End TableAge package
 # ###########################################################################
 
 # ###########################################################################
-# TableDumper package FSL_VERSION
+# TableDumper package b08ed9441d6d0e3d6be4d2c14ad41bdd3d0b8b03
 # ###########################################################################
+package TableDumper;
+use DBI;
+use Net::SSH::Perl;
+
+eval "use Math::BigInt::GMP";
+
+sub new {
+  my $class = shift;
+  my ($dbh, $plog, $user, $host, $pw) = @_;
+  my $self = {};
+  $self->{dbh} = $dbh;
+  $self->{plog} = $plog;
+  $self->{user} = $user;
+  $self->{host} = $host;
+  $self->{pass} = $pw;
+  $self->{mysqldump} = "/usr/bin/mysqldump";
+  $self->{gzip} = "/usr/bin/gzip";
+  $self->{mysqlsocket} = "/tmp/mysql.sock";
+
+  bless $self, $class;
+  return $self;
+}
+
+sub mysqldump_path {
+  my ($self, $path) = @_;
+  my $old = $self->{mysqldump};
+  $self->{mysqldump} = $path if( defined $path );
+  $old;
+}
+
+sub gzip_path {
+  my ($self, $path) = @_;
+  my $old = $self->{gzip};
+  $self->{gzip} = $path if( defined $path );
+  $old;
+}
+
+sub mysqlsocket_path {
+  my ($self, $path) = @_;
+  my $old = $self->{mysqlsocket};
+  $self->{mysqlsocket} = $path if( defined $path );
+  $old;
+}
+
+sub host {
+  my ($self, $new) = @_;
+  my $old = $self->{host};
+  $self->{host} = $new if( defined $new );
+  $old;
+}
+
+sub user {
+  my ($self, $new) = @_;
+  my $old = $self->{user};
+  $self->{user} = $new if( defined $new );
+  $old;
+}
+
+sub pass {
+  my ($self, $new) = @_;
+  my $old = $self->{pass};
+  $self->{pass} = $new if( defined $new );
+  $old;
+}
+
+sub noop {
+  my ($self, $noop) = @_;
+  my $old = $self->{noop};
+  $self->{noop} = $noop if( defined $noop );
+  $old;
+}
+
+sub dump {
+  my ($self, $dest, $schema, $table_s) = @_;
+  my $cmd = $self->_make_mysqldump_cmd($dest, $schema, $table_s);
+  $self->{plog}->d("Starting $cmd");
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Command interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Command interrupted by SIGTERM"); };
+      my $ret = qx/($cmd) 2>&1/;
+      if($? != 0) {
+        $self->{plog}->e("mysqldump failed with: ". ($? >> 8));
+        $self->{plog}->e("messages: $ret");
+        die("Error doing mysqldump");
+      }
+    };
+    if($@) {
+      chomp($@);
+      $self->{plog}->es("Issues with command execution:", $@);
+      die("Error doing mysqldump");
+    }
+    $self->{plog}->d("Completed mysqldump.");
+  }
+  return 1;
+}
+
+sub compress {
+  my ($self, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
+    $self->{plog}->d("Compressing '$file' with $self->{gzip}");
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        $ret = qx/$self->{gzip} $file 2>&1/;
+        if($? != 0) {
+          $self->{plog}->e("$self->{gzip} returned: ". ($? >> 8) ."\n", $ret);
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+sub remote_compress {
+  my ($self, $host, $user, $id, $pass, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    $self->{plog}->d("Remote compressing '$file' with $self->{gzip}");
+    eval {
+      $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
+      $self->{plog}->d("Logging into $user\@$host.");
+      $self->{ssh}->login($user, $pass);
+    };
+    if($@) {
+      $self->{plog}->e("Unable to login. $@");
+      return undef;
+    }
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        my ( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$self->{gzip} $file");
+        if($exit != 0) {
+          $self->{plog}->e("$self->{gzip} returned: ". $exit ."\n", $ret);
+          $self->{plog}->e("Stderr: $stderr");
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+
+sub ssh_options {
+  my ($self, $opts) = @_;
+  my $old = $self->{ssh_options};
+  $self->{ssh_options} = $opts if( defined $opts );
+  $old;
+}
+
+sub remote_dump {
+  my ($self, $user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
+  my $cmd = $self->_make_mysqldump_cmd($dest, $schema, $table_s);
+  eval {
+    $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
+    $self->{plog}->d("Logging into $user\@$host.");
+    $self->{ssh}->login($user, $pass);
+  };
+  if($@) {
+    $self->{plog}->e("Unable to login. $@");
+    return undef;
+  }
+  $self->{plog}->d("Running remote mysqldump: '$cmd'");
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
+      my( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$cmd");
+      if($exit != 0) {
+        $self->{plog}->e("Non-zero exit ($exit) from: $cmd");
+        $self->{plog}->e("Stderr: $stderr");
+        die("Remote mysqldump failed");
+      }
+    };
+    if ($@) {
+      chomp($@);
+      $self->{plog}->es("Issues with remote command execution:", $@);
+      die("Failed to ssh");
+    }
+    $self->{plog}->d("Completed mysqldump.");
+  }
+  return 1;
+}
+
+sub drop {
+  my ($self, $schema, $table_s) = @_;
+  my $drops = '';
+  if(ref($table_s) eq 'ARRAY') {
+    map { $drops .= "`$schema`.`$_`," } @$table_s;
+    chop($drops);
+  }
+  else {
+    $drops = "`$schema`.`$table_s`";
+  }
+  $self->{plog}->d("SQL: DROP TABLE $drops");
+  unless($self->{noop}) {
+    eval {
+      local $SIG{INT} = sub { die("Query interrupted by SIGINT"); };
+      local $SIG{TERM} = sub { die("Query interrupted by SIGTERM"); };
+      $self->{dbh}->do("DROP TABLE $drops")
+        or $self->{plog}->e("Failed to drop some tables.") and die("Failed to drop some tables");
+    };
+    if($@) {
+      chomp($@);
+      $self->{plog}->es("Failed to drop some tables:", $@);
+      die("Failed to drop some tables");
+    }
+    $self->{plog}->d("Completed drop.");
+  }
+  return 1;
+}
+
+sub dump_and_drop {
+  my ($self, $dest, $schema, $table_s) = @_;
+  $self->{plog}->d("Dumping and dropping: ". join(" $schema.", $table_s));
+  $self->dump($dest, $schema, $table_s);
+  $self->drop($schema, [$table_s]);
+  return 1;
+}
+
+sub remote_dump_and_drop {
+  my ($self, $user, $host, $id, $pass, $dest, $schema, $table_s) = @_;
+  $self->remote_dump($user, $host, $id, $pass, $dest, $schema, $table_s);
+  $self->drop($schema, [$table_s]);
+  return 1;
+}
+
+sub _make_mysqldump_cmd {
+  my ($self, $dest, $schema, $table_s) = @_;
+  my $cmd = qq|if [[ ! -f "$dest.gz" ]]; then $self->{mysqldump} --host $self->{host} --user $self->{user}|;
+  $cmd .=" --socket '$self->{mysqlsocket}'" if($self->{host} eq "localhost");
+  $cmd .=" --pass='$self->{pass}'" if ($self->{pass});
+  $cmd .=" --single-transaction -Q $schema ";
+  $cmd .= join(" ", $table_s) if( defined $table_s );
+  $cmd .= qq| > "$dest"|;
+  $cmd .= qq| ; else echo 'Dump already present.' 1>&2; exit 1 ; fi|;
+  $cmd;
+}
+
+1;
 # ###########################################################################
 # End TableDumper package
 # ###########################################################################
 
 # ###########################################################################
-# RowDumper package FSL_VERSION
+# RowDumper package 2dcde97bf5208200d25ebe04c813b26964c737e9
 # ###########################################################################
+package RowDumper;
+use strict;
+use warnings;
+use DBI;
+use Net::SSH::Perl;
+use Data::Dumper;
+
+
+sub new {
+  my $class = shift;
+  my ($dbh, $plog, $host, $user, $pass, $schema, $table, $archive_column) = @_;
+  my $self = {};
+  $self->{dbh} = $dbh;
+  $self->{plog} = $plog;
+  $self->{host} = $host;
+  $self->{user} = $user;
+  $self->{pass} = $pass;
+  $self->{schema} = $schema;
+  $self->{table} = $table;
+  $self->{archive_column} = $archive_column;
+  $self->{mk_archiver_path} = "/usr/bin/mk-archiver";
+  $self->{gzip_path} = "/usr/bin/gzip";
+  $self->{dest} = 0;
+  $self->{noop} = 0;
+
+  bless $self, $class;
+
+  $plog->d("Collecting indexes from `$schema`.`$table`.");
+  my $idxs;
+  eval {
+    $idxs = $dbh->selectrow_hashref("SHOW INDEXES FROM `$schema`.`$table` WHERE column_name=?", {}, $archive_column);
+    die("Unable to find indexes") unless(defined $idxs);
+    $plog->d("Index name on `$schema`.`$table`:", $idxs->{'Key_name'});
+    $self->{archive_index}=$idxs->{'Key_name'};
+  };
+  if($@) {
+    chomp($@);
+    $plog->e($@);
+    return undef;
+  }
+  $plog->d("Caching columns from `$schema`.`$table`.");
+  @{$self->{columns}} = map {
+    $_->[0];
+  } @{$dbh->selectall_arrayref("SHOW COLUMNS FROM `$schema`.`$table`")};
+  $plog->d("Columns: ", join(",",@{$self->{columns}}));
+
+  return $self;
+}
+
+sub noop {
+  my ($self, $new) = @_;
+  my $old = $self->{noop};
+  $self->{noop} = $new if( defined($new) );
+  $old;
+}
+
+sub reset {
+  my $self = shift;
+  if($self->{dest}) {
+    $self->{plog}->d("Reset dump filehandle.");
+    close($self->{dest});
+    $self->{dest} = 0;
+  }
+  1;
+}
+
+sub finish {
+  my $self = shift;
+  if($self->{dest}) {
+    $self->{plog}->d("Closed dump filehandle.");
+    my $f = $self->{dest};
+    print $f "COMMIT;\n";
+    close($f);
+    $self->{dest} = 0;
+  }
+  1;
+}
+
+sub gzip_path {
+  my ($self, $new) = @_;
+  my $old = $self->{gzip_path};
+  $self->{gzip_path} = $new if( defined($new) );
+  $old;
+}
+
+sub mk_archiver_path {
+  my ($self, $new) = @_;
+  my $old = $self->{mk_archiver_path};
+  $self->{mk_archiver_path} = $new if( defined($new) );
+  $old;
+}
+
+sub mk_archiver_opt {
+  my ($self, $opt, $new) = @_;
+  my $old = $self->{"mk_$opt"};
+  $self->{"mko_$opt"} = $new if( defined($new) );
+  $old;
+}
+
+sub compress {
+  my ($self, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    return 0 if(-f "$file.gz"); # gzip appears to refuse compressing if the target exists, and I think that's probably good.
+    $self->{plog}->d("Compressing '$file' with $self->{gzip_path}");
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        $ret = qx/$self->{gzip_path} $file 2>&1/;
+        if($? != 0) {
+          $self->{plog}->e("$self->{gzip_path} returned: ". ($? >> 8) ."\n", $ret);
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+sub remote_compress {
+  my ($self, $host, $user, $id, $pass, $file) = @_;
+  unless($self->{dest} or not defined($file)) { # Refuse to compress until after it's been "finished".
+    $self->{plog}->d("Remote compressing '$file' with $self->{gzip_path}");
+    eval {
+      $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
+      $self->{plog}->d("Logging into $user\@$host.");
+      $self->{ssh}->login($user, $pass);
+    };
+    if($@) {
+      $self->{plog}->e("Unable to login. $@");
+      return undef;
+    }
+    my $ret = undef;
+    unless($self->{noop}) {
+      eval {
+        local $SIG{INT} = sub { die("Caught SIGINT during compression."); };
+        local $SIG{TERM} = sub { die("Caught SIGTERM during compression."); };
+        my ( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$self->{gzip_path} $file");
+        if($exit != 0) {
+          $self->{plog}->e("$self->{gzip_path} returned: ". $exit ."\n", $ret);
+          $self->{plog}->e("Stderr: $stderr");
+          die("Failed to compress '$file'");
+        }
+      };
+      if($@) {
+        chomp($@);
+        $self->{plog}->es($@);
+        die("Failed to compress '$file'");
+      }
+    }
+    $self->{plog}->d("Finished compressing '$file'.");
+    return 1;
+  }
+  $self->{plog}->d("Refusing to compress open file: '$file'.");
+  return 0;
+}
+
+sub archive {
+  my ($self, $dest, $condition, $limit) = @_;
+  my $cmd = $self->_mk_archiver_cmd($condition, $dest);
+  $self->{plog}->d("Starting mk-archiver: $cmd");
+  eval {
+    local $SIG{INT} = sub { die("Caught SIGINT during mk-archiver."); };
+    local $SIG{TERM} = sub { die("Caught SIGTERM during mk-archiver."); };
+    my $out = qx($cmd 2>&1); 
+    $self->{plog}->m($out) if($self->{'noop'});
+    if($? != 0) {
+      $self->{plog}->e("mk-archiver failed with: ". ($? >> 8));
+      $self->{plog}->e("messages: $out");
+      die("Error doing mk-archiver");
+    }
+  };
+  if($@) {
+    chomp($@);
+    $self->{plog}->es("Issues with command execution:", $@);
+    die("Error doing mk-archiver");
+  }
+  $self->{plog}->d("Finished mk-archiver.");
+  1;
+}
+
+sub remote_archive {
+  my ($self, $host, $user, $id, $pass, $dest, $condition, $limit) = @_;
+  my $cmd = $self->_mk_archiver_cmd($condition, $dest);
+  eval {
+    $self->{ssh} = Net::SSH::Perl->new($host, identity_files => $id, debug => ProcessLog::_PdbDEBUG >= ProcessLog::Level2, options => [$self->{ssh_options}]);
+    $self->{plog}->d("Logging into $user\@$host.");
+    $self->{ssh}->login($user, $pass);
+  };
+  if($@) {
+    $self->{plog}->e("Unable to login: $@");
+    return undef;
+  }
+  $self->{plog}->d("Running remote mk-archiver: '$cmd'");
+  eval {
+    local $SIG{INT} = sub { die("Remote command interrupted by SIGINT"); };
+    local $SIG{TERM} = sub { die("Remote command interrupted by SIGTERM"); };
+    my( $stdout, $stderr, $exit ) = $self->{ssh}->cmd("$cmd");
+    if($exit != 0) {
+      $self->{plog}->e("Non-zero exit ($exit) from: $cmd");
+      $self->{plog}->e("Stderr: $stderr");
+      die("Remote mk-archiver failed");
+    }
+  };
+  if ($@) {
+    chomp($@);
+    $self->{plog}->es("Issues with remote command execution:", $@);
+    die("Failed to ssh");
+  }
+  $self->{plog}->d("Finished remote mk-archiver.");
+  return 1;
+}
+
+sub simple_dump {
+  my ($self, $dest, $condition, $limit, $bindvars) = @_;
+
+  my $comment = $self->{plog}->name() . " - RowDumper";
+  my $limstr = defined($limit) ? "LIMIT ?" : "";
+  $self->{plog}->d("Dumping: $self->{schema}.$self->{table} $condition". (defined($limit) ? ", $limit" : "") .", ". join(",", $bindvars));
+  $self->{plog}->d("Dump SQL: /* $comment */ SELECT * FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr");
+  my $sth = $self->{dbh}->prepare_cached(qq#/* $comment */ SELECT * FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr#);
+
+  my $ret = (defined($limit) ? $sth->execute($bindvars,$limit) : $sth->execute($bindvars));
+  $self->{plog}->d("Dump execute returns: $ret");
+  my $i = 0;
+  unless($self->{noop}) {
+    while ( my $r = $sth->fetch ) {
+      $self->_writerow($dest, $r);
+      $i++;
+    }
+  }
+  $self->{plog}->d("No rows dumped.") if($i == 0);
+  $i;
+}
+
+sub simple_drop {
+  my ($self, $condition, $limit, $bindvars) = @_;
+  my $comment = $self->{plog}->name() . " - RowDumper";
+  my $limstr = defined($limit) ? "LIMIT ?" : "";
+  $self->{plog}->d("Deleting: $self->{schema}.$self->{table} $condition, $limit, ". join(",", $bindvars));
+  $self->{plog}->d("Delete SQL: /* $comment */ DELETE FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr");
+  my $sth = $self->{dbh}->prepare_cached(qq#/* $comment */ DELETE FROM `$self->{schema}`.`$self->{table}` WHERE ($condition) $limstr#);
+
+  my $ret = 0;
+  unless($self->{noop}) {
+    $ret = (defined($limit) ? $sth->execute($bindvars,$limit) : $sth->execute($bindvars));
+  }
+  $self->{plog}->d("No rows dropped.") if($ret == 0 or $ret == 0E0);
+  $ret;
+}
+
+sub dumpgt {
+  my ($self, $dest, $condvar, $rowlim) = @_;
+  $self->dump($dest, "$self->{archive_column}>=?", $rowlim, $condvar);
+}
+
+sub dumplt {
+  my ($self, $dest, $condvar, $rowlim) = @_;
+  $self->dump($dest, "$self->{archive_column}<=?", $rowlim, $condvar);
+}
+
+sub dropgt {
+  my ($self, $condvar, $rowlim) = @_;
+  $self->drop("$self->{archive_column}>=?", $rowlim, $condvar);
+}
+
+sub droplt {
+  my ($self, $condvar, $rowlim) = @_;
+  $self->drop("$self->{archive_column}<=?", $rowlim, $condvar);
+}
+
+sub _writerow {
+  my ($self, $dest, $r) = @_;
+  my $f;
+  unless($self->{dest}) {
+    $self->{plog}->d("Opened dumpfile: $dest");
+    open $f, ">>$dest";
+    print $f "USE `$self->{schema}`;\n";
+    print $f "BEGIN;\n";
+    $self->{dest} = $f;
+  }
+  else {
+    $f = $self->{dest};
+  }
+
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3 && $self->{plog}->d("writerow: rowdata: ". join(",", @$r));
+
+  my $insdata = join(",", map {
+      $self->{dbh}->quote($_);
+    } @$r);
+  print $f "INSERT INTO `$self->{table}` (". join(",",@{$self->{columns}}) .") VALUES ($insdata);\n";
+}
+
+sub _mk_archiver_cmd {
+  my ($self, $condition, $dest) = @_;
+  unless($self->{mk_archiver_path}) {
+    $self->{plog}->es(qq#Invalid path to mk-archiver: "$self->{mk_archiver_path}"#);
+    die("Path to mk-archiver invalid");
+  }
+  my $cmd = "perl $self->{mk_archiver_path} --source h=$self->{host},u=$self->{user},p=$self->{pass},D=$self->{schema},t=$self->{table},i=$self->{archive_index} ";
+  $cmd .= "--where \"$condition\" ";
+  $cmd .= "--file \"$dest\" " unless($self->{'mko_dest'});
+  $cmd .= join(" ", map {
+      if (/^mko_(.*)$/) {
+        $_ = qq|--$1 $self->{"mko_$1"}|;
+      }
+    } keys %$self);
+  $cmd .= " --dry-run" if($self->{'noop'});
+  $cmd;
+}
+
+1;
 # ###########################################################################
 # End RowDumper package
 # ###########################################################################
@@ -60,10 +1081,7 @@ use warnings;
 package pdb_archiver;
 use strict;
 use warnings;
-use ProcessLog;
-use TableAge;
-use TableDumper;
-use RowDumper;
+
 
 use Getopt::Long;
 use Pod::Usage;

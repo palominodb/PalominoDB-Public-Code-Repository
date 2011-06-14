@@ -31,36 +31,1215 @@ use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# ProcessLog package FSL_VERSION
+# ProcessLog package 876f85f39dfeb6100fbb852f82cbf61c1e4d739a
 # ###########################################################################
+package ProcessLog;
+use strict;
+use warnings FATAL => 'all';
+
+
+my $mail_available = 1;
+eval 'use Mail::Send';
+if($@) {
+  $mail_available = 0;
+}
+use Sys::Hostname;
+use Digest::MD5 qw(md5_hex);
+use Time::HiRes qw(time);
+use File::Spec;
+use Fcntl qw(:seek);
+use English qw(-no_match_vars);
+
+use constant _PdbDEBUG => $ENV{Pdb_DEBUG} || 0;
+use constant Level1 => 1;
+use constant Level2 => 2;
+use constant Level3 => 3;
+
+
+sub new {
+  my $class = shift;
+  my ($script_name, $logpath, $email_to) = @_;
+  my $self = {};
+
+  $self->{run_id} = md5_hex(time . rand() . $script_name);
+
+  $self->{script_name} = $script_name;
+  $self->{log_path} = $logpath;
+  $self->{email_to} = $email_to;
+  $self->{stack_depth} = 10; # Show traces 10 levels deep.
+  $self->{logsub} = 0;
+  $self->{quiet} = 0;
+
+  bless $self,$class;
+  $self->logpath($logpath);
+  return $self;
+}
+
+sub DESTROY {
+  my ($self) = @_;
+  if(ref($$self{'LOG'}) and ref($$self{'LOG'}) eq 'GLOB') {
+    $$self{'LOG'}->flush();
+  }
+}
+
+
+sub null {
+  my $class = shift;
+  $class->new('', '/dev/null', undef);
+}
+
+
+sub name {
+  my $self = shift;
+  $self->{script_name};
+}
+
+
+sub runid {
+  my $self = shift;
+  $self->{run_id};
+}
+
+
+sub start {
+  my $self = shift;
+  $self->m("BEGIN $self->{run_id}");
+}
+
+
+sub end {
+  my $self = shift;
+  $self->m("END $self->{run_id}");
+}
+
+
+sub stack_depth {
+  my ($self, $opts) = @_;
+  my $old = $self->{stack_depth};
+  $self->{stack_depth} = $opts if( defined $opts );
+  $old;
+}
+
+
+sub quiet {
+  my ($self, $new) = @_;
+  my $old = $self->{quiet};
+  $self->{quiet} = $new if( defined $new );
+  $old;
+}
+
+
+sub logpath {
+  my ($self, $logpath) = @_;
+  my $script_name = $$self{script_name};
+  return $self->{log_path} if(not $logpath);
+  $self->{log_path} = $logpath;
+  if($logpath =~ /^syslog:(\w+)/) {
+    require Sys::Syslog;
+    Sys::Syslog::openlog($script_name, "", $1);
+    $self->{logsub} = sub {
+      my $self = shift;
+      $_[3] = '';
+      my $lvl = 'LOG_DEBUG';
+      $lvl = 'LOG_INFO' if($_[0] eq "msg");
+      $lvl = 'LOG_NOTICE' if($_[0] eq "ifo");
+      $lvl = 'LOG_ERR'  if($_[0] eq "err");
+      Sys::Syslog::syslog($lvl, _p(@_));
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  elsif($logpath eq 'pdb-test-harness' or $logpath eq 'stderr') {
+    $self->{logsub} = sub {
+      my $self = shift;
+      my @args = @_;
+      $args[0] =~ s/^/# /;
+      print STDERR _p(@args);
+    }
+  }
+  else {
+    open $self->{LOG}, ">>$self->{log_path}" or die("Unable to open logfile: '$self->{log_path}'.\n");
+    binmode($self->{LOG});
+    $self->{logsub} = sub {
+      my $self = shift;
+      my $fh  = $self->{LOG};
+      print $fh _p(@_);
+      print _p(@_) unless $self->{quiet};
+    };
+  }
+  return $self;
+}
+
+
+sub email_to {
+  my ($self, @emails) = @_;
+  my $old = $$self{email_to};
+  if(@emails) {
+    $$self{email_to} = [@emails];
+  }
+  return $old;
+}
+
+
+sub m {
+  my ($self,$m) = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'msg', undef, undef, $t, @_);
+}
+
+
+sub ms {
+  my $self = shift;
+  $self->m(@_);
+  $self->m($self->stack());
+}
+
+
+sub p {
+  my ($self) = shift;
+  my $fh = \*STDIN;
+  my $regex = qr/.*/;
+  my $default = undef;
+  my @prompt = ();
+  if(ref($_[0]) eq 'GLOB') {
+    $fh = shift;
+  }
+  if(ref($_[-1]) eq 'Regexp') {
+    $regex = pop;
+  }
+  elsif(ref($_[-2]) eq 'Regexp') {
+    $default = pop;
+    $regex = pop;
+  }
+  @prompt = @_;
+  $self->m(@prompt);
+  chomp($_ = <$fh>);
+  if($default and $_ eq '') {
+    $self->m('Using default:', $default);
+    return $default;
+  }
+  while($_ !~ $regex) {
+    $self->d("Input doesn't match:", $regex);
+    $self->m(@prompt);
+    chomp($_ = <$fh>);
+  }
+
+  $self->m('Using input:', $_);
+  return $_;
+}
+
+
+sub e {
+  my ($self,$m) = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'err', $package, $line, $t, @_);
+}
+
+
+sub ed {
+  my ($self) = shift;
+  $self->e(@_);
+  die(shift(@_) . "\n");
+}
+
+
+sub es {
+  my $self = shift;
+  $self->e(@_);
+  $self->e($self->stack());
+}
+
+
+sub i {
+  my $self = shift;
+  my $fh = $self->{LOG};
+  my $t = sprintf("%.3f", time());
+  $self->{logsub}->($self, 'ifo', undef, undef, $t, @_);
+}
+
+
+sub is {
+  my $self = shift;
+  $self->i(@_);
+  $self->i($self->stack());
+}
+
+
+sub d {
+  my $self = shift;
+  my ($package, undef, $line) = caller 0;
+  my $fh = $self->{LOG};
+  if(_PdbDEBUG) {
+    my $t = sprintf("%.3f", time());
+    $self->{logsub}->($self, 'dbg', $package, $line, $t, @_);
+  }
+}
+
+
+sub ds {
+  my $self = shift;
+  $self->d(@_);
+  $self->d($self->stack());
+}
+
+
+sub x {
+  my ($self, $subref, @args) = @_;
+  my $r = undef;
+  my $saved_fhs = undef;
+  my $proc_fh = undef;
+  eval {
+    $saved_fhs = $self->_save_stdfhs();
+    open($proc_fh, '+>', undef) or die("Unable to open anonymous tempfile");
+    open(STDOUT, '>&', $proc_fh) or die("Unable to dup anon fh to STDOUT");
+    open(STDERR, '>&', \*STDOUT) or die("Unable to dup STDOUT to STDERR");
+    $r = $subref->(@args);
+  };
+  $self->_restore_stdfhs($saved_fhs);
+  seek($proc_fh, 0, SEEK_SET);
+  return {rcode => $r, error => $EVAL_ERROR . $self->stack, fh => $proc_fh};
+}
+
+
+sub stack {
+  my ($self, $level, $top) = @_;
+  $level = $self->{stack_depth} ||= 10 unless($level);
+  $top   = (defined $top ? $top : 2);
+  my $out = "";
+  my $i=0;
+  my ($package, $file, $line, $sub) = caller($i+$top); # +2 hides ProcessLog from the stack trace.
+  $i++;
+  if($package) {
+    $out .= "Stack trace:\n";
+  }
+  else {
+    $out .= "No stack data available.\n";
+  }
+  while($package and $i < $level) {
+    $out .= " "x$i . "$package  $file:$line  $sub\n";
+    ($package, $file, $line, $sub) = caller($i+$top);
+    $i++;
+  }
+  chomp($out);
+  $out;
+}
+
+sub _p {
+  my $mode = shift;
+  my $package = shift;
+  my $line = shift;
+  my $time = shift;
+  my $prefix = "$mode";
+  $prefix .= " ${package}:${line}" if(defined $package and defined $line);
+  $prefix .= $time ? " $time: " : ": ";
+  @_ = map { (my $temp = $_) =~ s/\n/\n$prefix/g; $temp; }
+       map { defined $_ ? $_ : 'undef' } @_;
+  $prefix. join(' ',@_). "\n";
+}
+
+sub _flush {
+  my ($self) = @_;
+  unless($self->{log_path} =~ /^syslog:/) {
+    $self->{LOG}->flush;
+  }
+  1;
+}
+
+sub _save_stdfhs {
+  my ($self) = @_;
+  open my $stdout_save, ">&", \*STDOUT or die("Unable to dup stdout");
+  open my $stderr_save, ">&", \*STDERR or die("Unable to dup stderr");
+  return { o => $stdout_save, e => $stderr_save };
+}
+
+sub _restore_stdfhs {
+  my ($self, $fhs) = @_;
+  my $o = $fhs->{o};
+  my $e = $fhs->{e};
+  open STDOUT, ">&", $o;
+  open STDERR, ">&", $e;
+  return 1;
+}
+
+
+sub email_and_die {
+  my ($self, $extra) = @_;
+  $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS") and die("Cannot mail out") unless($mail_available);
+  $self->failure_email($extra);
+  die($extra);
+}
+
+
+sub failure_email {
+  my ($self,$extra) = @_;
+  $self->send_email("$self->{script_name} FAILED", $extra);
+}
+
+sub success_email {
+  my ($self, $extra) = @_;
+
+  $self->send_email("$self->{script_name} SUCCESS", $extra);
+}
+
+sub send_email {
+  my ($self, $subj, $body, @extra_to) = @_;
+  $body ||= "No additional message attached.";
+  my @to;
+  unless( $mail_available ) {
+    $self->e("Mail sending not available. Install Mail::Send, or perl-MailTools on CentOS");
+    return 0;
+  }
+  unless( defined $self->{email_to} || @extra_to ) {
+    $self->e("Cannot send email with no addresses.");
+    return 0;
+  }
+  @to = ( (ref($self->{email_to}) eq 'ARRAY' ? @{$self->{email_to}} : $self->{email_to}), @extra_to );
+
+  my $msg = Mail::Send->new(Subject => $subj);
+  $msg->to(@to);
+  my $fh = $msg->open;
+  print($fh "Message from ", $self->{script_name}, " on ", hostname(), "\n");
+  print($fh "RUN ID: ", $self->{run_id}, "\n");
+  print($fh "Logging to: ", ($self->{log_path} =~ /^syslog/ ?
+                               $self->{log_path}
+                                 : File::Spec->rel2abs($self->{log_path})),
+        "\n\n");
+  print($fh $body);
+  print($fh "\n");
+
+  $fh->close;
+}
+
+
+{
+  no strict 'refs';
+  no warnings 'once';
+  *::PL = \(ProcessLog->new($0, '/dev/null'));
+}
+
+
+1;
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# DSN package FSL_VERSION
+# DSN package 13f9a3c9df3506bad80034eedeb6ba834aa1444d
 # ###########################################################################
+package DSN;
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Storable;
+
+sub _create {
+  my ($class, $keys) = @_;
+  my $self = {};
+  $self = _merge($self, $keys);
+  return bless $self, $class;
+}
+
+sub STORABLE_freeze {
+  my ($self, $cloning) = @_;
+  return if $cloning;
+  my $f = {};
+  _merge($f, $self);
+  return (
+    Storable::nfreeze($f)
+  );
+}
+
+sub STORABLE_thaw {
+  my ($self, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $f = Storable::thaw($serialized);
+  return _merge($self, $f);
+}
+
+sub STORABLE_attach {
+  my ($class, $cloning, $serialized) = @_;
+  return if $cloning;
+  my $f = Storable::thaw($serialized);
+  return $class->_create($f);
+}
+
+sub DESTROY {}
+
+sub get {
+  my ($self, $k) = @_;
+  return $self->{$k}->{'value'};
+}
+
+sub has {
+  my ($self, $k) = @_;
+  return exists $self->{$k}->{'value'};
+}
+
+sub str {
+  my ($self) = @_;
+  my $str = "";
+  for(sort keys %$self) {
+    $str .= "$_=". $self->get($_) ."," if($self->has($_));
+  }
+  chop($str);
+  return $str;
+}
+
+sub get_dbi_str {
+  my ($self, $extra_opts) = @_;
+  $extra_opts ||= {};
+  my %set_implied = ();
+  my %dsn_conv = (
+    'h' => 'host',
+    'P' => 'port',
+    'F' => 'mysql_read_default_file',
+    'G' => 'mysql_read_default_group',
+    'S' => 'mysql_socket',
+    'D' => 'database',
+    'SSL_key' => 'mysql_ssl_client_key',
+    'SSL_cert' => 'mysql_ssl_client_cert',
+    'SSL_CA' => 'mysql_ssl_ca_file',
+    'SSL_CA_path' => 'mysql_ssl_ca_path',
+    'SSL_cipher' => 'mysql_ssl_cipher'
+  );
+  my %opt_implied = (
+    'SSL_key' => 'mysql_ssl=1',
+    'SSL_cert' => 'mysql_ssl=1',
+    'SSL_CA' => 'mysql_ssl=1',
+    'SSL_CA_path' => 'mysql_ssl=1',
+    'SSL_cipher' => 'mysql_ssl=1'
+  );
+
+  my $dbh_str = 'DBI:mysql:';
+
+  for(sort keys(%$self)) {
+    if(exists($opt_implied{$_}) and $self->has($_) and !$set_implied{$opt_implied{$_}}) {
+      $dbh_str .= $opt_implied{$_} . ';';
+      $set_implied{$opt_implied{$_}} = 1;
+    }
+    $dbh_str .= $dsn_conv{$_} .'='. ($self->get($_) || '') .';'
+    if(exists($dsn_conv{$_}) and $self->has($_));
+  }
+  if(%$extra_opts) {
+    $dbh_str .= join(';',
+      map { "$_=". $$extra_opts{$_} } sort keys(%$extra_opts));
+  }
+  return $dbh_str;
+}
+
+sub get_dbh {
+  my ($self, $cached, $extra_opts, $extra_dbi_opts) = @_;
+  my $dbh_str = $self->get_dbi_str($extra_dbi_opts);
+  my $options = _merge({ 'AutoCommit' => 0, 'RaiseError' => 1,
+        'PrintError' => 0, 'ShowErrorStatement' => 1 }, ($extra_opts || {}));
+  my $dbh;
+
+  if($cached) {
+    $dbh = DBI->connect_cached($dbh_str, $self->get('u'), $self->get('p'),
+      $options);
+  }
+  else {
+    $dbh = DBI->connect($dbh_str, $self->get('u'), $self->get('p'),
+      $options);
+  }
+  if($self->has('N')) {
+    $dbh->do('SET NAMES '. $dbh->quote($self->get('N')));
+  }
+  if($self->has('vars')) {
+    my $vars = join(', ', map {
+        my ($k, $v) = split(/=/, $_, 2);
+        $_ = $k . ' = ' . ($v =~ /^\d+$/ ? $v : $dbh->quote($v, 1));
+        $_;
+      } split(/;/, $self->get('vars')));
+    $dbh->do('SET '. $vars);
+  }
+  return $dbh;
+}
+
+sub fill_in {
+  my ($self, $from) = @_;
+  $self = _merge($self, $from, 0);
+  return $self;
+}
+
+sub _merge {
+  my ($h1, $h2, $over, $p) = @_;
+  foreach my $k (keys %$h2) {
+    if(!ref($h2->{$k})) {
+      if($over and exists $h1->{$k}) {
+        $h1->{$k} = $h2->{$k};
+      }
+      elsif(!exists $h1->{$k}) {
+        $h1->{$k} = $h2->{$k};
+      }
+    }
+    elsif(ref($h2->{$k}) eq 'ARRAY') {
+      $h1->{$k} = [];
+      push @{$h1->{$k}}, $_ for(@{$h2->{$k}});
+    }
+    else {
+      $h1->{$k} ||= {};
+      _merge($h1->{$k}, $h2->{$k}, $over, $h1);
+    }
+  }
+  $h1;
+}
+
+1;
+
+
+package DSNParser;
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use Carp;
+
+sub new {
+  my ($class, $keys) = @_;
+  croak('keys must be a hashref') unless(ref($keys));
+  my $self = {};
+  $self->{'keys'} = $keys;
+  $self->{'allow_unknown'} = 0;
+  return bless $self, $class;
+}
+
+sub add_key {
+  my ($self, $key, $params) = @_;
+  croak('params must be a hashref') unless(ref($params));
+  if(exists $self->{'keys'}->{$key}) {
+    croak("Key '$key' must not already exist");
+  }
+  $self->{'keys'}->{$key} = $params;
+}
+
+sub rem_key {
+  my ($self, $key) = @_;
+  unless(exists $self->{'keys'}->{$key}) {
+    croak("Key '$key' must already exist");
+  }
+  delete $self->{'keys'}->{$key};
+}
+
+sub mand_key {
+  my ($self, $key, $flag) = @_;
+  unless(exists $self->{'keys'}->{$key}) {
+    croak("Key '$key' must already exist");
+  }
+  $self->{'keys'}->{$key}->{'mandatory'} = $flag;
+}
+
+sub default {
+  my ($class) = @_;
+  my $default_keys = {
+    'h' => {
+      'desc' => 'Hostname',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'u' => {
+      'desc' => 'Username',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'p' => {
+      'desc' => 'Password',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'P' => {
+      'desc' => 'Port',
+      'default' => 3306,
+      'mandatory' => 0
+    },
+    'F' => {
+      'desc' => 'Defaults File',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'G' => {
+      'desc' => 'Defaults File Group',
+      'default' => 'client',
+      'mandatory' => 0
+    },
+    'D' => {
+      'desc' => 'Database name',
+      'default' => '',
+      'mandatory' => 0
+    },
+    't' => {
+      'desc' => 'Table name',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'S' => {
+      'desc' => 'Socket path',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'N' => {
+      'desc' => 'Client character set',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'vars' => {
+      'desc' => 'Extra client variables',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'sU' => {
+      'desc' => 'SSH User',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'sK' => {
+      'desc' => 'SSH Key',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_key' => {
+      'desc' => 'SSL client key',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_cert' => {
+      'desc' => 'SSL client certificate',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_CA' => {
+      'desc' => 'SSL client CA file',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_CA_path' => {
+      'desc' => 'SSL client CA path',
+      'default' => '',
+      'mandatory' => 0
+    },
+    'SSL_cipher' => {
+      'desc' => 'SSL cipher',
+      'default' => '',
+      'mandatory' => 0
+    }
+  };
+  return $class->new($default_keys);
+}
+
+sub parse {
+  my ($self, $str) = @_;
+  use Data::Dumper;
+  $Data::Dumper::Indent = 0;
+  my $dsn = DSN->_create($self->{'keys'});
+  foreach my $kv ( split(/,/, $str) ) {
+    my ($key, $val) = split(/=/, $kv, 2);
+    croak('Unknown key: '. $key .' in dsn')
+    unless($self->{'allow_unknown'} or exists($self->{'keys'}->{$key}) );
+    $dsn->{$key}->{'value'} = $val;
+  }
+  foreach my $k ( keys %$dsn ) {
+    if($dsn->{$k}->{'mandatory'} and ! exists($dsn->{$k}->{'value'})) {
+      croak('Missing key: '. $k .' ['. ($self->{'keys'}->{$k}->{'desc'}||'no description') .'] in dsn');
+    }
+  }
+  return $dsn;
+}
+
+
+1;
 # ###########################################################################
 # End DSN package
 # ###########################################################################
 
 # ###########################################################################
-# TablePartitions package FSL_VERSION
+# TablePartitions package bf38632f606e6c5d8d6c94691979a33e334690e2
 # ###########################################################################
+package TablePartitions;
+use strict;
+use warnings FATAL => 'all';
+
+use English qw(-no_match_vars);
+use Data::Dumper;
+
+use DBI;
+
+sub new {
+  my ( $class, $pl, $dsn ) = @_;
+  my $self = ();
+  $self->{dbh} = $dsn->get_dbh(1);
+  $self->{pl} = $pl;
+  $self->{schema} = $dsn->get('D');
+  $self->{name} = $dsn->get('t');
+  bless $self, $class;
+
+  $self->_get_partitions();
+
+  if($self->{partition_method} ne 'RANGE') {
+    return undef;
+  }
+  else {
+    return $self;
+  }
+}
+
+sub _get_version {
+  my ($self) = @_;
+  my $dbh = $self->{dbh};
+
+  my ($version) = $dbh->selectrow_array('SELECT VERSION()');
+  my ($major, $minor, $micro, $dist) = $version =~ /^(\d+)\.(\d+)\.(\d+)-(.*)/;
+  unless($major) {
+    ($major, $minor, $micro) = $version =~ /^(\d+)\.(\d+)\.(\d+)/;
+    $dist = '';
+  }
+  ["$major.$minor", $major, $minor, $micro, $dist];
+}
+
+sub _get_partitions {
+  my ($self) = @_;
+  my $dbh = $self->{dbh};
+  my ($release, undef, undef, undef, undef) = $self->_get_version();
+  die("Server release not at least 5.1 ($release)") if ($release < 5.1);
+
+  if(1) {
+    $self->_get_partitions_by_IS();
+  }
+}
+
+sub _get_partitions_by_IS {
+  my ($self) = @_;
+  my $dbh = $self->{dbh};
+
+  my $qtd_schema = $dbh->quote($self->{schema});
+  my $qtd_table  = $dbh->quote($self->{name});
+
+  my $sql = "SELECT * FROM `information_schema`.`PARTITIONS` WHERE TABLE_SCHEMA=$qtd_schema AND TABLE_NAME=$qtd_table";
+
+  $self->{pl}->d('SQL:', $sql);
+
+  my $rows = $dbh->selectall_arrayref($sql, { Slice => {} });
+
+  $self->{pl}->es("Table does not have any partitions, or does not exist.")
+    and die("Table does not have any partitions, or does not exist")
+  unless(scalar @$rows >= 1);
+
+  $self->{partitions} = [];
+  $self->{partition_method} = $rows->[0]->{PARTITION_METHOD};
+  $self->{partition_expression} = $rows->[0]->{PARTITION_EXPRESSION};
+  foreach my $r (@$rows) {
+    my $p = {
+      name => $r->{PARTITION_NAME},
+      sub_name => $r->{SUBPARTITION_NAME},
+      position => $r->{PARTITION_ORDINAL_POSITION},
+      description => $r->{PARTITION_DESCRIPTION},
+      sub_position => $r->{SUBPARTITION_ORDINAL_POSITION}
+    };
+    push @{$self->{partitions}}, $p;
+  }
+}
+
+sub partitions {
+  my ($self) = @_;
+  $self->{pl}->d(Dumper($self->{partitions}));
+  $self->{partitions}
+}
+
+sub first_partition {
+  my ($self) = @_;
+  $self->{partitions}->[0];
+}
+
+sub last_partition {
+  my ($self) = @_;
+  $self->{partitions}->[-1];
+}
+
+sub method {
+  my ($self) = @_;
+  $self->{partition_method};
+}
+
+sub expression {
+  my ($self) = @_;
+  $self->{partition_expression};
+}
+
+sub expression_column {
+  my ($self) = @_;
+  my ($col, $fn) = $self->expr_datelike;
+  return $col if(defined($col));
+  $self->{partition_expression} =~ /^\s*(A-Za-z\-_\$)\(([A-Za-z0-9\-_\$]+)\)/i;
+  return $2 if ($1 and $2);
+  return $self->{partition_expression};
+}
+
+sub expr_datelike {
+  my ($self) = @_;
+  my %datefuncs = ( 'to_days' => 'from_days', 'month' => 1, 'year' => 1, 'unix_timestamp' => 'from_unixtime' );
+  $self->{partition_expression} =~ /^\s*([A-Za-z\-_\$]+)\(([A-Za-z0-9\-_\$]+)\)/i;
+  if($datefuncs{lc($1)}) {
+    return ($2, $1, $datefuncs{lc($1)});
+  }
+  else {
+    return undef;
+  }
+}
+
+sub match_partitions {
+  my ($self, $reg) = @_;
+  my %res;
+  map { $res{$_->{name}} = {name => $_->{name}, position => $_->{position}, description => $_->{description} } if($_->{name} =~ $reg); } @{$self->{partitions}};
+  values %res;
+}
+
+sub has_maxvalue_data {
+  my ($self) = @_;
+  my $dbh = $self->{dbh};
+  my $explain_result = undef;
+  my $descr = undef;
+  my $col = $self->expression_column;
+  if ( $self->{partitions}->[-1]->{description} eq 'MAXVALUE' ) {
+    $descr = $self->{partitions}->[-2]->{description};
+    if($self->expr_datelike) {
+      my (undef, $fn, $cfn) = $self->expr_datelike;
+      if($fn) {
+        $descr = "$cfn($descr)";
+      }
+    }
+  }
+  else {
+    return 0; # Can't have maxvalue data since there isn't a partition for that.
+  }
+  my $sql =
+      qq|SELECT COUNT(*) AS cnt
+           FROM `$self->{schema}`.`$self->{name}`
+         WHERE $col > $descr
+        | ;
+  $self->{pl}->d('SQL:', $sql);
+  eval {
+    $explain_result = $dbh->selectrow_hashref($sql);
+    $self->{pl}->d(Dumper($explain_result));
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->es($EVAL_ERROR);
+    return undef;
+  }
+  return $explain_result->{cnt};
+}
+
+sub start_reorganization {
+  my ($self, $p) = @_;
+  die("Need partition name to re-organize") unless($p);
+  my $part = undef;
+  foreach my $par (@{$self->{partitions}}) {
+    $part = $par if($par->{name} eq $p);
+  }
+  return undef unless($part);
+  $self->{re_organizing} =  [];
+  push @{$self->{re_organizing}},$part;
+  return 1;
+}
+
+sub add_reorganized_part {
+  my ($self, $name, $desc) = @_;
+  return undef unless($self->{re_organizing});
+  my ($col, $fn) = $self->expr_datelike;
+  push @{$self->{re_organizing}}, {name => $name, description => $desc};
+  return 1;
+}
+
+sub end_reorganization {
+  my ($self, $pretend) = @_;
+  return undef unless $self->{re_organizing};
+  my $sql = "ALTER TABLE `$self->{schema}`.`$self->{name}` REORGANIZE PARTITION";
+  my $orig_part = shift @{$self->{re_organizing}};
+  my (undef, $fn) = $self->expr_datelike;
+  $sql .= " $orig_part->{name} INTO (";
+  while($_ = shift @{$self->{re_organizing}}) {
+      $sql .= "\nPARTITION $_->{name} VALUES LESS THAN ";
+    if(uc($_->{description}) eq 'MAXVALUE') {
+      $sql .= 'MAXVALUE';
+    }
+    else {
+      if($fn) {
+        $sql .= "($fn(" . $self->{dbh}->quote($_->{description}) . '))';
+      }
+      else {
+        $sql .= "(" . $_->{description} . ')';
+      }
+    }
+    $sql .= ',';
+  }
+  chop($sql);
+  $sql .= "\n)";
+  $self->{pl}->d("SQL: $sql");
+  eval {
+    unless($pretend) {
+      $self->{dbh}->do($sql);
+      $self->_get_partitions();
+    }
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->e("Error reorganizing partition $orig_part->{name}: $@");
+    return undef;
+  }
+  $self->{re_organizing} = 0;
+  return 1;
+}
+
+sub add_range_partition {
+  my ($self, $name, $description, $pretend) = @_;
+  if($self->method ne 'RANGE') {
+    $self->{pl}->m("Unable to add partition to non-RANGE partition scheme.");
+    return undef;
+  }
+  for my $p (@{$self->{partitions}}) {
+    if($p->{description} eq 'MAXVALUE') {
+      $self->{pl}->m("Unable to add new partition when a catchall partition ($p->{name}) exists.");
+      return undef;
+    }
+  }
+  my (undef, $fn, $cfn) = $self->expr_datelike;
+  my $qtd_desc = $self->{dbh}->quote($description);
+  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN ($fn($qtd_desc)))");
+  eval {
+    unless($pretend) {
+      $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` ADD PARTITION (PARTITION $name VALUES LESS THAN ($fn($qtd_desc)))");
+      $self->_add_part($name, "to_days($qtd_desc)");
+    }
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->e("Error adding partition: $@");
+    return undef;
+  }
+  return 1;
+}
+
+sub drop_partition {
+  my ($self, $name, $pretend) = @_;
+  if($self->method ne 'RANGE') {
+    $self->{pl}->m("Unable to drop partition from non-RANGE partition scheme.");
+    return undef;
+  }
+  $self->{pl}->d("SQL: ALTER TABLE `$self->{schema}`.`$self->{name}` DROP PARTITION $name");
+  eval {
+    unless($pretend) {
+      $self->{dbh}->do("ALTER TABLE `$self->{schema}`.`$self->{name}` DROP PARTITION $name");
+      $self->_del_part($name);
+    }
+  };
+  if($EVAL_ERROR) {
+    $self->{pl}->e("Error dropping partition: $@");
+    return undef;
+  }
+
+  return 1;
+}
+
+sub desc_from_datelike {
+  my ($self, $name) = @_;
+  my ($desc, $fn, $cfn) = $self->expr_datelike;
+
+  if($self->method ne 'RANGE') {
+    $self->{pl}->d("Only makes sense for RANGE partitioning.");
+    return undef;
+  }
+  return undef if(!$fn);
+
+  for my $p (@{$self->{partitions}}) {
+    if($p->{name} eq $name) {
+      $desc = $p->{description};
+      last;
+    }
+  }
+
+  $self->{pl}->d("SQL: SELECT $cfn($desc)");
+  my ($ds) = $self->{dbh}->selectrow_array("SELECT $cfn($desc)");
+  return $ds;
+}
+
+sub _add_part {
+  my ($self, $name, $desc) = @_;
+  my ($d) = $self->{dbh}->selectrow_array("SELECT $desc");
+  push @{$self->{partitions}}, {name => $name, description => $d, position => undef};
+}
+
+sub _del_part {
+  my ($self, $name) = @_;
+  my @replace = ();
+  foreach my $p (@{$self->{partitions}}) {
+    unless($p->{name} eq $name) {
+      push @replace, $p;
+    }
+  }
+  $self->{partitions} = \@replace;
+}
+
+1;
+
 # ###########################################################################
 # End TablePartitions package
 # ###########################################################################
 
 # ###########################################################################
-# Timespec package FSL_VERSION
+# Timespec package 9c2ee59ea0b33f8cb8791bf3336cea9bc52d8643
 # ###########################################################################
+package Timespec;
+use strict;
+use warnings FATAL => 'all';
+use DateTime;
+use DateTime::Format::Strptime;
+use Carp;
+
+sub parse {
+  my ($class, $str, $ref) = @_;
+  if(not defined $ref) {
+    $ref = DateTime->now(time_zone => 'local');
+  }
+  else {
+    $ref = $ref->clone();
+  }
+  my $fmt_local = DateTime::Format::Strptime->new(pattern => '%F %T',
+                                                  time_zone => 'local');
+  my $fmt_tz = DateTime::Format::Strptime->new(pattern => '%F %T %O');
+  $fmt_tz->parse_datetime($str);
+  if($str =~ /^([-+]?)(\d+)([hdwmqy])(?:(?:\s|\.)(startof))?$/) {
+    my ($spec, $amt) = ($3, $2);
+    my %cv = ( 'h' => 'hours', 'd' => 'days', 'w' => 'weeks', 'm' => 'months', 'y' => 'years' );
+    if($4) {
+      if($cv{$spec}) {
+        $_ = $cv{$spec};
+        s/s$//;
+        $ref->truncate(to => $_);
+      }
+      else { # quarters
+        $ref->truncate(to => 'day');
+        $ref->subtract(days => $ref->day_of_quarter()-1);
+      }
+    }
+
+    if($spec eq 'q') {
+      $spec = 'm';
+      $amt *= 3;
+    }
+
+    if($1 eq '-') {
+      $ref->subtract($cv{$spec} => $amt);
+    }
+    if($1 eq '+' or $1 eq '') {
+      $ref->add($cv{$spec} => $amt);
+    }
+    return $ref;
+  }
+  elsif($str eq 'now') {
+    return DateTime->now(time_zone => 'local');
+  }
+  elsif($str =~ /^(\d+)$/) {
+    return DateTime->from_epoch(epoch => $1);
+  }
+  elsif($_ = $fmt_tz->parse_datetime($str)) {
+    return $_;
+  }
+  elsif($_ = $fmt_local->parse_datetime($str)) {
+    return $_;
+  }
+  else {
+    croak("Unknown or invalid Timespec [$str] supplied.");
+  }
+}
+
+
+1;
 # ###########################################################################
 # End Timespec package
 # ###########################################################################
 
 # ###########################################################################
-# IniFile package FSL_VERSION
+# IniFile package d70faf2773ed7da1be74ef0675cf06f3f0c57122
 # ###########################################################################
+package IniFile;
+use strict;
+use warnings FATAL => 'all';
+use File::Glob;
+
+
+sub read_config {
+  my $file = shift;
+  my %cfg;
+  my $inif;
+  unless(open $inif, "<$file") {
+    return undef;
+  }
+  my $cur_sec = '';
+  while(<$inif>) {
+    chomp;
+    next if(/^\s*(?:;|#)/);
+    next if(/^$/);
+    if(/^\s*\[(\w+)\]/) { # Group statement
+      $cfg{$1} = {};
+      $cur_sec = $1;
+    }
+    elsif(/^!(include(?:dir)?)\s+([^\0]+)/) { # include directives
+      my $path = $2;
+      my @files;
+      if($1 eq 'includedir') {
+        @files = glob($path . "/*.cnf");
+      }
+      else {
+        @files = ($path);
+      }
+      for(@files) { _merge(\%cfg, {read_config($_)}); }
+    }
+    else { # options and flags
+      my ($k, $v) = split(/=/, $_, 2);
+      $k =~ s/\s+$//;
+      $k =~ s/^\s+//;
+      if(defined($v)) {
+        $v =~ s/^\s+//;
+        $v =~ s/\s?#.*?[^"']$//;
+        $v =~ s/^(?:"|')//;
+        $v =~ s/(?:"|')$//;
+      }
+      else {
+        if($k =~ /^(?:no-|skip-)(.*)/) {
+          $k = $1;
+          $v = 0;
+        }
+        else {
+          $v = 1;
+        }
+      }
+      chomp($k); chomp($v);
+
+      if($k =~ /^(.*?)\s*\[\s*(\d+)?\s*\]/) {
+        $k = $1;
+        push @{$cfg{$cur_sec}{$k}}, $v;
+        next;
+      }
+      $cfg{$cur_sec}{$k} = $v;
+    }
+  }
+  return %cfg;
+}
+
+sub _merge {
+  my ($h1, $h2, $p) = @_;
+  foreach my $k (keys %$h2) {
+    if(not $p and not exists $h1->{$k}) {
+      $h1->{$k} = $h2->{$k};
+    }
+    elsif(not $p and exists $h1->{$k}) {
+      _merge($h1->{$k}, $h2->{$k}, $h1);
+    }
+    elsif($p) {
+      $h1->{$k} = $h2->{$k};
+    }
+  }
+  $h1;
+}
+
+1;
 # ###########################################################################
 # End IniFile package
 # ###########################################################################
@@ -71,11 +1250,7 @@ use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
 
-use ProcessLog;
-use IniFile;
-use TablePartitions;
-use DSN;
-use Timespec;
+
 
 use DBI;
 use Getopt::Long qw(:config no_ignore_case pass_through);
