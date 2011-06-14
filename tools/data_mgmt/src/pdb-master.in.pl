@@ -1,58 +1,86 @@
 #!/usr/bin/env perl
+# Copyright (c) 2009-2011, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
 use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# IniFile package GIT_VERSION
+# IniFile package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End IniFile package
 # ###########################################################################
 
 # ###########################################################################
-# Path package GIT_VERSION
+# Path package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End Path package
 # ###########################################################################
 
 # ###########################################################################
-# DSN package GIT_VERSION
+# DSN package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End DSN package
 # ###########################################################################
 
 # ###########################################################################
-# RObj package GIT_VERSION
+# RObj package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End RObj package
 # ###########################################################################
 
 # ###########################################################################
-# MysqlInstance package GIT_VERSION
+# MysqlInstance package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End MysqlInstance package
 # ###########################################################################
 
 # ###########################################################################
-# MysqlMasterInfo package GIT_VERSION
+# MysqlMasterInfo package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End MysqlMasterInfo package
 # ###########################################################################
 
 # ###########################################################################
-# MysqlSlave package GIT_VERSION
+# MysqlSlave package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End MysqlSlave package
@@ -325,9 +353,9 @@ sub rebuild {
       pid_check_sleep => $pid_check_sleep,
       save_mysqldb => $$self{'save_mysql'}
     });
-  
+
   my @r = $ro->read();
-  
+
   unless($r[0] eq 'datadir ready') {
     die('Got invalid signal from remote end: '. $r[0]);
   }

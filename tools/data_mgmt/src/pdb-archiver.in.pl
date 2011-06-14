@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
-# Copyright (c) 2009-2010, PalominoDB, Inc.
+# Copyright (c) 2009-2011, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -30,28 +30,28 @@
 use strict;
 use warnings;
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# TableAge package GIT_VERSION
+# TableAge package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End TableAge package
 # ###########################################################################
 
 # ###########################################################################
-# TableDumper package GIT_VERSION
+# TableDumper package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End TableDumper package
 # ###########################################################################
 
 # ###########################################################################
-# RowDumper package GIT_VERSION
+# RowDumper package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End RowDumper package
