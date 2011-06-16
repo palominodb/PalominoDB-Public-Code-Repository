@@ -1407,7 +1407,7 @@ sub date_rotate {
   eval {
     $self->{dbh}->do(
       "CREATE TABLE `$schema`.`$tmp_table` LIKE `$schema`.`$table`"
-    ) 
+    )
   };
   if($@) {
     $self->{errstr} = $@;
@@ -1416,7 +1416,7 @@ sub date_rotate {
 
   eval {
     $self->{dbh}->do(
-      "RENAME TABLE 
+      "RENAME TABLE
         `$schema`.`$table` TO `$schema`.`$rot_table`,
         `$schema`.`$tmp_table` TO `$schema`.`$table`"
       );
@@ -2022,6 +2022,7 @@ my $rotate_format = '';
 my $cur_date = DateTime->now( time_zone => 'local' )->truncate( to => 'day' );
 my $force    = 0;
 my $force_small = 0;
+my $check_slave = 0;
 
 sub main {
   # Overwrite ARGV with parameters passed here
@@ -2049,6 +2050,7 @@ sub main {
     "rotate-format=s" => \$rotate_format,
     "force" => \$force,
     "force-small" => \$force_small,
+  "check-slave" => \$check_slave,
   );
 
   unless(scalar @ARGV >= 1) {
@@ -2103,6 +2105,26 @@ sub main {
 
   foreach my $d (@DSNs) {
     my $dbh = $d->get_dbh(1);
+
+    if( $check_slave ) {
+      my $ds = MysqlSlave->new($d);
+      my $status = {};
+      $status = $ds->slave_status();
+
+      if( !defined($status->{'Seconds_Behind_Master'}) or
+        uc($status->{'Slave_IO_Running'}) ne "YES" or
+        uc($status->{'Slave_SQL_Running'}) ne "YES" ) {
+
+        $pl->e("Slave is not running");
+        next;
+      }
+      elsif( $status->{'Seconds_Behind_Master'} != 0 ) {
+
+        $pl->e("Slave is lagged by " . $status->{'Seconds_Behind_Master'});
+        next;
+      }
+    }
+
     my @tbls = @{get_tables($d)};
     $pl->m('Working Host:', $d->get('h'), ' Working DB:', $d->get('D'));
     $pl->d('tables:', join(',', @tbls) );
