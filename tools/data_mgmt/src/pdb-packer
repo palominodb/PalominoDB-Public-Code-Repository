@@ -1096,6 +1096,150 @@ sub newer_than {
 # ###########################################################################
 
 # ###########################################################################
+# MysqlSlave package 8866494994be6e9f0ded90b27e985b1fdc7bf7aa
+# ###########################################################################
+package MysqlSlave;
+use strict;
+use warnings FATAL => 'all';
+use Carp;
+
+sub new {
+  my ($class, $dsn) = @_;
+  my $self = {};
+  $self->{dsn} = $dsn;
+  return bless $self, $class;
+}
+
+sub read_only {
+  my ($self, $value) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  if(defined($value)) {
+    croak('value must be 0 or 1') unless( $value eq '0' or $value eq '1' );
+    $dbh->do('SET GLOBAL read_only = '. int($value));
+  }
+  return $dbh->selectcol_arrayref('SELECT @@read_only')->[0];
+}
+
+sub auto_inc_inc {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  return $dbh->selectcol_arrayref('SELECT @@auto_increment_increment')->[0];
+}
+
+sub auto_inc_off {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  return $dbh->selectcol_arrayref('SELECT @@auto_increment_offset')->[0];
+}
+
+sub master_status {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  my ($log_file, $log_pos) = $dbh->selectrow_array('SHOW MASTER STATUS');
+
+  return wantarray ? ($log_file, $log_pos) : $log_file ? 1 : 0;
+}
+
+sub slave_status {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  return $dbh->selectrow_hashref(q|SHOW SLAVE STATUS|);
+}
+
+sub flush_logs {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  return $dbh->do('FLUSH LOGS');
+}
+
+sub start_slave {
+  my ($self, $master_log_file, $master_log_pos) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  if($master_log_file and $master_log_pos) {
+    $master_log_file = $dbh->quote($master_log_file);
+    return $dbh->do("START SLAVE UNTIL MASTER_LOG_FILE=$master_log_file, MASTER_LOG_POS=" . int($master_log_pos));
+  }
+  return $dbh->do('START SLAVE');
+}
+
+sub stop_slave {
+  my ($self) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  return $dbh->do('STOP SLAVE');
+}
+
+sub change_master_to {
+  my ($self, @args) = @_;
+  my $dbh = $self->{dsn}->get_dbh(1);
+  my %master_keys = (
+    MASTER_HOST => 1,
+    MASTER_USER => 1,
+    MASTER_PASSWORD => 1,
+    MASTER_PORT => 1,
+    MASTER_LOG_FILE => 1,
+    MASTER_LOG_POS => 1,
+    MASTER_SSL => 1,
+    MASTER_SSL_CA => 1,
+    MASTER_SSL_CAPATH => 1,
+    MASTER_SSL_CERT => 1,
+    MASTER_SSL_KEY => 1,
+    MASTER_SSL_CIPHER => 1,
+    MASTER_CONNECT_RETRY => 1,
+    MASTER_SSL_VERIFY_SERVER_CERT => 1
+  );
+  my %dsn_to_master = (
+    'h' => 'MASTER_HOST',
+    'u' => 'MASTER_USER',
+    'p' => 'MASTER_PASSWORD',
+    'P' => 'MASTER_PORT',
+    'SSL_key' => 'MASTER_SSL_KEY',
+    'SSL_cert' => 'MASTER_SSL_CERT',
+    'SSL_CA' => 'MASTER_SSL_CA',
+    'SSL_CA_path' => 'MASTER_SSL_CAPATH',
+    'SSL_cipher' => 'MASTER_SSL_CIPHER'
+  );
+
+  my $sql = 'CHANGE MASTER TO ';
+  my %keys = ();
+  if(ref($args[0]) and ref($args[0]) eq 'HASH') {
+    %keys = %{$args[0]};
+  }
+  elsif(ref($args[0]) and ref($args[0]) eq 'DSN') {
+    my $dsn = shift @args;
+    my %args = @args;
+    foreach my $k (keys %$dsn) {
+      if(exists $dsn_to_master{$k}) {
+        $keys{ $dsn_to_master{$k} } = $dsn->get($k) if($dsn->has($k));
+      }
+    }
+    for(keys %args) {
+      $keys{$_} = $args{$_};
+    }
+  }
+  else {
+    %keys = @args;
+  }
+  for(keys %keys) {
+    croak("Invalid option $_") unless( exists($master_keys{uc($_)}) );
+    if($keys{$_} =~ /^\d+$/) {
+      $sql .= uc($_) . '=' . $keys{$_} . ', ';
+    }
+    else {
+      $sql .= uc($_) . '=' . $dbh->quote($keys{$_}) . ', ';
+    }
+  }
+  chop($sql);
+  chop($sql);
+  return $dbh->do($sql);
+}
+
+
+1;
+# ###########################################################################
+# End MysqlSlave package
+# ###########################################################################
+
+# ###########################################################################
 # TablePacker package acb476fdc1ee2ddff9e6fbe0f96b17c9fcc31d23
 # ###########################################################################
 package TablePacker;
@@ -1407,7 +1551,7 @@ sub date_rotate {
   eval {
     $self->{dbh}->do(
       "CREATE TABLE `$schema`.`$tmp_table` LIKE `$schema`.`$table`"
-    )
+    ) 
   };
   if($@) {
     $self->{errstr} = $@;
@@ -1416,7 +1560,7 @@ sub date_rotate {
 
   eval {
     $self->{dbh}->do(
-      "RENAME TABLE
+      "RENAME TABLE 
         `$schema`.`$table` TO `$schema`.`$rot_table`,
         `$schema`.`$tmp_table` TO `$schema`.`$table`"
       );
