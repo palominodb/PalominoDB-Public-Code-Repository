@@ -31,7 +31,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 $| = 1;
-our $VERSION = "1.1.4";
+our $VERSION = "1.2.0";
 
 use strict;
 use Nagios::Plugin;
@@ -42,18 +42,20 @@ use Carp;
 use File::stat;
 use Switch;
 use Fcntl qw(:flock);
+use POSIX;
+use File::Copy;
 #############################################################################
 our $VERBOSE = 0;
 
 ###### MAIN ######
 my ($np, $dbh) = init_plugin();
-my $meta_data = load_meta_data();
+my $data = load_meta_data();
 
 switch ($np->opts->mode)
 {
   case 'long-query'
   {
-    foreach my $query_hr (@{$meta_data->{proc_list}})
+    foreach my $query_hr (@{$data->{current}->{proc_list}})
     {
       # this is where we can add rules to skip specific queries or users
       next if($query_hr->{User} =~ /system user/);
@@ -71,7 +73,7 @@ switch ($np->opts->mode)
   }
   case "locked-query"
   {
-    foreach my $query_hr (@{$meta_data->{proc_list}})
+    foreach my $query_hr (@{$data->{current}->{proc_list}})
     {
       if($query_hr->{Command} eq 'Query' && (defined($query_hr->{State}) && $query_hr->{State} eq 'Locked'))
       {
@@ -87,25 +89,29 @@ switch ($np->opts->mode)
   }
   case "varcomp" 
   { 
-    my ($comp_res, $expr_res) = mode_varcomp($meta_data);
+    my ($comp_res, $expr_res) = mode_varcomp($data);
     if($comp_res)
     {
-      my $msg;
-      if ($np->opts->comparison) {
-        $msg = sprintf("Comparison check failed: (%s)   %s   = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      } else {
-        $msg = sprintf("Comparison check failed: (%s)   %s   %s   = %s", $np->opts->expression, $np->opts->warning, $np->opts->critical, $expr_res);
-        }
-      $np->add_message($comp_res, $msg);
+      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      $np->add_message(CRITICAL, $msg);
     }
     else
     {
-      my $msg;
-      if ($np->opts->comparison) {
-        $msg = sprintf("Comparison check passed: (%s)   %s   = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      } else {
-        $msg = sprintf("Comparison check passed: (%s)   %s   %s   = %s", $np->opts->expression, $np->opts->warning, $np->opts->critical, $expr_res);
-      }
+      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      $np->add_message(OK, $msg);
+    }
+  }
+  case "lastrun-varcomp"
+  {
+    my ($comp_res, $expr_res) = mode_lastrun_varcomp($data);
+    if($comp_res)
+    {
+      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+      $np->add_message(CRITICAL, $msg);
+    }
+    else
+    {
+      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
       $np->add_message(OK, $msg);
     }
   }
@@ -114,6 +120,7 @@ switch ($np->opts->mode)
     $np->nagios_die("Unknown run mode.");
   }
 }
+#print "WHEEE: $current_data->{varstatus}->{max_allowed_packet}\n";
 
 cleanup();
 
@@ -135,19 +142,17 @@ sub mode_varcomp
   my $expr_res = '';
   my $comp_res = '';
 
-  if ($np->opts->expression) { pdebug("expr (" . $np->opts->expression . ")\n"); }
-  if ($np->opts->comparison) { pdebug("comp (" . $np->opts->comparison . ")\n"); }
-  if ($np->opts->warning) { pdebug("comp (" . $np->opts->warning . ")\n"); }
-  if ($np->opts->critical) { pdebug("comp (" . $np->opts->critical . ")\n"); }
+  pdebug("expr (" . $np->opts->expression . ")\n"); 
+  pdebug("comp (" . $np->opts->comparison . ")\n"); 
 
   my $do_math = 0;
   foreach my $word (split(/\b/, $np->opts->expression)) 
   {
     pdebug("parsing $word\n");
-    if(exists($meta_data->{varstatus}->{$word})) 
+    if(exists($meta_data->{current}->{varstatus}->{$word})) 
     {
-      pdebug("found $word in metadata, value is $meta_data->{varstatus}->{$word} \n");
-      $parsed_expr .= $meta_data->{varstatus}->{$word};
+      pdebug("found $word in metadata, value is $meta_data->{current}->{varstatus}->{$word} \n");
+      $parsed_expr .= $meta_data->{current}->{varstatus}->{$word};
     }
     elsif($word =~ m%(\*|\+|\-|/|\.|\(|\)|\%\ |\d)%)
     {
@@ -172,47 +177,91 @@ sub mode_varcomp
     $expr_res = "'$parsed_expr'";
   }
   
-  if ($np->opts->comparison) {
-    my $comp_expr = $expr_res . $np->opts->comparison;
-    $comp_res = eval($comp_expr);  
+  my $comp_expr = $expr_res . $np->opts->comparison;
+  $comp_res = eval($comp_expr);  
 
-    pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
-    return $comp_res, $expr_res;
-  }
-  if ($np->opts->warning && $np->opts->critical) {
-    my $code=3;
-    my $comp_expr_warn = $expr_res . $np->opts->warning;
-    my $comp_expr_crit = $expr_res . $np->opts->critical;
-    my $comp_res_crit = eval($comp_expr_crit) || 0;  
-    my $comp_res_warn = eval($comp_expr_warn) || 0;  
-    if ($comp_res_crit==0 && $comp_res_warn==0) { $code=0; }
-    elsif ($comp_res_crit==1) { $code=2; }
-    elsif ($comp_res_warn==1) { $code=1; }
-    return $code, $expr_res;
-  }
+  pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
+  return $comp_res, $expr_res; 
 }
+
+#####
+# run mode 'lastrun_varcomp' looks at a variable from SHOW GLOBAL VARS and SHOW STATUS and does a calculation and comparison.
+#####
+sub mode_lastrun_varcomp
+{
+  my $meta_data = shift;
+  my $parsed_expr = '';
+  my $expr_res = '';
+  my $comp_res = '';
+
+  pdebug("expr (" . $np->opts->expression . ")\n"); 
+  pdebug("comp (" . $np->opts->comparison . ")\n"); 
+
+  unless(exists($meta_data->{lastrun}->{varstatus}))
+  {
+     $np->nagios_die(UNKNOWN, "No lastrun cache file, please run again after max_cache_age...");
+  }
+
+  my $do_math = 0;
+
+  $parsed_expr = $np->opts->expression;
+  $parsed_expr =~ s/current{(\w+)}/$meta_data->{current}->{varstatus}->{$1}/gx;
+  $parsed_expr =~ s/lastrun{(\w+)}/$meta_data->{lastrun}->{varstatus}->{$1}/gx;
+
+  pdebug("expr ($parsed_expr)\n"); 
+
+#  print Dumper($meta_data);
+
+  pdebug("doing math: $parsed_expr\n");
+  $expr_res = eval($parsed_expr); 
+  #if it's a float, round to two decimal places.
+  $expr_res = nearest(.01, $expr_res) if($expr_res =~ /\d+\.?\d*/);
+ 
+  my $comp_expr = $expr_res . $np->opts->comparison;
+  $comp_res = eval($comp_expr);
+  
+  pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
+  return $comp_res, $expr_res; 
+}
+
 
 #####
 # Figure out where / how to get server meta data
 #####
 sub load_meta_data
 {
-  my $data;
+  my $current;
+  my $lastrun;
+  my %fullset;
+  my $run_mode = $np->opts->mode;
 
   if($np->opts->no_cache)
   {
-    $data = fetch_server_meta_data();
+    pdebug("Cache disabled, pulling fresh.\n");
+    $current = fetch_server_meta_data({type => 'current', cache => 0});
   }
   else
   {
-    $data = get_from_cache();
-    unless($data)
+    pdebug("Cache enabled, trying to use cache.\n");
+    $current = fetch_server_meta_data({type => 'current', cache => 1});
+#    print Dumper($current);
+    unless(exists($current->{proc_list}))
     {
-      $data = fetch_server_meta_data();
-      write_cache($data);
+      pdebug("empty cache, fetching from server.\n");
+      $current = fetch_server_meta_data({type => 'current', cache => 0});
+      write_cache($current);
     }
   } 
-  return $data;
+
+  if($run_mode eq 'lastrun-varcomp')
+  {
+    $lastrun = fetch_server_meta_data({type => 'lastrun'});
+  }
+
+  $fullset{current} = $current;
+  $fullset{lastrun} = $lastrun;
+
+  return \%fullset;
 }
 
 #####
@@ -220,25 +269,36 @@ sub load_meta_data
 #####
 sub fetch_server_meta_data
 {
-  my %meta_data;
-  pdebug("Getting meta data...\n");
-  pdebug("\tSHOW FULL PROCESSLIST...\n");
-  $meta_data{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
-#  pdebug("\tSHOW ENGINE INNODB STATUS...\n");
-#  $meta_data{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
-  pdebug("\tSHOW GLOBAL VARIABLES...\n");
-  $meta_data{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
-  pdebug("\tSHOW GLOBAL STATUS...\n");
-  $meta_data{varstatus} = hash_merge($meta_data{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
-=item
-  # need to add --collect_slave_info option
-  pdebug("\tSHOW MASTER STATUS...\n");
-  $meta_data{master_status} = dbi_exec_for_paired_hash($dbh, q|SHOW MASTER STATUS|);
-  pdebug("\tSHOW SLAVE STATUS...\n");
-  $meta_data{slave_status} = dbi_exec_for_paired_hash($dbh, q|SHOW SLAVE STATUS|);
-=cut
-#  print Dumper(%meta_data);
-  return \%meta_data;
+  my $args = shift; 
+  my $data;
+
+  if($args->{'type'} eq 'current')
+  {
+    if($args->{'cache'})
+    {
+      pdebug("Getting meta data from server (cache)...\n");
+      $data = get_from_cache({type => 'current'}); 
+    }
+    else
+    {
+      pdebug("Getting meta data from server (no cache)...\n");
+      pdebug("\tSHOW FULL PROCESSLIST...\n");
+      $data->{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
+      pdebug("\tSHOW ENGINE INNODB STATUS...\n");
+      $data->{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
+      pdebug("\tSHOW GLOBAL VARIABLES...\n");
+      $data->{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
+      pdebug("\tSHOW GLOBAL STATUS...\n");
+      $data->{varstatus} = hash_merge($data->{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
+    }
+  }
+  elsif($args->{'type'} eq 'lastrun')
+  {
+    $data = get_from_cache({type => 'lastrun'});
+  }
+
+  $data->{run_time} = time();
+  return $data;
 }
 
 #####
@@ -246,28 +306,40 @@ sub fetch_server_meta_data
 #####
 sub get_from_cache
 {
+  my $args = shift; 
   my $cache_info = cache_paths();
   my $data;
 
-  if(-e $cache_info->{'file'})
+  
+  if($args->{'type'} eq 'current')
   {
-     my $cf_stat = stat($cache_info->{'file'}); 
-     my $cf_age = time() - $cf_stat->mtime;
-     pdebug("Cache file ($cache_info->{'file'}) is $cf_age second old - max age is " . $np->opts->max_cache_age . ".\n");
-     # if the file is too old, lock, if we can't get a lock, stale data it is becuase another process is refreshing
-     my $has_lock = lock_cache();
-     if($cf_age >= $np->opts->max_cache_age && $has_lock)
-     {
-       # we can lock, so refresh
-       $data = refresh_cache();
-     }
-     else
-     {
-       pdebug("Using cache file ($cache_info->{'file'})...\n");
-       $data = retrieve($cache_info->{'file'});
-     }
+    if(-e $cache_info->{'file'})
+    { 
+      my $cf_stat = stat($cache_info->{'file'}); 
+      my $cf_age = time() - $cf_stat->mtime;
+      pdebug("Cache file ($cache_info->{'file'}) is $cf_age second old - max age is " . $np->opts->max_cache_age . ".\n");
+      # if the file is too old, lock, if we can't get a lock, stale data it is becuase another process is refreshing
+      my $has_lock = lock_cache();
+      if($cf_age >= $np->opts->max_cache_age && $has_lock)
+      {
+	# we can lock, so refresh
+	pdebug("Refreshing cache from server...\n");
+	$data = refresh_cache();
+      }
+      else
+      {
+	pdebug("Using cache file ($cache_info->{'file'})...\n");
+	$data = retrieve($cache_info->{'file'});
+      }
+    }
+  }
+  elsif($args->{'type'} eq 'lastrun')
+  {
+    pdebug("loading up lastrun file ($cache_info->{'lastrun_file'})...\n");
+    eval { $data = retrieve($cache_info->{'lastrun_file'}); }
   }
 
+#  print Dumper($data);
   return $data; 
 }
 
@@ -275,7 +347,7 @@ sub refresh_cache
 {
   my $cache_info = cache_paths();
   pdebug("Cache file ($cache_info->{'file'}) is too old refreshing...\n");
-  my $data = fetch_server_meta_data();
+  my $data = fetch_server_meta_data({type => 'current', cache => 0});
   write_cache($data);
   unlock_cache();
   return $data;
@@ -286,6 +358,7 @@ sub cache_paths
   my %cache_info;
   $cache_info{'dir'} = $np->opts->cache_dir;
   $cache_info{'file'} = sprintf("%s/%s-%s.cache", $cache_info{dir}, $np->opts->hostname, $np->opts->port);
+  $cache_info{'lastrun_file'} = sprintf("%s/%s-%s_lastrun.cache", $cache_info{dir}, $np->opts->hostname, $np->opts->port);
   $cache_info{'tmp_file'} = sprintf("%s/%s-%s.cache.%s", $cache_info{dir}, $np->opts->hostname, $np->opts->port, $$);
   return \%cache_info;
 }
@@ -298,10 +371,15 @@ sub write_cache
   pdebug("Writing meta data cache to file...\n");
   my $data = shift;
   my $cache_info = cache_paths();
+  my $run_mode = $np->opts->mode;
   pdebug("Cache paths: $cache_info->{'dir'}, $cache_info->{'file'}\n");
   unless(-d $cache_info->{dir}) { mkdir($cache_info->{dir}) || $np->nagios_die(CRITICAL, "Can't create cache directory : $!") }
-  store($data, $cache_info->{'tmp_file'}) || $np->nagios_die(CRITICAL, "Can't write cache file: $!");
-  rename($cache_info->{'tmp_file'}, $cache_info->{'file'}) || $np->nagios_die(CRITICAL, "Can't rename cache file: $!");
+  copy($cache_info->{'file'}, $cache_info->{'lastrun_file'}) || warn("empty cache, can't write lastrun cache...");
+
+  store($data, $cache_info->{'tmp_file'}) || $np->nagios_die(CRITICAL, "Can't write cache tmp file($cache_info->{'tmp_file'}): $!");
+  move($cache_info->{'tmp_file'}, $cache_info->{'file'}) || $np->nagios_die(CRITICAL, "Can't rename cache tmp file: $!");
+
+   
   return $data;
 }
 
@@ -333,7 +411,7 @@ sub dbi_connect
 {
   my $np = shift;
   
-  my $dsn = sprintf("DBI:mysql:database=%s:host=%s:port=%d;mysql_read_default_file=$ENV{HOME}/.my.cnf", $np->opts->database, $np->opts->hostname, $np->opts->port);
+  my $dsn = sprintf("DBI:mysql:database=%s:host=%s:port=%d", $np->opts->database, $np->opts->hostname, $np->opts->port);
   my $dbh = DBI->connect($dsn, $np->opts->user, $np->opts->password, { RaiseError => 0, AutoCommit => 1 });
   unless($dbh) { $np->nagios_exit(CRITICAL, "Can't connect to MySQL: $DBI::errstr") }
   return $dbh;
@@ -348,15 +426,15 @@ sub pdebug
 sub init_plugin
 {
   my $np = Nagios::Plugin->new(
-	usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|locked-query|long-query>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison <math expression>] [--expression <math expression>] ",
+	usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|lastrun-varcomp|locked-query|long-query>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison <math expression>] [--expression <math expression>] ",
 	version => $VERSION,
 	license => "Copyright (c) 2009-2010, PalominoDB, Inc.",
 );
 
-  $np->add_arg(spec => 'hostname|H=s', default => 'localhost', help => "-H, --hostname\n\tMySQL server hostname");
+  $np->add_arg(spec => 'hostname|H=s', required => 1, help => "-H, --hostname\n\tMySQL server hostname");
   $np->add_arg(spec => 'port|P=i', default => 3306, help => "-P, --port\n\tMySQL server port");
-  $np->add_arg(spec => 'user|u=s', required => 0, help => "-u, --user\n\tMySQL username");
-  $np->add_arg(spec => 'password|p=s', required => 0, help => "-p, --password\n\tMySQL password");
+  $np->add_arg(spec => 'user|u=s', required => 1, help => "-u, --user\n\tMySQL username");
+  $np->add_arg(spec => 'password|p=s', required => 0, default => '', help => "-p, --password\n\tMySQL password");
   $np->add_arg(spec => 'database|d=s', required => 0, default => '', help => "-d, --database\n\tMySQL database");
   $np->add_arg(spec => 'warning|w=s', required => 0, default => '', help => "-w, --warning\n\tWarning Threshold");
   $np->add_arg(spec => 'critical|c=s', required => 0, default => '', help => "-c, --critical\n\tCritical Threshold");
@@ -364,6 +442,7 @@ sub init_plugin
   $np->add_arg(spec => 'mode|m=s', required => 1, help => 
     qq|-m, --mode\n\tRun mode\n| . 
     qq|\t\tvarcomp\t\tVariable comparison (--comparison and --expression)\n| . 
+    qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison and --expression)\n| . 
     qq|\t\tlocked-query\tCheck for queries in the 'Locked' state\n| .
     qq|\t\tlong-query\tCheck for long running queries\n|
   );
@@ -396,11 +475,19 @@ sub init_plugin
     case "varcomp"
     {
       $np->shortname('mysql_varcomp') unless($np->opts->shortname);
-      unless(($np->opts->comparison && $np->opts->expression && !$np->opts->warning && !$np->opts->critical) || ($np->opts->expression && $np->opts->warning && $np->opts->critical && !$np->opts->comparison) )
+      unless($np->opts->comparison && $np->opts->expression)
       {
-       $np->nagios_die("ERROR: run mode 'varcomp' requires --expression and EITHER --comparison OR --warning and --critical params.");
+        $np->nagios_die("ERROR: run mode 'varcomp' requires --comparison and --expression params.");
       }
     }    
+    case "lastrun-varcomp"
+    {
+      $np->shortname('mysql_lastrun-varcomp') unless($np->opts->shortname);
+      unless($np->opts->comparison && $np->opts->expression)
+      {
+        $np->nagios_die("ERROR: run mode 'lastrun-varcomp' requires --comparison and --expression params.");
+      }
+    }
   } 
 
   return $np, $dbh = dbi_connect($np);
