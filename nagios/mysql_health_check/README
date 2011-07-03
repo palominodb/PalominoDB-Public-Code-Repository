@@ -45,9 +45,9 @@ mysql_health_check.pl --hostname=localhost --user=root --mode lastrun-varcomp \
  --comparison ">80" \
 --expression "(current{Queries} - lastrun{Queries}) / (current{Uptime} - lastrun{Uptime})"
 
-current{keyword} and lastrun{keyword} will be replaced with the approprate value from the cache.  
+current{keyword} and lastrun{keyword} will be replaced with the appropriate value from the cache.  
 
-WARNING: There isn?t good sanity checking here yet, so please get the keywords right or else you?ll see warnings.
+WARNING: There isn't good sanity checking here yet, so please get the keywords right or else you'll see warnings.
 
 General Notes:
 
