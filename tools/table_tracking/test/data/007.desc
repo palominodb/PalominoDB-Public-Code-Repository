@@ -1,0 +1,5 @@
+5k_rows.dat   -s 88953 -c a=int_pk -c 'b=varchar(5)' -c 'c=varchar(20)' -r 5_000
+50k_rows.dat  -s 88953 -c a=int_pk -c 'b=varchar(5)' -c 'c=varchar(20)' -r 50_000
+100k_rows.dat -s 88953 -c a=int_pk -c 'b=varchar(5)' -c 'c=varchar(20)' -r 100_000
+250k_rows.dat -s 88953 -c a=int_pk -c 'b=varchar(5)' -c 'c=varchar(20)' -r 250_000
+500k_rows.dat -s 88953 -c a=int_pk -c 'b=varchar(5)' -c 'c=varchar(20)' -r 500_000

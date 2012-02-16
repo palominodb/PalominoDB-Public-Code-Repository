@@ -1,0 +1,21 @@
+@srcdir /tmp/zrm-innobackupex-pkg
+@comment PKG_FORMAT_REVISION:1.1
+@name zrm-innobackupex-0.75
+@cwd /usr
+@owner mysql
+@group mysql
+@mode 0755
+share/mysql-zrm/plugins/inno-snapshot.pl
+share/mysql-zrm/plugins/socket-copy.palomino.pl
+share/mysql-zrm/plugins/socket-server.palomino.pl
+@mode 0644
+share/mysql-zrm/plugins/socket-server.conf
+@owner root
+@group wheel
+share/doc/zrm-innobackupex/README
+share/doc/zrm-innobackupex/CHANGELOG
+share/doc/zrm-innobackupex/examples/example_nagios.cfg
+share/doc/zrm-innobackupex/examples/mysql-zrm.conf
+share/doc/zrm-innobackupex/examples/socket-server.conf
+share/doc/zrm-innobackupex/examples/zrm-palomino.xinetd
+share/doc/zrm-innobackupex/examples/zrm_nsca.cfg

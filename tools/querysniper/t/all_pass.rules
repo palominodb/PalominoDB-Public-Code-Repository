@@ -1,0 +1,2 @@
+set log_level = 10
+set log_file  = /dev/null

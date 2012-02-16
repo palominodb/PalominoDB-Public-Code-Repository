@@ -1,0 +1,9 @@
+<h1>Servers</h1>
+<% @servers.each do |srv| %>
+  <%= render :partial => 'graphs/server_full', :locals => {:server=> srv} %>
+<% end %>
+
+<h1>Databases</h1>
+<% @databases.each do |db| %>
+  <%= render :partial => 'graphs/database_full', :locals => {:database => db } %>
+<% end %>

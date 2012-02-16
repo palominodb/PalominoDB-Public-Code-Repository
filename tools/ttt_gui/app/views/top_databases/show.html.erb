@@ -1,0 +1,52 @@
+<h1>Top Databases</h1>
+<h5>Description:</h5>
+<ul>
+  <li>Enter in 'N', 'Pct', and 'Days' to get 'top N tables over Pct growth over Days'.</li>
+  <li>Enter in 'N', 'Gb', and 'Days' to get 'top N tables over Gb growth over Days'.</li>
+</ul>
+<% form_tag('',:method => 'get') do %>
+  <%= label_tag(:limit, "N: ") %>
+  <%= text_field_tag(:limit, params[:limit], :size => 5) %>
+  <%= label_tag(:percent, "Pct: ") %>
+  <%= text_field_tag(:percent, params[:percent], :size => 5)%>
+  <%= label_tag(:gbytes, "GB: ") %>
+  <%= text_field_tag(:gbytes, params[:gbytes], :size => 5)%>
+  <%= label_tag(:days, "Days: ") %>
+  <%= text_field_tag(:days, params[:days], :size => 5)%>
+  <%= submit_tag('Update') %>
+<% end %>
+
+<span class='error-message'><%= flash[:error_message] %></span>
+
+<% if @type == :top_Pct %>
+  <table>
+    <tr>
+      <td>Server</td>
+      <td>Database</td>
+      <td>Percent Growth</td>
+    </tr>
+    <% @databases.each do |t| %>
+      <tr>
+        <td><%= t[0][0] %></td>
+        <td><%= link_to t[0][1], server_database_path(t[0][0], t[0][1]) %></td>
+        <td><%= number_to_percentage t[1]%></td>
+      </tr>
+    <% end %>
+  </table>
+<% else %>
+  <table>
+    <tr>
+      <td>Server</td>
+      <td>Database</td>
+      <td>GB Growth</td>
+    </tr>
+    <% @databases.each do |t| %>
+      <tr>
+        <td><%= t[0][0] %></td>
+        <td><%= link_to t[0][1], server_database_path(t[0][0], t[0][1]) %></td>
+        <td><%= number_to_human_size t[1]%></td>
+      </tr>
+    <% end %>
+  </table>
+<% end %>
+

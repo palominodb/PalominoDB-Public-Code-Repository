@@ -1,0 +1,21 @@
+INSTALLATION
+
+To install this module, run the following commands:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+SUPPORT AND DOCUMENTATION
+
+After installing, you can find documentation for this module with the
+perldoc command.
+
+    perldoc Nagios::RemoteCmd
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2009 Brian Smith
+
+This software comes with virtually no license. You may NOT redistribute without the author's explicit consent. It is writen for the use of PalominoDB clients.

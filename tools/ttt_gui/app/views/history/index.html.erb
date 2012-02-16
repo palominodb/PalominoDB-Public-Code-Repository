@@ -1,0 +1,74 @@
+<h1>History</h1>
+<%= render :partial => 'shared/show_diffs' %>
+<div style="float:left">
+<h3>Table Defintions</h3>
+<table>
+  <tr>
+    <td><span class="bold">Status</span></td>
+    <td><span class="bold">Server</span></td>
+    <td><span class="bold">Database</span></td>
+    <td><span class="bold">Table</span></td>
+  </tr>
+  <% tdef_time=nil %>
+  <% @tables.each do |defn| %>
+    <% next if defn.run_time < since_t %>
+    <% if tdef_time!=defn.run_time %>
+      <tr>
+        <td colspan="4" style="background-color: #ffffff"><span class="bold" ><%= defn.run_time %></span></td>
+      </tr>
+      <% tdef_time=defn.run_time %>
+    <% end %>
+  <tr style='background-color: #ababab'>
+    <td><span class='bold'><%= defn.status %></span></td>
+    <td><%= link_to defn.server, server_path(defn.server) %></td>
+    <td><%= link_to defn.database_name, server_database_path(defn.server, defn.database_name) unless defn.database_name.nil? %></td>
+    <%if defn.deleted? %>
+      <td><%= defn.table_name %></td>
+    <% else %>
+      <td><%= link_to defn.table_name, server_database_table_path(defn.server, defn.database_name, defn.table_name, :at => defn.run_time.to_i) unless defn.database_name.nil? %></td>
+    <% end %>
+  </tr>
+  <% if @show_diffs %>
+    <tr>
+      <td colspan="4">
+        <div class="code" style="width: 50em"><%= gen_diff(defn) %></div>
+      </td>
+  </tr>
+<% end %>
+
+<% end %>
+</table>
+</div>
+<div style="float:right">
+<h3>Table Views</h3>
+<table>
+  <tr>
+    <td><span class="bold">Status</span></td>
+    <td><span class="bold">Server</span></td>
+    <td><span class="bold">Database</span></td>
+    <td><span class="bold">Table</span></td>
+  </tr>
+  <% run_t=nil %>
+  <% @views.each do |defn| %>
+    <% next if defn.run_time < since_t %>
+    <% if run_t != defn.run_time %>
+      <% run_t = defn.run_time %>
+      <tr>
+        <td colspan="4" style="background-color: #ffffff"><span class='bold'><%= run_t %></span></td>
+      </tr>
+    <% end %>
+    <% unless defn.status == :unchanged %>
+      <tr>
+        <td><span class='bold'><%= defn.status %></span></td>
+        <td><%= link_to defn.server, server_path(defn.server) %></td>
+        <td><%= link_to defn.database_name, server_database_path(defn.server, defn.database_name) unless defn.database_name.nil? %></td>
+        <%if defn.deleted? %>
+          <td><%= defn.table_name %></td>
+        <% else %>
+          <td><%= link_to defn.table_name, server_database_table_path(defn.server, defn.database_name, defn.table_name, :at => defn.run_time.to_i) unless defn.database_name.nil? %></td>
+        <% end %>
+      </tr>
+    <% end %>
+<% end %>
+</table>
+</div>

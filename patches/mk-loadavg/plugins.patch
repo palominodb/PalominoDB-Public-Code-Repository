@@ -1,0 +1,342 @@
+diff --git a/trunk/common/WatchProcesslist.pm b/trunk/common/WatchProcesslist.pm
+index 717d0d9..01ae8e5 100644
+--- a/trunk/common/WatchProcesslist.pm
++++ b/trunk/common/WatchProcesslist.pm
+@@ -86,6 +86,7 @@ sub parse_params {
+       '   my $apl  = $self->{ProcesslistAggregator}->aggregate($proc);',
+       "   my \$val = \$apl->{$col}->{'$val'}->{$agg} || 0;",
+       "   MKDEBUG && _d('Current $col $val $agg =', \$val);",
++      "   \$self->_save_last_data(\$proc);",
+       "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
+       "   return \$val $cmp $thresh ? 1 : 0;",
+       '}',
+@@ -140,7 +141,7 @@ sub check {
+ 
+ sub _show_processlist {
+    my ( $dbh, %args ) = @_;
+-   return $dbh->selectall_arrayref('SHOW PROCESSLIST', { Slice => {} } );
++   return $dbh->selectall_arrayref('SHOW FULL PROCESSLIST', { Slice => {} } );
+ }
+ 
+ sub _save_last_check {
+@@ -149,11 +150,22 @@ sub _save_last_check {
+    return;
+ }
+ 
++sub _save_last_data {
++   my ( $self, @args ) = @_;
++   $self->{last_data} = [ @args ];
++   return;
++}
++
+ sub get_last_check {
+    my ( $self ) = @_;
+    return @{ $self->{last_check} };
+ }
+ 
++sub get_last_data {
++  my ( $self ) = @_;
++  return @{ $self->{last_data} };
++}
++
+ sub _d {
+    my ($package, undef, $line) = caller 0;
+    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+diff --git a/trunk/common/WatchStatus.pm b/trunk/common/WatchStatus.pm
+index 7b26d09..ccde4ed 100644
+--- a/trunk/common/WatchStatus.pm
++++ b/trunk/common/WatchStatus.pm
+@@ -76,6 +76,7 @@ sub parse_params {
+       "   my \$val = \$self->_get_val_from_$stats('$var', %args);",
+       "   MKDEBUG && _d('Current $stats:$var =', \$val);",
+       "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
++      "   \$self->_save_last_data({ \$var => \$val });",
+       "   return \$val $cmp $thresh ? 1 : 0;",
+       '}',
+    );
+@@ -235,11 +236,22 @@ sub _save_last_check {
+    return;
+ }
+ 
++sub _save_last_data {
++   my ( $self, @args ) = @_;
++   $self->{last_data} = [ @args ];
++   return;
++}
++
+ sub get_last_check {
+    my ( $self ) = @_;
+    return @{ $self->{last_check} };
+ }
+ 
++sub get_last_data {
++   my ( $self ) = @_;
++   return @{ $self->{last_data} };
++}
++
+ sub _d {
+    my ($package, undef, $line) = caller 0;
+    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+diff --git a/trunk/mk-loadavg/mk-loadavg b/trunk/mk-loadavg/mk-loadavg
+index c12e5a2..6cca2bd 100755
+--- a/trunk/mk-loadavg/mk-loadavg
++++ b/trunk/mk-loadavg/mk-loadavg
+@@ -2729,7 +2729,7 @@ sub aggregate {
+             $val  =~ s/:.*// if $field eq 'Host';
+ 
+          my $time = $proc->{Time};
+-            $time = 0 if $time eq 'NULL';
++            $time = 0 if not defined($time) or $time eq 'NULL';
+ 
+          $field = lc $field;
+ 
+@@ -3040,6 +3040,7 @@ sub parse_params {
+       '   my $apl  = $self->{ProcesslistAggregator}->aggregate($proc);',
+       "   my \$val = \$apl->{$col}->{'$val'}->{$agg} || 0;",
+       "   MKDEBUG && _d('Current $col $val $agg =', \$val);",
++      "   \$self->_save_last_data(\$proc);",
+       "   \$self->_save_last_check(\$val, '$cmp', '$thresh');",
+       "   return \$val $cmp $thresh ? 1 : 0;",
+       '}',
+@@ -3098,11 +3099,22 @@ sub _save_last_check {
+    return;
+ }
+ 
++sub _save_last_data {
++   my ( $self, @args ) = @_;
++   $self->{last_data} = [ @args ];
++   return;
++}
++
+ sub get_last_check {
+    my ( $self ) = @_;
+    return @{ $self->{last_check} };
+ }
+ 
++sub get_last_data {
++  my ( $self ) = @_;
++  return @{ $self->{last_data} };
++}
++
+ sub _d {
+    my ($package, undef, $line) = caller 0;
+    @_ = map { (my $temp = $_) =~ s/\n/\n# /g; $temp; }
+@@ -3392,6 +3404,32 @@ sub main {
+    # In case no watch module used a dbh, set this manually.
+    $dsn ||= { h => 'localhost' };
+ 
++   # ########################################################################
++   # Load executable plugins, as described in PLUGINS.
++   # ########################################################################
++   my @exec_plugins;
++   if($o->get('plugin')) {
++      MKDEBUG && _d('Loading all executable plugins.');
++      @plugins = $o->get('plugin');
++      foreach my $ep ( @plugins ) {
++         my ($plugin, $optstr) = split(/;/, $ep, 2);
++         _d('  Loading plugin ', $plugin, 'with options:', $optstr);
++         my $exec_plugin;
++         eval {
++            eval "use $plugin;";
++            die $EVAL_ERROR if $EVAL_ERROR;
++            $exec_plugin = $plugin->new({
++               dbh => $dbh,
++               dsn => $dsn,
++               o   => $optstr,
++            });
++         };
++
++         die "Failed to load --plugin $plugin: $EVAL_ERROR" if $EVAL_ERROR;
++         push @exec_plugins, {module => $plugin, refr => $exec_plugin};
++      }
++   }
++
+    # Daemonize only after connecting and doing --ask-pass.
+    my $daemon;
+    if ( $o->get('daemonize') ) {
+@@ -3420,8 +3458,10 @@ sub main {
+       dp  => $dp,
+       vp  => $vp,
+       watches => \@watches,
++      plugins => \@exec_plugins,
+    );
+ 
++   finish_plugins(\@exec_plugins);
+    $dp->disconnect($dbh) if $dbh;
+    return 0;
+ }
+@@ -3477,6 +3517,7 @@ sub watch_server {
+             }
+             else {
+                _log($o, 'Reconnected to MySQL');
++               reset_plugins_dbh($args{plugins},$dbh);
+                $dbh->{InactiveDestroy} = 1;  # Don't die on fork().
+                next;  # Redo the oktorun checks after waiting.
+             }
+@@ -3503,6 +3544,7 @@ sub watch_server {
+             $n_failed++;
+             _log($o, "FAIL: @last_test");
+             if ( !$o->get('and') ) {
++               call_plugins($args{plugins}, [$watch]);
+                if ( my $cmd = $o->get('execute-command') ) {
+                   _log($o, "Executing $cmd");
+                   exec_cmd($cmd);
+@@ -3513,6 +3555,7 @@ sub watch_server {
+ 
+       if ( $o->get('and') && $n_failed == scalar @$watches ) {
+          _log($o, 'All watches failed');
++         call_plugins($args{plugins}, $watches);
+          if ( my $cmd = $o->get('execute-command') ) {
+             _d("Executing $cmd");
+             exec_cmd($cmd);
+@@ -3528,6 +3571,34 @@ sub watch_server {
+    return;
+ }
+ 
++sub call_plugins {
++   my ($plugins, $watches) = @_;
++   MKDEBUG && _d("Calling all plugins due to test fail.");
++   foreach my $plugin (@$plugins) {
++      MKDEBUG && _d("  Calling: $plugin->{module}");
++      $plugin->{refr}->watch_event($watches);
++   }
++   return 1;
++}
++
++sub finish_plugins {
++   my ($plugins) = @_;
++   MKDEBUG && _d("Cleaning up all executable plugins.");
++   foreach my $plugin (@$plugins) {
++      MKDEBUG && _d("  Calling: $plugin->{module}");
++      $plugin->{refr}->done();
++   }
++   return 1;
++}
++
++sub reset_plugins_dbh {
++   my ($plugins, $dbh) = @_;
++   foreach my $plugin (@$plugins) {
++      $plugin->{refr}->set_dbh($dbh);
++   }
++   return 1;
++}
++
+ # Forks and detaches from parent to execute the given command;
+ # does not block parent.
+ sub exec_cmd {
+@@ -3632,7 +3703,9 @@ their threshold values are specified by L<"--watch">.  Every item is checked
+ at intervals (see L<"--interval">).  By default, if any one item's check returns
+ true (i.e. its threshold is exceeded), then L<"--execute-command"> is executed.
+ Specifying L<"--and"> requires that every item has exceeded its threshold before
+-L<"--execute-command"> is executed.
++L<"--execute-command"> is executed. In addition to, or instead of specifying
++L<"--execute-command">, L<"--plugin"> may be passed which will load the
++referenced perl module and call it's callbacks at the appropriate moment.
+ 
+ =head1 OUTPUT
+ 
+@@ -3724,6 +3797,26 @@ No information from mk-loadavg is passed to the command.
+ 
+ See also L<"--and">.
+ 
++=item --plugin
++
++type: string; group: Action
++
++Load a perl module plugin. See L<"PLUGINS"> for interface details.
++
++Much like L<"--execute-command">, plugins provide actions to be performed
++if a L<"--watch"> item (or all items if L<"--and"> is specified) exceeds its threshold.
++Multiple C<--plugin> options may be specified, and plugin callbacks will be called in
++the same order as given on the command-line.
++
++Plugins are passed options by following the module name with a semi-colon (;), and then
++a plugin specific string. The plugin specific string may include other semi-colons
++because the split is only done on the first semi-colon.
++
++Example:
++
++    mk-loadavg --watch "Status:status:Threads_connected:>:60" --plugin "ProcesslistLogger;h=opsdb,u=plogger,p=logpw,D=logs,t=process_list"
++    mk-loadavg --watch "Status:status:Threads_connected:>:60" --plugin "QuerySniper;/path/to/sniper.cfg"
++
+ =item --help
+ 
+ Show help and exit.
+@@ -3965,6 +4058,77 @@ See L<"--vmstat">.
+ 
+ =back
+ 
++=head1 PLUGINS
++
++mk-loadavg supports loading perl modules as plugins so that actions can be
++done in-process and make use of mk-loadavg's environment.
++
++The module must provide the following interface:
++
++=over 8
++
++=item new($dbh, $dsn, $cfg)
++
++The plugin's constructor is called directly after mk-loadavg loads the module.
++Plugins are loaded after configuration is parsed, and after the connection is
++made to the database, but before any watching has begun.
++
++The plugin is passed a handle to mk-loadavg's database connection,
++the name of the server it is watching, and, a reference to the options parser.
++
++Plugins that need extra configuration are expected to have that stored in
++config files, so as to not pollute the already numerous options available to
++mk-loadavg.
++
++=item watch_event($watch_modules)
++
++This is called when a "watch event" happens. That is, any condition
++which would cause L<"--execute-command"> to run.
++
++$watch_modules is an arrayref of all the watch modules that mk-loadavg is running.
++There are several pieces of information you can get from a watch module.
++
++Assuming that C<$wm = $watch_modules->[0]>, these are the most interesting:
++
++=over 4
++
++=item $wm->{module}->get_last_data()
++
++This method returns the data that the watch module collected.
++For the Processlist module, this data is the result of 'SHOW FULL PROCESSLIST'.
++The data is always wrapped in an array.
++
++=item $wm->{module}->get_last_check()
++
++Returns: The failing comparison as interpreted by the watch module.
++The data is always wrapped in an array, but, watch modules
++may not all package it the same. Usually, however, the returned
++structure looks similar to this: C<[value, cmp-operator, threshold]>.
++
++=item $wm->{name}
++
++This is the name of the watch module followed by a colon, followed by
++watch module specific options.
++It's identical to the L<"--watch"> commandline given for each module.
++
++=back
++
++Inspecting individual watch modules will give you greater insight into their workings.
++
++Presently, the return value from this function is ignored, but, in the future
++it could be used to stop processing of further plugins.
++
++=item done()
++
++Called when mk-loadavg is exiting, before any database connections are closed.
++This is so the plugin can write any state needed.
++
++=item set_dbh($dbh)
++
++Called when mk-loadavg needed to reconnect.
++
++=back
++
+ =head1 DOWNLOADING
+ 
+ You can download Maatkit from Google Code at

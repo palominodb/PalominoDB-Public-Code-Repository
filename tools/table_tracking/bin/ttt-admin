@@ -1,0 +1,243 @@
+#!/usr/bin/ruby
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+require 'rubygems'
+require 'ftools'
+require 'yaml'
+require 'getoptlong'
+require 'ttt/db'
+require 'ttt/server'
+require 'ttt/table_definition'
+require 'ttt/table_user'
+require 'ttt/table_view'
+require 'ttt/table_volume'
+require 'ttt/history'
+require 'ttt/collector'
+require 'text/reform'
+require 'ttt/crash_reporter'
+
+TTT::CollectorRegistry.load
+
+class BaseAction
+  def initialize(config, debug, *args)
+    @config = config
+    @debug  = debug
+    @args = args.flatten
+    TTT::Db.open(@config)
+  end
+end
+
+class PurgeAction < BaseAction
+  def exec()
+    if @args.length < 1
+      puts "Need at least one host to purge (try --help)."
+      return 1
+    end
+    puts "Performing purge of #{@args.join(',')}" if @debug
+
+    TTT::Server.transaction do
+      @args.each do |host|
+        puts "Doing purge for #{host}..." if @debug
+
+        ### Clean out the references in the server tables
+        s=TTT::Server.find_by_name(host)
+        schs=s.schemas
+        n=TTT::Table.delete_all "schema_id IN (#{schs.map { |sh| sh.id }.join(',')})"
+        puts "Deleted #{n} tables from the cache.." if @debug
+        n=TTT::Schema.delete_all "id IN (#{schs.map { |sh| sh.id }.join(',')})"
+        puts "Deleted #{n} schemas from the cache.." if @debug
+        TTT::Server.delete s.id
+
+        TTT::CollectorRegistry.all.each do |col|
+          n=col.stat.delete_all "server = '#{host}'"
+          puts "Deleted #{n} records from the #{col.id.to_s} table.." if @debug
+          n=TTT::Snapshot.delete_all %Q{"collector_run_id" = #{col.stat.collector_id} AND "statistic_id" NOT IN (SELECT "id" FROM "#{col.stat.table_name}")}
+          puts "Deleted #{n} #{col.id.to_s} records from the snapshots table.." if @debug
+        end
+      end
+    end
+    return 0
+  end
+end
+
+class RenameAction < BaseAction
+  def exec()
+    if @args.length < 2
+      puts "Need host to rename and the new name for it (try --help)."
+      return 1
+    end
+    host = @args.shift
+    newhost = @args.shift
+    TTT::Server.transaction do
+      s=TTT::Server.find_by_name(host)
+      s.name = newhost
+      s.save
+      TTT::CollectorRegistry.all.each do |col|
+        n=col.stat.update_all( "server = '#{newhost}'", "server = '#{host}'" )
+        puts "Updated #{n} records in the #{col.id.to_s} table.."
+      end
+    end
+    return 0
+  end
+end
+
+class ListAction < BaseAction
+  def exec()
+    order_by='name'
+    if @args.length == 1
+      k,v = @args.shift.split('=')
+      case k
+      when 'order'
+        order_by=v
+      else
+        puts "Unknown option: #{k} for 'list'"
+      end
+    end
+    rf=Text::Reform.new
+    rf.trim=true
+    srvs = TTT::Server.all(:order => order_by)
+    max_name = srvs.map { |s| s.name.length }.max
+    max_size = sprintf("%4.3G", srvs.map { |s| s.cached_size / 1.0.gigabyte }.max).length
+    puts rf.format(
+      "Host#{" "*max_name}Size#{" "*(max_size+4)}Last Updated\n" +
+      "----#{"-"*max_name}----#{"-"*(max_size+4)}------------------------------",
+      ("["*max_name) + "   ]]]].[[[G" + "    ]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]",
+      (srvs.map { |s| s.name }), (srvs.map { |s| s.cached_size / 1.0.gigabyte }),
+      (srvs.map { |s| s.updated_at })
+    )
+    return 0
+  end
+end
+
+opts = GetoptLong.new(
+  [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
+  [ '--config', '-c', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--debug', GetoptLong::NO_ARGUMENT ],
+  [ '--backup', '-b', GetoptLong::NO_ARGUMENT ]
+)
+
+config=nil
+action=nil
+debug=false
+backup=false
+
+opts.each do |opt,val|
+  case opt
+  when '--help'
+    puts <<DOC_EOF
+== Synopsis
+
+ttt-admin: Does administrative tasks to a TTT db.
+
+== Usage
+
+ttt-admin [-h] -c config.yml <action>
+
+-h, --help:
+    This help.
+
+-c, --config file:
+    Path to TTT config file.
+
+--debug:
+    Be really noisy. Be even noisier if passed twice.
+    Three times doesn't get you anything more.
+
+--backup:
+    Make an SQL dump that can be used to undo any changes made.
+
+== Actions
+
+purge <host> [<host>]+:
+    Deletes all data for <host>, so that it is as if it
+    never existed in TTT to begin with.
+
+rename <host> <new host>:
+    Renames <host> to <new host>.
+
+list "[order=name|cached_size|updated_at[ ASC|DESC]]"
+    Lists hosts optionally sorted by name, size, or last update
+
+DOC_EOF
+    exit 1
+  when '--config'
+    config=YAML.load_file(val)
+  when '--debug'
+    if debug
+      # If --debug is passed a second time
+      ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDERR, ActiveSupport::BufferedLogger::Severity::DEBUG)
+    end
+    debug=true
+  when '--backup'
+    backup=true
+  end # case
+
+end # opts.each
+
+if ARGV.length < 1
+  puts "Need an action (try --help)."
+  exit 1
+end
+
+if backup
+  if config['ttt_connection']['adapter'] != 'sqlite3'
+    puts "Can only backup sqlite3 TTT dbs."
+    exit 1
+  end
+  puts "Backing up TTT db.." if debug
+  File.copy(config['ttt_connection']['database'], config['ttt_connection']['database'] + '.bak', debug)
+end
+
+
+case ARGV.shift
+when 'purge'
+  action=PurgeAction.new(config, debug, ARGV)
+when 'rename'
+  action=RenameAction.new(config, debug, ARGV)
+when 'list'
+  action=ListAction.new(config,debug,ARGV)
+else
+  puts "Unknown action (try --help)."
+  exit 1
+end
+
+ecode=1
+begin
+  ecode=action.exec()
+rescue Exception => e
+  if !config.has_key? 'send_crashreports' or ( config.has_key? 'send_crashreports' and config['send_crashreports'] )
+    TTT::CrashMailer.deliver_crash(e, action)
+    $stderr.puts "ttt-admin has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+    $stderr.puts e
+    $stderr.puts e.backtrace
+    exit 1
+  end
+end
+exit ecode

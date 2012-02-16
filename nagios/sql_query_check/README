@@ -1,0 +1,19 @@
+sql_query_check - Monitor SQL queries with nagios
+
+Installation
+====================
+
+1. Copy sql_query_check.pl to /usr/lib/nagios/plugins
+   Or, wherever you typically install nagios plugins.
+2. Append the contents of nagios_cmd_def.cfg to
+   your install's command.cfg, or wherever you store command definitions.
+3. Integrate the following service definition as appropriate for your install.
+# TODO: Service def
+
+4. Restart nagios.
+
+Usage
+====================
+
+sql_query_check.pl comes with full pod documenation which can be activated with:
+  ./sql_query_check.pl --help

@@ -1,0 +1,8 @@
+This is the legacy SQLProfiler here for historical purposes.
+
+It's use is not recommended in new deployments.
+IF you do need to use it for some reason,
+you should be aware of the patch order:
+
+1. original_sla.patch
+2. fix_microslow.patch

@@ -1,0 +1,19 @@
+== About
+This is the new SQLProfiler. It uses mk-query-digest to build detailed reports about slow queries.
+It integrates very tightly with TTT-GUI to allow editing comments associated with slow queries, and
+to build graphical digrams of slow query origin.
+
+== Installing
+The SQLProfiler is more or less runnable from anywhere you would like.
+No binary packages exist as of yet, but, after the tool matures they are planned.
+
+SQLProfiler requires an mk-query-digest newer than 12/10/2009, since prior versions have
+bugs associated with queries of the form "SHOW CREATE TABLE.." and others.
+Both the git repository and any tarball distributes should contain a supported version
+of mk-query-digest for use with SQLProfiler.
+
+== Running
+For information on using SQLProfiler, simply run sql_profiler.sh with no arguments.
+
+The tarball distribution includes an example configuration to use with SQLProfiler,
+and the usage message describes the meaning of all the configuration options.

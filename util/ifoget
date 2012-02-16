@@ -1,0 +1,832 @@
+#!/usr/bin/env ruby
+require 'rubygems'
+require 'net/ssh'
+require 'net/sftp'
+require 'yaml'
+require 'keybox'
+require 'set'
+require 'highline'
+require 'fileutils'
+require 'tempfile'
+require 'timeout'
+require 'ruby-debug'
+require 'net/http'
+require 'net/https'
+require 'nokogiri'
+require 'ifo_get/plugin'
+require 'SarLogs'
+
+Net::HTTP.version_1_2
+
+class AppConfig < Keybox::Storage::Record
+  def [](key)
+    self.data_members[key.to_sym]
+  end
+
+  def []=(k,v)
+    self.data_members[k.to_sym] = v
+  end
+end
+
+class AppStorage < Keybox::Storage::Container
+  attr_reader :config
+  def initialize(pw, path)
+    @config ||= AppConfig.new
+    super(pw, path)
+  end
+  def find(search_string,restricted_to = nil)
+    case search_string
+    when Regexp
+      regex = Regexp.new(search_string.source,search_string.options | Regexp::IGNORECASE)
+    else
+      regex = Regexp.new(search_string.to_s,Regexp::IGNORECASE)
+    end
+    matches = []
+    @records.each do |record|
+      restricted_to = restricted_to || ( record.data_member_names - %w(password) )
+      record.data_members.each_pair do |k,v|
+        if restricted_to.include?(k.to_s) and regex.match(v)  then
+          matches << record
+          break
+        end
+      end
+    end
+    return matches
+  end
+  def save(path = @path)
+    calculate_records_digest
+    encrypt_records
+    tmp=Tempfile.new($0)
+    tmp.write(self.to_yaml)
+    tmp.fsync
+    FileUtils.mv(tmp.path, @path)
+    tmp.close!
+    @config.modified = false
+    @records.each do |record|
+      record.modified = false
+    end
+    @modified = false
+  end
+
+  def for_edit(group=nil)
+    d={}
+    d['config'] = {}
+    @config.data_members.each do |k,v|
+      d['config'][k.to_s] = v
+    end
+    @records.each do |g|
+      next unless group.nil? or g.groupname == group
+      group_cfg = {}
+      g.data_member_names.sort.each do |dm|
+        next if dm == 'groupname'
+        group_cfg[dm] = g[dm]
+      end
+      unless g.records.nil? 
+        g.records.each do |h|
+          group_cfg['hosts'] ||= {}
+          group_cfg['hosts'][h.hostname] = {}
+          h.data_member_names.each do |dm|
+            next if dm == 'hostname'
+            group_cfg['hosts'][h.hostname][dm] = h[dm]
+          end
+        end
+      end
+      d[g.groupname] = group_cfg
+    end
+    d.to_yaml
+  end
+  def from_edit(opts)
+    opts['config'].each do |k,v|
+      @config[k] = v
+    end
+    opts.delete 'config'
+    opts.each do |group,groupd|
+      record_group = self.find(group, ['groupname'])[0]
+      if record_group.nil?
+        record_group=KeyGroup.new(group)
+        self<<record_group
+      end
+      hosts=groupd['hosts']
+      groupd.delete 'hosts'
+      groupd.each do |k,v|
+        record_group[k] = v
+      end
+      hosts.each do |host,hostd|
+        record_host=record_group.find(host)
+        if record_host.nil?
+          record_host=Server.new(host)
+          record_group<<record_host
+        end
+        hostd.each do |k,v|
+          record_host[k]=v
+        end
+      end
+    end
+  end
+  private
+  def encrypt_records
+    cipher     = OpenSSL::Cipher::Cipher.new(self.records_cipher_algorithm)
+    cipher.encrypt
+    cipher.key = calculated_key
+    cipher.iv  = self.records_init_vector
+    self.records_encrypted_data  = cipher.update(@records.to_yaml + "\n" + @config.to_yaml) 
+    self.records_encrypted_data << cipher.final
+  end
+
+  def calculate_records_digest
+    digest = Keybox::Digest::CLASSES[self.records_digest_algorithm]
+    self.records_digest = digest.hexdigest(self.records_digest_salt + @records.to_yaml + "\n" + @config.to_yaml)
+  end
+
+  def load_records
+    YAML.load_documents(@decrypted_yaml) do |ydoc|
+      if ydoc.class == Array
+        @records = ydoc
+      elsif ydoc.class == AppConfig
+        @config = ydoc
+      else
+        raise ArgumentError, "Invalid configuration"
+      end
+    end
+  end
+end
+
+class KeyGroup < Keybox::Storage::Record
+  attr_reader :records
+  def initialize(groupname)
+    super()
+    self.groupname = groupname
+    @records = []
+  end
+
+  def [](key)
+    self.data_members[key.to_sym]
+  end
+
+  def []=(k,v)
+    self.data_members[k.to_sym] = v
+  end
+
+  def all
+    @records
+  end
+
+  def find(name)
+    srv=nil
+    @records.each do |s|
+      srv = s  if s.hostname == name
+      break if srv
+    end
+    srv
+  end
+
+  def has?(server)
+    has=false
+    @records.each do |s|
+      has = s == server
+      break if has
+    end
+    has
+  end
+
+  def <<(obj)
+    @records << obj
+  end
+
+  def delete(obj)
+    @records.delete obj
+  end
+
+  def save
+    @records.each { |r| r.modified = false }
+    super
+  end
+
+  def to_yaml_properties
+    %w{ @creation_time @modification_time @last_access_time @data_members @records @uuid }
+  end
+end
+
+
+
+class Server < Keybox::Storage::Record
+  def initialize(servername)
+    super()
+    self.hostname = servername
+    self.logs = []
+  end
+
+  def [](key)
+    self.data_members[key.to_sym]
+  end
+
+  def []=(k,v)
+    self.data_members[k.to_sym] = v
+  end
+
+  def ==(o)
+    if o.class == Server
+      self.hostname == o.hostname
+    elsif o.class == String
+      self.hostname == o
+    end
+  end
+
+end
+
+
+def sudo_exec(ssh,password,cmd, user='root')
+  # the built in ssh.exec wraps some stuff up for us, but to catch sudo we
+  # have to construct the whole thing ourselves, starting with the channel.
+  channel = ssh.open_channel do |channel|
+    # now we request a "pty" (i.e. interactive) session so we can send data
+    # back and forth if needed. it WILL NOT WORK without this, and it has to
+    # be done before any call to exec.
+    channel.request_pty do |ch, success|
+      raise "Could not obtain pty (i.e. an interactive ssh session)" if !success
+    end
+
+    channel.exec("sudo -p pass: -u #{user} #{cmd}") do |ch, success|
+      # 'success' isn't related to bash exit codes or anything, but more
+      # about ssh internals (i think... not bash related anyways).
+      # not sure why it would fail at such a basic level, but it seems smart
+      # to do something about it.
+      abort "could not execute command" unless success
+
+      # on_data is a hook that fires when the loop that this block is fired
+      # in (see below) returns data. This is what we've been doing all this
+      # for; now we can check to see if it's a password prompt, and
+      # interactively return data if so (see request_pty above).
+      channel.on_data do |ch, data|
+        if data == "pass:"
+          channel.send_data "#{password}\n"
+        else
+          # ssh channels can be treated as a hash for the specific purpose of
+          # getting values out of the block later
+          #channel[:result] ||= ""
+          #channel[:result] << data
+          yield(ch,data)
+        end
+      end
+
+      channel.on_extended_data do |ch, type, data|
+        raise "SSH command returned on stderr: #{data}"
+      end
+    end
+  end
+end
+
+def collect_cacti(ccfg, args)
+  def range_to_option(str)
+    "&predefined_timespan=" + (case str
+    when "Last Hour" then 2
+    when "Last 2 Hours" then 3
+    when "Last 4 Hours" then 4
+    when "Last 6 Hours" then 5
+    when "Last 12 Hours" then 6
+    when "Last Day" then 7
+    when "Last 2 Days" then 8
+    when "Last 3 Days" then 9
+    when "Last 4 Days" then 10
+    when "Last Week" then 11
+    when "Last 2 Weeks" then 12
+    when "Last Month" then 13
+    when "Last 2 Months" then 14
+    when "Last 3 Months" then 15
+    when "Last 4 Months" then 16
+    when "Last 6 Months" then 17
+    when "Last Year" then 18
+    when "Last 2 Years" then 19
+    when "Day Shift" then 20
+    when "This Day" then 21
+    when "This Week" then 22
+    when "This Month" then 23
+    when "This Year" then 24
+    when "Previous Day" then 25
+    when "Previous Week" then 26
+    when "Previous Month" then 27
+    when "Previous Year" then 28
+    else 9
+    end).to_s
+  end
+  group=args.shift
+  verbose
+  if group.nil?
+    raise ArgumentError, "Need a group."
+  end
+  g=ccfg.find(group, ['groupname'])[0]
+  if g.nil?
+    raise RuntimeError, "Invalid group."
+  end
+
+  u=URI.parse(g.cacti_host)
+  cactihttp = Net::HTTP.new u.host, u.port
+  while args.length > 0
+    if ['-d', '--debug'].include? args[0]
+      cactihttp.set_debug_output $stderr
+      args.shift
+    elsif ['-v', '--verbose'].include? args[0]
+      verbose=true
+      args.shift
+    end
+  end
+  if u.scheme == "https"
+    cactihttp.use_ssl = true
+  end
+  cactihttp.start do |http|
+    $stderr.puts "Logging into cacti..." if verbose
+    (1..3).each do
+      loginPost = Net::HTTP::Post.new(g.cacti_path + '/index.php', (g.cacti_cookie.nil? ? {} : { 'Cookie' => g.cacti_cookie }) )
+      unless g.cacti_basic_auth
+        loginPost.set_form_data({
+          'action' => 'login',
+          'login_username' => g.cacti_username,
+          'login_password' => g.cacti_password
+        })
+      else
+        puts "Using basic authentication.." if verbose
+        loginPost.basic_auth g.cacti_username, g.cacti_password
+      end
+      res = http.request(loginPost)
+      if res.code == '200'
+        $stderr.puts "Cookie still valid.."
+        break
+      elsif res.code == '302'
+        $stderr.puts "Got a new cookie."
+        g.cacti_cookie = res['Set-Cookie']
+        unless g.cacti_cookie.nil?
+          break
+        end
+      else
+        $stderr.puts res.to_yaml
+        raise RuntimeError, "Login to cacti failed?"
+      end
+    end
+
+    $stderr.puts "Using cookie: #{g.cacti_cookie}" if verbose
+    cookieHash = g.cacti_cookie ? { 'Cookie' => g.cacti_cookie } : {}
+
+    g.all.each do |srv|
+      next unless srv.cacti_page
+
+      $stderr.puts "Fetching server page: #{g.cacti_path}/#{srv.cacti_page}#{range_to_option((srv.cacti_graph_range || g.cacti_graph_range))}&graphs=100" if verbose
+
+      req = Net::HTTP::Get.new(g.cacti_path + '/' + srv.cacti_page +
+        range_to_option((srv.cacti_graph_range || g.cacti_graph_range)) +
+        '&graphs=100&predefined_timeshift=7', cookieHash)
+
+      if g.cacti_basic_auth
+        req.basic_auth g.cacti_username, g.cacti_password
+      end
+      res = http.request(req)
+      if res['Set-Cookie']
+        $stderr.puts "Got cookie from server page. Cookie #{res['Set-Cookie']}"
+        g.cacti_cookie = res['Set-Cookie']
+      end
+      ng = Nokogiri::HTML(res.body)
+      FileUtils.mkdir_p(g.groupname + '_cacti')
+      ng.xpath('//img[@class="graphimage"]').each do |gi|
+        $stderr.puts "Fetching #{g.cacti_path}/#{gi['src']}" if verbose
+        graphReq = Net::HTTP::Get.new("#{g.cacti_path}/#{gi['src']}",
+                                      cookieHash)
+        if g.cacti_basic_auth
+          graphReq.basic_auth g.cacti_username, g.cacti_password
+        end
+
+        graph_retries = 0
+        begin
+          gi_res=http.request(graphReq)
+          f=File.new(g.groupname + '_cacti/' + gi['alt'].gsub(' ','_').gsub('/','') + '.png', 'w')
+          f.write(gi_res.body)
+          f.close
+        rescue EOFError, NoMethodError => e
+          graph_retries += 1
+          retry if graph_retries < 4
+          if graph_retries >= 4
+            $stderr.puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+          end
+        rescue Errno::EPIPE => e
+            $stderr.puts "Unable to fetch: /#{g.cacti_path}/#{gi['src']}"
+        end
+
+      end
+    end
+  end
+end
+
+class FileDownloadHandler
+
+  def initialize(prfx,srv,verbose=false)
+    @prfx = prfx
+    @srv = srv
+    @verbose = verbose
+    @downloader = nil
+  end
+
+  def on_get(downloader, file, offset, data)
+  end
+
+  def on_open(downloader, file)
+    unless @downloader
+      @downloader = downloader
+      $stderr.puts "#{@prfx} DEBUG: Started downloader: #{downloader}" if @verbose
+    end
+    $stderr.puts "#{@prfx} DEBUG: Starting download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_close(downloader, file)
+    $stderr.puts "#{@prfx} DEBUG: Finished download of: #{@srv.hostname}/#{file.remote}" if @verbose
+  end
+
+  def on_mkdir(downloader, path)
+  end
+
+  def on_finish(downloader)
+    $stderr.puts "#{@prfx} DEBUG: Finished downloader: #{downloader}" if @verbose
+  end
+end
+
+def collect_logs(ccfg, args)
+  group=args.shift
+  if group.nil?
+    raise ArgumentError, "Need group."
+  end
+  verbose=false
+  if ['-v', '--verbose'].include? args[0]
+    verbose=true
+    args.shift
+  end
+
+  g=ccfg.find(group, ['groupname'])[0]
+
+  if g.nil?
+    raise RuntimeError, "Invalid group."
+  end
+  jumpthread=nil
+  if g.jumpbox
+    keys={}
+    if g.jump_password and g.jump_ssh_key
+      keys[:keys] = [g.jump_ssh_key].flatten
+    elsif g.jump_password
+      keys[:password] = g.jump_password
+    elsif g.password
+      keys[:password] = g.password
+    elsif g.ssh_key
+      keys[:keys] = [g.ssh_key].flatten
+    end
+    jumpssh=Net::SSH.start(g.jumpbox, (g.jump_username || g.username), keys)
+  end
+
+  plugin=SarLogs.new(ccfg.config)
+
+  g.all.each do |srv|
+    ssh_args = {}
+    hostname = srv.hostname
+    if g.jumpbox
+      begin
+        jumpssh.forward.cancel_local(8888)
+      rescue Exception => e
+        puts e
+      end
+      jumpssh.forward.local(8888, srv.hostname, 22)
+      ssh_args[:port] = 8888
+      ssh_args[:paranoid] = false
+      hostname='localhost'
+      jumpthread=Thread.new { jumpssh.loop(0.1) { true } }
+    end
+    username=(srv.username || g.username)
+    password=(srv.password || g.password)
+    ssh_key=(srv.ssh_key || g.ssh_key)
+    use_sudo=(srv.use_sudo || g.use_sudo)
+
+    if password
+      ssh_args[:password] = password
+    end
+    if ssh_key
+      ssh_args[:keys] = [ssh_key]
+    end
+
+    begin
+      ssh=Net::SSH.start(hostname, username, ssh_args)
+      puts "============= #{group} #{srv.hostname} ============="
+      #if srv.logs
+      #  if verbose
+      #    puts "DEBUG: cmd: tail -n100 #{srv.logs.to_a.join(' ')}"
+      #  end
+      #  if use_sudo
+      #    sudo_exec(ssh, password, "tail -n100 #{srv.logs.to_a.join(' ')}") do |ch, data|
+      #      out<<data
+      #    end
+      #  else
+      #    ssh.exec("tail -n100 #{srv.logs.to_a.join(' ')}") do |ch, stream, data|
+      #      if stream == :stdout
+      #        out<<data
+      #      end
+      #    end
+      #  end
+      #end
+
+      outs={}
+      if srv.cmds
+        srv.cmds.to_a.each do |c|
+          $stderr.puts "DEBUG: cmd: #{c}" if verbose
+          if use_sudo
+            sudo_exec(ssh, password, c) do |ch, data|
+              outs[c] ||= ""
+              outs[c] << data
+            end
+          else
+            ssh.exec(c) do |ch, stream, data|
+              outs[c] ||= ""
+              outs[c] << data
+            end
+          end 
+        end # cmds loop
+      end # if srv has commands
+
+      ssh.loop(0.1)
+
+      if srv.files
+        begin
+          File.stat("#{group}_files/#{srv.hostname}/")
+        rescue Errno::ENOENT
+          FileUtils.mkdir_p "#{group}_files/#{srv.hostname}/"
+        end
+        sftp = ssh.sftp
+        srv.files.to_a.each do |f|
+          sftp.stat(f) do |res|
+            if res[:attrs] and res[:attrs].directory?
+              $stderr.puts "DEBUG: downloading dir: #{f}" if verbose
+              sftp.download(f, "#{group}_files/#{srv.hostname}/", :recursive => true,
+                                :progress => FileDownloadHandler.new('Core',srv, verbose))
+            elsif res[:attrs] and res[:attrs].file?
+              sftp.download(f, "#{group}_files/#{srv.hostname}/" + File.basename(f),
+                                :progress => FileDownloadHandler.new('Core',srv, verbose))
+            else
+              $stderr.puts "ERROR: File does not exist on remote end: #{res.to_s}"
+            end
+          end
+        end
+        begin
+          sftp.loop
+        rescue RuntimeError => e
+          $stderr.puts "Caught error downloading files: '#{e}'"
+          retry
+        end
+      end
+
+      plugin.process(ssh, group, srv.hostname, g, srv)
+
+      outs.each_value do |v|
+        v.gsub!(/^/m, '   ')
+        puts v
+        puts ""
+      end
+    rescue Errno::ETIMEDOUT => e
+      $stderr.puts "============= ERROR: Timed out while trying to contact #{srv.hostname} ================"
+    rescue Net::SSH::AuthenticationFailed
+      $stderr.puts "============= ERROR: Login to #{srv.hostname} failed ============="
+    rescue Net::SSH::Disconnect
+      $stderr.puts "============= ERROR: Got disconnect while trying #{srv.hostname} ============= "
+
+    end
+  end
+  plugin.finalize()
+end
+
+def edit_config(ccfg, args)
+  group=args.shift
+  t=Tempfile.new($0)
+  # Convert records to a more natural style
+  t.write(ccfg.for_edit(group))
+  t.flush
+  editor=(ENV['EDITOR'] || ENV['VISUAL'])
+  begin
+    Timeout::timeout(ccfg.config['max_edit_time']) {
+      system("#{editor} #{t.path}")
+    }
+    t.open
+    ccfg.from_edit(YAML.load(t))
+    t.close
+  rescue Timeout::Error
+    puts "\nYour editing session timed out."
+    t.close!
+  end
+end
+
+def show_config(ccfg, args)
+  group = args.shift
+
+  puts "application config:"
+  ccfg.config.data_member_names.sort.each do |dm|
+    puts "  #{dm}: #{ccfg.config[dm]}"
+  end
+
+  ccfg.records.each do |g|
+    next unless group.nil? or g.groupname == group
+    raise ArgumentError, "Invalid structure" unless g.class == KeyGroup
+    puts "group: #{g.groupname}"
+    g.data_member_names.sort.each do |dm|
+      next if dm == 'groupname'
+      puts "   #{dm}: #{g[dm]}"
+    end
+    puts ""
+    unless g.records.nil? 
+      g.records.each do |h|
+        puts "     host: #{h.hostname}"
+        h.data_member_names.sort.each do |dm|
+          next if dm == 'hostname'
+          v=h[dm]
+          if v.class == Array
+            puts "         #{dm}: #{v.sort.join(',')}"
+          else
+            puts "         #{dm}: #{v}"
+          end
+        end
+      end
+    else
+      puts "      No hosts defined."
+    end
+  end
+end
+
+def parse_args(args)
+  g = {}
+  args.each do |a|
+    k,v = a.split(/\s*=\s*/)
+    if v.downcase == 'true'
+      v = true
+    elsif v.downcase == 'false'
+      v = false
+    elsif v.downcase == 'nil'
+      v = nil
+    elsif v.include? ',' # If it's got a comma, it's an array. Period.
+      v = v.split(',')
+    end
+    g[k] = v
+  end
+  g
+end
+
+def add_group(ccfg, args)
+  group = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+
+  puts "Adding group: #{group}"
+
+  g=KeyGroup.new(group)
+  parse_args(args).each do |k,v|
+    g[k] = v
+  end
+
+  unless ccfg.find(group, 'groupname').nil?
+    ccfg << g
+    ccfg.save
+  end
+  g
+end
+
+def add_server(ccfg, args)
+  group = args.shift
+  servername = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+  raise ArgumentError, "Host name mandatory." if servername.nil?
+  puts "Adding server #{group}.#{servername}"
+  s=Server.new(servername)
+  parse_args(args).each do |k,v|
+    s[k] = v
+  end
+
+  g=ccfg.find(group, 'groupname')[0]
+  unless g.nil?
+    g << s unless g.has? servername
+  else
+    g=add_group(ccfg,[group])
+    g << s
+  end
+  ccfg.save
+  s
+end
+
+def del_group(ccfg, args)
+  group = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+  puts "Deleting group #{group}"
+  g=ccfg.find(group, 'groupname')[0]
+  unless g.nil?
+    ccfg.delete g
+  end
+  g
+end
+
+def del_server(ccfg, args)
+  group = args.shift
+  hostname = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+  raise ArgumentError, "Host name mandatory." if hostname.nil?
+  puts "Deleting server #{group}.#{hostname}"
+  g=ccfg.find(group, 'groupname')[0]
+  if g.nil?
+    raise ArgumentError, "Invalid group."
+  end
+  srv = g.find(hostname)
+  g.delete srv
+  srv
+end
+
+def mod_group(ccfg, args)
+  group = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+  g=ccfg.find(group, 'groupname')[0]
+  if g.nil?
+    raise ArgumentError, "Invalid group."
+  end
+  parse_args(args).each do |k,v|
+    if v.nil?
+      g.data_members.delete k.to_sym
+    else
+      g[k] = v
+    end
+  end
+end
+
+def mod_server(ccfg, args)
+  group = args.shift
+  hostname = args.shift
+  raise ArgumentError, "Group name mandatory." if group.nil?
+  raise ArgumentError, "Host name mandatory." if hostname.nil?
+  g=ccfg.find(group, 'groupname')[0]
+  if g.nil?
+    raise ArgumentError, "Invalid group."
+  end
+  s=g.find(hostname)
+  if s.nil?
+    raise ArgumentError, "Invalid server."
+  end
+  parse_args(args).each do |k,v|
+    if v.nil?
+      s.data_members.delete k.to_sym
+    else
+      s[k] = v
+    end
+  end
+end
+
+pw=nil
+begin
+  hline=HighLine.new
+  pw=hline.ask('Password for config: ') { |q| q.echo = false }
+rescue RuntimeError
+  pw=$stdin.gets.chomp
+end
+
+# TODO: Load plugins from ifo_get/plugins/*.rb
+
+ccfg=AppStorage.new(pw, 'ccollect.yml')
+
+action=ARGV.shift
+
+case action
+when 'cacti'
+  collect_cacti ccfg, ARGV
+when 'collect'
+  collect_logs ccfg, ARGV
+when 'get'
+  collect_logs ccfg, ARGV
+when 'edit'
+  edit_config ccfg, ARGV
+when 'show'
+  show_config ccfg, ARGV
+when 'addgroup'
+  add_group ccfg, ARGV
+when 'delgroup'
+  del_group ccfg, ARGV
+when 'addserver'
+  add_server ccfg, ARGV
+when 'delserver'
+  del_server ccfg, ARGV
+when 'modgroup'
+  mod_group ccfg, ARGV
+when 'modserver'
+  mod_server ccfg, ARGV
+when 'changepw'
+  npw=hline.ask('New password: ') { |q| q.echo = false }
+  ccfg.passphrase = npw
+  ccfg.save
+else
+  puts <<EOD
+  Usage: ifoget <action> [arguments...]
+
+  ACTIONS:
+    collect <group>                collect logs for <group>.
+    show [group]                   show configuration for [group], or all.
+    addgroup  <group> ...          add a new group.
+    addserver <group> <server>     add a server to a group.
+    delgroup <group>               delete a group and all servers.
+    delserver <group> <server> ... delete a server from a group.
+    modgroup <group> ...           modify group properties.
+    modserver <group> <server> ... modify server properties.
+EOD
+end
+
+ccfg.save

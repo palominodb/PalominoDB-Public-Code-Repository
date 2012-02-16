@@ -1,0 +1,5 @@
+{
+  'section' => {
+    'option' => 'complex value /with/special/;chars'
+  }
+};

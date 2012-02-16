@@ -1,0 +1,5 @@
+Plugin for mk-loadavg.
+
+See patches/mk-loadavg for details on plugins.
+
+This plugin logs processlists to a database whenever mk-loadavg triggers it.

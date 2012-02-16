@@ -1,0 +1,8 @@
+{
+  'section' => {
+    'option1' => 'value2'
+  },
+  'section2' => {
+    'option2' => 'value1'
+  }
+};

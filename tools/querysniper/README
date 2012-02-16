@@ -1,0 +1,7 @@
+Plugin for mk-loadavg.
+
+See patches/mk-loadavg for details on plugins.
+
+This tool implements a mini-language similar to pf rules for
+selectively killing queries. See qs.cfg for an example, and
+documentation on the language.

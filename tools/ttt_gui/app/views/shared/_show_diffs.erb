@@ -1,0 +1,7 @@
+<% form_tag({}, {:method => 'get'}) do %>
+  <%= radio_button_tag(:show_diffs, 1, @show_diffs) %>
+  <%= label_tag(:show_diffs, "Show Diffs") %>
+  <%= radio_button_tag(:show_diffs, 0, !@show_diffs) %>
+  <%= label_tag(:show_diffs, "Don't Show Diffs") %>
+  <%= submit_tag('go') %>
+<% end %>

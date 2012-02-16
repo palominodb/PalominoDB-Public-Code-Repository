@@ -1,0 +1,21 @@
+<% if history[:volume] %>
+<h3>Volume</h3>
+<table>
+  <tr>
+    <td><span class="bold">Run time</span></td>
+    <td><span class="bold">Data length</span></td>
+    <td><span class="bold">Index length</span></td>
+    <td><span class="bold">Data free</span></td>
+  </tr>
+  <% history[:volume].each do |defn| %>
+    <tr>
+      <td><%= defn.run_time %></td>
+      <td><%= number_to_human_size defn.data_length %></td>
+      <td><%= number_to_human_size defn.index_length %></td>
+      <td><%= number_to_human_size defn.data_free %></td>
+    </tr>
+  <% end %>
+</table>
+<% else %>
+  <span class="italic">No volume information recorded.</span>
+<% end %>

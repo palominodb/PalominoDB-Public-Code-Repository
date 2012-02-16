@@ -1,0 +1,10 @@
+<h1>Table History <span class='italic'><%= [@table.server, @table.database, @table.name].join('.') %></span></h1>
+<%= link_to 'Table Overview', server_database_table_path(@table.server, @table.database, @table.name) %>
+<%= render :partial => 'shared/show_diffs' %>
+<div style="float:left">
+    <%= render :partial => 'definition_history', :locals => { :history => @history, :show_diffs => @show_diffs } %>
+    <%= render :partial => 'view_history', :locals => { :history => @history, :show_diffs => @show_diffs } %>
+</div>
+<div style="float:right">
+  <%= render :partial => 'volume_history', :locals => { :history => @history } %>
+</div>

@@ -1,0 +1,52 @@
+#!/usr/bin/perl
+package SrcUtils;
+
+use strict;
+use warnings FATAL => 'all';
+use English qw(-no_match_vars);
+use File::Basename;
+
+my ($f, $d, $s) = fileparse(__FILE__);
+my $DIR = $d;
+
+# Read in the standard input, and replace the desired module by the contents of
+# the most recent version of the module.
+
+sub insert_module {
+  my ($path, $module, $input) = @_;
+  my $module_src = "";
+  my $mpath = "$path/$module.pm";
+  $mpath =~ s/::/\//g;
+  open my $file, "<", "$mpath"
+    or die "While looking for $mpath: $OS_ERROR";
+  {
+    $INPUT_RECORD_SEPARATOR = undef;
+    $module_src = <$file>;
+  }
+  close $file;
+
+  my ($ver) = split(/\n/,qx@${DIR}/../gitver.sh $mpath@);
+  chomp($ver);
+
+  $module_src =~ s/^ *#.*\n//gm; # strip comments out
+  $module_src =~ s/=pod\n.*?\n=cut\n//gs; # strip out pod
+  $input =~ s/ $module package ([a-f0-9]{40}|GIT_VERSION)/ $module package/; # strip revision
+  my $line = "# ###########################################################################\n";
+  my $marker = qr/($line# (?:End )?$module package\n$line)/;
+  $input =~ s/$marker.*?$marker/$1$module_src$2/s;
+  $input =~ s/ $module package/ $module package $ver/; # add revision
+  return $input;
+}
+
+if(fileparse($0) eq "insert_module") {
+  my $input = "";
+  {
+    $INPUT_RECORD_SEPARATOR = undef;
+    $input = <STDIN>;
+  }
+  my $path = shift @ARGV;
+  my $module = shift @ARGV;
+
+  print insert_module($path, $module, $input);
+}
+1;

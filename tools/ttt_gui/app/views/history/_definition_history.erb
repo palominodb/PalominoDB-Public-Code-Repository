@@ -1,0 +1,20 @@
+<% if history[:definition] %>
+  <h3>Definition</h3>
+  <table>
+    <tr>
+      <td><span class="bold">Run date</span></td>
+      <td><span class="bold">Create Date</span></td>
+    </tr>
+    <% history[:definition].reverse.each do |defn| %>
+      <tr>
+        <td style="background-color: #acacac"><%= defn.run_time %></td>
+        <td style="background-color: #acacac"><%= defn.created_at %></td>
+      </tr>
+      <tr>
+        <td colspan="2"><div class='code'><%= show_diffs ? gen_diff(defn) : defn.create_syntax %></div></td>
+      </tr>
+    <% end %>
+  </table>
+<% else %>
+  <span class="italic">No definition history recorded</span>
+<% end %>

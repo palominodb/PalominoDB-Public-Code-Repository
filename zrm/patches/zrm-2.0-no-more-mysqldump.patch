@@ -1,0 +1,51 @@
+--- /usr/bin/mysql-zrm-backup	2009-04-06 10:30:37.000000000 -0700
++++ mysql-zrm-backup	2009-08-26 12:00:17.000000000 -0700
+@@ -35,6 +35,7 @@
+ use lib '/usr/lib/mysql-zrm';
+ use ZRM::Common;
+ use ZRM::MySQL;
++use Data::Dumper;
+ 
+ $SIG{'TERM'} = sub { $abort_flag = 1; };
+ 
+@@ -44,10 +45,10 @@
+ #Neither mysqlhotcopy not mysqldump will do a --flush-logs 
+ #so as to avoid flushing multiple times.
+ #Instead flush logs wil lbe called explicitly before data is backed up 
+-my $MYSQLDUMP5="mysqldump --opt --extended-insert --single-transaction --create-options";
+-my $MYSQLDUMP41="mysqldump --opt --extended-insert --single-transaction";
++my $MYSQLDUMP5="";    #"mysqldump --opt --extended-insert --single-transaction --create-options";
++my $MYSQLDUMP41="";   #"mysqldump --opt --extended-insert --single-transaction";
+ # Lock tables and default-character-set are not compatible in mysqldump 4.0
+-my $MYSQLDUMP40="mysqldump --opt --extended-insert --single-transaction --skip-lock-tables --all";
++my $MYSQLDUMP40="";   #"mysqldump --opt --extended-insert --single-transaction --skip-lock-tables --all";
+ 
+ my %SUPPORTED_NONTRANS_ENGINES = ( MyISAM => "1" , 
+ 			  	   MRG_MyISAM => "1",
+@@ -450,6 +451,7 @@
+ 			
+ 		}
+ 		if( !defined $out || $out eq "" ){
++			&printLog("No output from snapshot plugin.\n");
+ 			return;
+ 		}else{
+ 			my @ret = split( "\n", $out );
+@@ -1018,6 +1020,9 @@
+ 	if( $verbose ){
+ 		&printLog( "innodb on lvm = $innodbOnLVM\n" );
+ 	}
++
++	&printLog("doLVM paramdump:\n");
++	&printLog(Dumper(\@_));
+ 	foreach( @_ ){
+                 if( $abort_flag ){
+                         &abortAndDie();
+@@ -1272,6 +1277,8 @@
+ #$_[0] lists stuff to be backedup
+ sub doMySqlDump()
+ {
++	&printLog("\n\n"); 
++	&printAndDie("mysqldump lobotomy.\n\n");
+ 	my $default_char_set = "utf8";
+ 	if( $inputs{"default-character-set"} ){
+ 		$default_char_set = $inputs{"default-character-set"};

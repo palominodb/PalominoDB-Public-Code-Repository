@@ -1,0 +1,156 @@
+---
+# A list of regexes to ignore during reporting
+# During reporting, each one of these regexes is tested against
+# a string composed like: 'server'.'database'.'table'
+# for each potential record.
+# E.g.,
+#   You've got a server: testdb1
+#   And the table: mysql
+#   The second regex below would match every table under 'mysql'
+#   and only on 'testdb1'.
+#   Leaving off the server will match against any server, basically.
+# Reporting ignores work on a per-statistic basis, except the
+# ones in the global category.
+# See `ttt-query --list-stats` for a list of available statistics.
+#
+#report_ignore:
+#  global:
+#  - bucket_.*
+#  - ^testdb1\.mysql\..*
+#  - .*test\..*
+#  volume:
+#  - nogrowthdb\..*
+#  - ^testdb2\..*
+#  definition:
+#  - nochangedb\..*
+#  - freqchangedb\..*
+
+# Default is to always ignore the mysql db.
+report_ignore:
+  global:
+  - mysql\..*
+
+
+## If, for some reason, you don't want PalominoDB to be
+## emailed with crashreports for TTT, then change this
+## to false. The default is true, so commenting it out
+## won't do what you want.
+send_crashreports: true
+
+# display_width will force a pre-defined display width,
+# instead of relying on the automatic detection which can be wrong
+# occassionally. But, only when Curses would get it wrong.
+#
+# full is just like the command-line flag, which causes
+# more detailed output.
+#report_options:
+#  display_width: 135
+#  full: true
+
+# These options require a restart/reload of the
+# webserver to take effect, currently.
+#gui_options:
+#  have_slow_query: true
+#  slow_query_host: localhost
+#  slow_query_schema: prof
+#  slow_query_user: root
+#  slow_query_pass: ""
+#  slow_query_socket: /tmp/mysql.sock
+#  graphviz_enabled: true
+
+formatter_options:
+  # This formatter exports to RRD.
+  # Presently, it IGNORES all query options, and simply
+  # updates RRD in a fixed format. This may be changed at a later time.
+  # The RRD formatter also does not store create syntax changes right now
+  # Extending it to do so should be trival, but seemed less important than
+  # volumetrics for the first release.
+  # The 'path' option specifies where to write out RRDs.
+  # It should be an absolute path.
+  # RRD is sensitive to time, if you are going to export to RRD
+  # you must be prepared to run the RRD export on a regular basis.
+  # If you are just simply looking to generate some "one-time" graphs,
+  # The RRD exporter DOES insert old entries, so you can simple run it,
+  # and do whatever graph creation you want.
+  rrd:
+    path: rrd
+    # This is needed so RRD knows "how often" you'll be feeding results to it.
+    # This is only used during RRD creation time, after that, if you wait
+    # longer to update the rrd, this formatter will fill in all intervening
+    # entries. Additionally, if you change this after RRDs have been created,
+    # only new rrds will pickup the change.
+    # Syntax is: X[hmd], where 'h' is hours, 'm' is minutes, and 'd' is days
+    # There is a maximum of two days for any interval.
+    update_interval: 2m
+  # This formatter is designed to generate output suitable
+  # for Nagios alerting. It can run stand-alone as a highly
+  # condensed view, but may not be very useful.
+  nagios:
+    # One of 'critical', 'warning', 'unknown', 'ok'
+    # Defines how the formatter should treat
+    # changes to the monitored tables
+    # The default level is 'warning'
+    alert_level: critical
+    # Table regexes to alert on. This is an inclusion mechanism
+    # as opposed to an exclusion mechanism. Tables that you wish
+    # to recieve nagios alerts for must be included by one of your regexes.
+    # It's recommended to make these as specific as reasonable.
+    tables:
+      # Any changes to tables under highpri db are flagged as critical.
+      # But only on testdb1
+      - ^testdb1\.highpri\.bucket_.*
+
+  # This formatter is designed for emailing periodic reports.
+  # Emailing one-time reports should probably be done by using the
+  # 'text' formatter, and piping the output to the `mail` command.
+  email:
+    subjectprefix: "[TTT] "
+    emailto: dba@palominodb.com
+    # Whether or not to send emails with no changes.
+    send_empty: false
+#    # This can be 'sendmail' or 'smtp'
+#    # Defaults to 'sendmail'
+#    delivery_method: sendmail
+#    sendmail_settings:
+#      # These options are passed more or less verbatim to
+#      # ActionMailer::Base, so looking at the docs for that can be useful.
+#      location: /usr/sbin/sendmail
+#      arguments: ''
+#    smtp_settings:
+#      # These options are passed more or less verbatim to
+#      # ActionMailer::Base, so looking at the docs for that can be useful.
+#      address: localhost
+#      port: 25
+#      domain: example.com
+#      user_name: bob
+#      password: supersecret
+#      authentication: plain
+#      eanble_starttls_auto: true
+
+#
+# Connection information
+# 
+# There are two connections involved with 'TTT'
+# First is 'dsn_connection', the information provided
+# will be used to log-in to each of your database servers for reporting.
+# Second is 'ttt_connection'. This is the connection information for 
+# where TTT stores its data.
+#   The default example is to use sqlite, and store it at /usr/local/etc/pdb/ttt.sqlite3
+# 
+
+# Connection information for to-be-collected database servers
+dsn_connection:
+  username: root
+  password: pass
+
+# Connection information for storing collected information
+ttt_connection:
+  adapter: sqlite3 # See below for mysql example
+  database: "/usr/local/etc/pdb/ttt.sqlite3"
+
+#ttt_connection:
+#  adapter: mysql
+#  host: testdb1
+#  username: root
+#  password: pass
+#  database: ttt

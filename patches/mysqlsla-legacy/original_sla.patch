@@ -1,0 +1,877 @@
+--- mysqlsla-1.8-DEBUG	2009-11-06 00:53:09.000000000 -0800
++++ mysqlsla-report.pl	2009-11-06 00:50:37.000000000 -0800
+@@ -1,5 +1,12 @@
+ #!/usr/bin/perl -w
++# vim:fenc=utf-8:ts=4:sw=4:et
+ 
++# SQLProfiler v0.1 modifications to mysqlsla, based on
++# mysqlsla v1.8 DEBUG Apr 17 2008
++# Modifications are Copyright (c) 2008 Palomino DB and Robert Liesenfeld <robert at palominodb dot com>.
++# All rights reserved.  Modifications fall under the original mysqlsla
++# GPLv2 license.  Original work copyrights below.
++#
+ # mysqlsla v1.8 DEBUG Apr 17 2008
+ # http://hackmysql.com/mysqlsla
+ 
+@@ -20,10 +27,14 @@
+ # http://www.gnu.org/copyleft/gpl.html
+ 
+ use strict;
++use POSIX qw(mktime);
+ use Time::HiRes qw(gettimeofday tv_interval);
+ use DBI;
+ use Getopt::Long;
+ eval { require Term::ReadKey; };
++use Data::Dumper;
++use Mail::Mailer;
++
+ my $RK = ($@ ? 0 : 1);
+ 
+ $|=1;
+@@ -32,6 +43,9 @@
+ my %op;
+ my %mycnf; # ~/.my.cnf
+ my ($dbh, $query);
++my ($dbName,$dbUser,$dbPass,$dbHost,$dbDatabase,$dbPort,$dbSocket);
++my ($profilerDbh, $profilerQuery);
++my ($profilerName,$profilerUser,$profilerPass,$profilerHost,$profilerDatabase,$profilerPort,$profilerSocket);
+ my (@q_a, %q_h);
+ my ($stmt, $q); # Used by parse_ and abstract_stmt subs
+ my $total_queries;
+@@ -43,16 +57,23 @@
+ my %isolate; # Used by --only-* options
+ my $need_examples;
+ my $res;  # Set by mnp sub
++my %logTypes = (GENERAL => 0, SLOW => 1, RAW => 2, UNKNOWN => 127);
++my @logTypeNames = ('general', 'slow', 'raw');
++my $logStart;
++my $logEnd;
++my $fromAddress = 'mysql@localhost';
++
+ 
+ GetOptions(
+    \%op,
+-   "user=s",
+-   "password:s",
+-   "host=s",
+-   "port=s",
+-   "socket=s",
++# "user=s",
++# "password:s",
++# "host=s",
++# "port=s",
++# "socket=s",
+    "no-mycnf",
+    "db|databases=s",
++   "dsn|D=s",
+    "help|?",
+    "general|g=s",
+    "slow|s=s",
+@@ -80,26 +101,44 @@
+    "te|time-each-query",
+    "ta|time-all-queries",
+    "nr|no-report",
+-   "debug"
++   "profiler=s",
++   "email|email-report=s",
++   "debug",
++   "last=s"
+ );
+ 
+ 
+-if((!$op{general} && !$op{slow} && !$op{raw}) || $op{help})
++if((!$op{general} && !$op{slow} && !$op{raw} && !$op{email}) || $op{help})
+ {
+    show_help_and_exit();
+ }
+ 
++if ($op{email} && !$op{profiler}) {
++    print "Email mode requires Profiler mode.\n";
++    show_help_and_exit();
++}
+ option_sanity_check();
+ 
+-get_user_mycnf() unless $op{'no-mycnf'};
++if ($op{dsn}) {
++    ($dbName,$dbUser,$dbPass,$dbHost,$dbDatabase,$dbPort,$dbSocket) = parse_dsn($op{dsn});
+ 
+-# Command line options override ~/.my.cnf
+-$mycnf{host}   = $op{host}   if $op{host};
+-$mycnf{port}   = $op{port}   if $op{port};
+-$mycnf{socket} = $op{socket} if $op{socket};
+-$mycnf{user}   = $op{user}   if $op{user};
++    get_user_mycnf() unless $op{'no-mycnf'};
++
++    $dbHost     = $mycnf{host}      unless $dbHost;
++    $dbPort     = $mycnf{port}      unless $dbPort;
++    $dbSocket   = $mycnf{socket}    unless $dbSocket;
++    $dbUser     = $mycnf{user}      unless $dbUser;
++    
++    $dbUser     = $ENV{USER}        unless $dbUser;
++}
+ 
+-$mycnf{user} ||= $ENV{USER};
++# Command line options override ~/.my.cnf
++# $mycnf{host}   = $op{host}   if $op{host};
++# $mycnf{port}   = $op{port}   if $op{port};
++# $mycnf{socket} = $op{socket} if $op{socket};
++# $mycnf{user}   = $op{user}   if $op{user};
++# 
++# $mycnf{user} ||= $ENV{USER};
+ 
+ # Default values
+ $op{avg}  ||= 1;
+@@ -108,6 +147,7 @@
+ $op{np}   ||= 10;
+ $op{nthp} ||= 95;
+ 
++$op{last} = '1d' unless exists $op{last};
+ 
+ if(($op{te} || $op{ta}))
+ {
+@@ -135,52 +175,75 @@
+ if($op{'only-hosts'}) { isolate_x('hosts'); }
+ if($op{'only-ids'})   { isolate_x('ids');   }
+ 
+-if(exists $op{password})
++
++d("Before defined(dbPass)");
++if(defined($dbPass))
+ {
+-   if($op{password} eq '') # Prompt for password
++   if($dbPass eq '') # Prompt for password
+    {
++    d("Before Term::ReadKey::ReadMode(2)");
+       Term::ReadKey::ReadMode(2) if $RK;
+-      print "Password for database user $mycnf{user}: ";
+-      chomp($mycnf{pass} = <STDIN>);
++      print "Password for database user $dbUser: ";
++      chomp($dbPass = <STDIN>);
+       Term::ReadKey::ReadMode(0), print "\n" if $RK;
++    d("After Term::ReadKey::ReadMode(0)");
+    }
+-   else { $mycnf{pass} = $op{password}; } # Use password given on command line
+ }
+ 
+ # Connect to MySQL
+-if( $op{ex} || $op{te} || $op{ta} ||
++if( $op{ex} || $op{te} || $op{ta} || 
+     ($op{sort} && ($op{sort} eq 'rp' || $op{sort} eq 'rr' || $op{sort} eq 'e' || $op{sort} eq 'ce'))
+   )
+ {
+-   my $dsn;
+-
+-   if($mycnf{'socket'} && -S $mycnf{'socket'})
+-   {
+-      $dsn = "DBI:mysql:mysql_socket=$mycnf{socket}";
+-   }
+-   elsif($mycnf{'host'})
+-   {
+-      $dsn = "DBI:mysql:host=$mycnf{host}" . ($mycnf{port} ? ";port=$mycnf{port}" : "");
+-   }
+-   else
+-   {
+-      $dsn = "DBI:mysql:host=localhost";
+-   }
++    my $dsn;
+ 
+-   if($op{debug})
+-   {
+-      print "DBI DSN: $dsn\n";
+-   }
+-
+-   $dbh = DBI->connect($dsn, $mycnf{'user'}, $mycnf{'pass'}, { PrintError => 0 });
++    if($dbSocket && -S $dbSocket) {
++        $dsn = "DBI:mysql:mysql_socket=$dbSocket";
++    } elsif($dbHost) {
++        $dsn = "DBI:mysql:host=$dbHost" . ($dbPort ? ";port=$dbPort" : "");
++    } else {
++        $dsn = "DBI:mysql:host=localhost";
++    }
++
++    if($op{debug}) {
++        print "DBI DSN: $dsn\n";
++    }
++
++    d("About to connect to db for EXPLAINs etc.");
++    $dbh = DBI->connect($dsn, $dbUser, $dbPass, { PrintError => 0 });
++    if($DBI::err)
++    {
++       print "Cannot connect to MySQL.\n";
++       print "MySQL error message: $DBI::errstr\n";
++       exit;
++    }
++    d("Done connecting to db for EXPLAINs etc.");
++}
++
++if ($op{profiler}) {
++    ($profilerName,$profilerUser,$profilerPass,$profilerHost,
++     $profilerDatabase,$profilerPort,$profilerSocket) = parse_dsn($op{profiler});
++    my $dbiDsn;
++    
++    if ($profilerSocket && -S $profilerSocket) {
++        $dbiDsn = "DBI:mysql:mysql_socket=$profilerSocket";
++    } elsif ($profilerHost) {
++        $dbiDsn = "DBI:mysql:host=$profilerHost" . ($profilerPort ? ";port=$profilerPort" : "");
++    } else {
++        $dbiDsn = "DBI:mysql:host=localhost";
++    }
++    
++    d("About to connect to db for profiler; dsn: $dbiDsn");
++    $profilerDbh = DBI->connect($dbiDsn, $profilerUser, $profilerPass, { PrintError => 0 });
++    if($DBI::err)
++    {
++       print "Cannot connect to MySQL.\n";
++       print "MySQL error message: $DBI::errstr\n";
++       exit;
++    }
++    d("Done connecting to db for profiler");
+ }
+ 
+-if($DBI::err)
+-{
+-   print "Cannot connect to MySQL.\n";
+-   print "MySQL error message: $DBI::errstr\n";
+-   exit;
+-}
+ 
+ $op{'sort'} ||= ($op{slow} ? 't' : 'c');
+ 
+@@ -207,7 +270,7 @@
+ 
+ print "$total_queries total queries, " , scalar keys %q_h , " unique.\n";
+ 
+-exit if !$total_queries;
++exit if (!$total_queries and !$op{email});
+ 
+ if($op{db})
+ {
+@@ -232,7 +295,15 @@
+ print_queries()    if $op{pq};
+ time_all_queries() if $op{ta};
+ 
+-do_reports() unless $op{nr};
++if ($op{profiler}) {
++    if ($op{email}) {
++        do_email_report();
++    } else {
++        do_table_insert();        
++    }
++} elsif (!$op{nr}) {
++    do_reports();
++}
+ 
+ exit;
+ 
+@@ -243,16 +314,43 @@
+ 
+ sub show_help_and_exit
+ {
++
+    print <<"HELP";
+ mysqlsla v1.8 DEBUG Apr 17 2008
+ MySQL Statement Log Analyzer analyzes slow, general, and raw MySQL query logs.
+ 
+ Command line options (abbreviations work):
+-   --user USER      Connect to MySQL as USER
+-   --password PASS  Use PASS or prompt for MySQL user's password
+-   --host ADDRESS   Connect to MySQL at ADDRESS
+-   --port PORT      Connect to MySQL at PORT
+-   --socket SOCKET  Connect to MySQL at SOCKET
++   --dsn DSN        Connect to the database described by a DSN of
++                    the format:
++                        u=user      Username for MySQL connection
++                        p=passwd    Password for MySQL connection
++                        h=hostname  Hostname or IP address of MySQL
++                                    host
++                        D=dbname    Database name (not used)
++                        P=port      Port number of MySQL server
++                        S=/path     Path to UNIX domain socket, for
++                                    non-TCP/IP connections; mutually
++                                    exclusive with h=,P=
++                        N=Descriptive Name
++                                    Descriptive name for this DSN; only
++                                    used for SQL Profiler mode (don't forget
++                                    quoting!)
++   --profiler DSN   Run in SQL Profiler mode; results are stored in tables
++                        in the database identified by the passed DSN (same
++                        format as --dsn).  Profiler results need not be stored
++                        in the same MySQL instance as referred to by --dsn.
++   --email-report ADDR
++                    Run in email reporting mode.  Requires SQL Profiler mode.
++                        When run in this mode, the script will email a report to
++                        the specified email address.  The --top and --sort modes
++                        function as you would expect in this mode.
++   --last TIMESPEC  Report on jobs run in the last TIMESPEC.  TIMESPEC is a
++                        number followed by a modifier; accepted modifiers include
++                        's' (seconds), 'm' (minutes), 'h' (hours), 'd' (days), 'w'
++                        (weeks), 'M' (months), and 'y' (years).  Examples:
++                        1d      One day
++                        13h     13 hours
++                        3M17m   3 months, 17 minutes
+    --no-mycnf       Don't read ~/.my.cnf
+    --help           Prints this
+    --debug          Print debug information
+@@ -385,8 +483,7 @@
+    if($op{raw})     { @l = split ',', $op{raw};     parse_raw_logs(@l);     }
+ }
+ 
+-sub parse_general_logs
+-{
++sub parse_general_logs {
+    my @logs = @_;
+    my $valid_stmt;
+    my $have_stmt;
+@@ -396,6 +493,9 @@
+    my %hosts;
+    my $cid;
+    my $cmd;
++   my $dateStamp;
++   my $timeStamp;
++   my @timeBits;
+ 
+    for(@logs)
+    {
+@@ -410,7 +510,9 @@
+       $hosts{0}   = '';
+       $cid        = 0;
+       $cmd        = '';
+-
++      $dateStamp  = '';
++      $timeStamp  = '';
++      
+       while(<LOG>)
+       {
+          next if /^\s*$/;
+@@ -419,19 +521,32 @@
+          {
+             next unless /^[\s\d:]+(Query|Execute|Connect|Init|Change)/;
+ 
+-            if(/^\s+(\d+) (Query|Execute|Connect|Init|Change)/)
+-            {}
+-            elsif(/^\d{6}\s+[\d:]+\s+(\d+) (Query|Execute|Connect|Init|Change)/)
+-            {}
+-            else
+-            {
++            if(/^\s+(\d+) (Query|Execute|Connect|Init|Change)/) {
++                $cid = $1;
++                $cmd = $2;
++            } elsif(/^(\d{6})\s+([\d:]+)\s+(\d+) (Query|Execute|Connect|Init|Change)/) {
++                $dateStamp = $1;
++                $timeStamp = $2;
++                $cid = $3;
++                $cmd = $4;
++                
++                @timeBits = split(/:/, $timeStamp);
++                $logEnd = mktime(
++                    $timeBits[2],
++                    $timeBits[1],
++                    $timeBits[0],
++                    substr($dateStamp, -2),
++                    substr($dateStamp, -4, 2) - 1,
++                    (substr($dateStamp, 0, 2) < 50 ? substr($dateStamp, 0, 2) + 100 : substr($dateStamp, 0, 2))
++                );
++                if (! defined($logStart)) {
++                    $logStart = $logEnd;
++                }
++            } else {
+                d("parse_general_logs: FALSE-POSITIVE MATCH: $_"); # D
+                next;
+             }
+ 
+-            $cid = $1;
+-            $cmd = $2;
+-
+             $users{$cid}  = '?' if !exists $users{$cid};
+             $hosts{$cid}  = '?' if !exists $hosts{$cid};
+             $use_db{$cid} = 0   if !exists $use_db{$cid};
+@@ -602,6 +717,8 @@
+    my ($user, $host, $IP);
+    my ($time, $lock, $rows_sent, $rows_examined);
+    my $use_db;
++   my $timeStamp;
++   my $dateStamp;
+ 
+    for(@logs)
+    {
+@@ -611,6 +728,24 @@
+       while(<LOG>)
+       {
+          last if !defined $_;
++         
++         if (/^# Time: (\d+) ([\d:]+)/) {
++             $dateStamp = $1;
++             $timeStamp = $2;
++             $logEnd = mktime(
++                 substr($timeStamp, -2),
++                 substr($timeStamp, -5, 2) - 1,
++                 substr($timeStamp, 0, 2),
++                 substr($dateStamp, -2),
++                 substr($dateStamp, -4, 2) - 1,
++                 (substr($dateStamp, 0, 2) < 50 ? substr($dateStamp, 0, 2) + 100 : substr($dateStamp, 0, 2))
++             );
++             
++             if (! defined($logStart)) {
++                 $logStart = $logEnd;
++             }
++         }
++         
+          next until /^# User/;
+ 
+          ($user, $host, $IP) =
+@@ -902,42 +1037,312 @@
+    print;
+ }
+ 
++
++sub do_email_report {
++    my $resultsTableRef;
++    my $row;
++    my $jobId;
++    my $profilerSQL;
++    my $emailText = '';
++    my $detailsTableRef;
++    my $detailsRow;
++    my $i = 0;
++    my %emailHeaders;
++    my $mailer;
++    my %orderBy = (
++        # Sort by count
++        'c'         => 'count',
++        # Sort by total query time
++        't'         => 'time_total',
++        # Sort by average query time
++        'at'        => 'time_average',
++        # Sort by total lock time
++        'l'         => 'lock_time_total',
++        # Sort by average lock time
++        'al'        => 'lock_time_average',
++        # Sort by average rows sent
++        'rs'        => 'rows_sent_avg',
++        # Sort by max rows sent
++        'rs_max'    => 'rows_sent_max',
++        # Sort by average rows examined
++        're'        => 'rows_examined_avg',
++        # Sort by max rows examined
++        're_max'    => 'rows_examined_max',
++    );
++    
++    $profilerDbh->do("USE $profilerDatabase");
++        
++    $profilerQuery = $profilerDbh->prepare("SELECT * FROM sqlprofiler_job WHERE UNIX_TIMESTAMP(processed) > " . (time() - timespec_to_seconds($op{last})) . " AND UNIX_TIMESTAMP(processed) <= " . time());
++    $profilerQuery->execute();
++    
++    $resultsTableRef = $profilerQuery->fetchall_arrayref({});
++    while ($row = (shift @$resultsTableRef)) {
++        $jobId = $$row{'id'};
++
++        $emailText .= 'Job #' . $jobId . ': ' . ($$row{'log_type'} eq $logTypes{UNKNOWN} ? 'unknown' : $logTypeNames[$$row{'log_type'}]) . ' log named ' . $$row{'filename'} . "\n";
++        $emailText .= 'Log begins ' . $$row{'start'} . ' ends ' . $$row{'end'} . ' processed ' . $$row{'processed'} . ($$row{'status'} eq 0 ? ' without error' : ' with errors') . "\n";
++        $emailText .= '-' x 100;
++        $emailText .= "\n";
++        
++        $profilerSQL = "SELECT q.*,m.query FROM sqlprofiler_master m, sqlprofiler_queries q, sqlprofiler_job j WHERE j.id=$jobId AND m.sql_hash=q.sql_hash AND q.job_id=j.id";
++        $profilerSQL .= " ORDER BY q." . $orderBy{$op{sort}} . " DESC";
++        
++        $profilerSQL .= " LIMIT $op{top}";
++
++        $profilerQuery = $profilerDbh->prepare($profilerSQL);
++        $profilerQuery->execute();
++
++        $detailsTableRef = $profilerQuery->fetchall_arrayref({});
++        while ($detailsRow = (shift @$detailsTableRef)) {
++            $i++;
++            $emailText .= '#' . $i . ': ' . $$detailsRow{'query'} . "\n";
++            $emailText .= "\tcount                      : " . $$detailsRow{'count'} . " (" . $$detailsRow{'percent'} . "%)\n";
++            if ($$row{'log_type'} eq $logTypes{SLOW}) {
++                $emailText .= sprintf ("\ttime      (tot/min/avg/max): %d/%d/%d/%d\n", $$detailsRow{'time_total'}, $$detailsRow{'time_min'}, $$detailsRow{'time_avg'}, $$detailsRow{'time_max'});
++                $emailText .= sprintf ("\tlock time (tot/min/avg/max): %d/%d/%d/%d\n", $$detailsRow{'lock_time_total'}, $$detailsRow{'lock_time_min'}, $$detailsRow{'lock_time_avg'}, $$detailsRow{'lock_time_max'});
++                $emailText .= sprintf ("\trows sent     (min/avg/max): %d/%d/%d\n", $$detailsRow{'rows_sent_min'}, $$detailsRow{'rows_sent_avg'}, $$detailsRow{'rows_sent_max'});
++                $emailText .= sprintf ("\trows examined (min/avg/max): %d/%d/%d\n", $$detailsRow{'rows_examined_min'}, $$detailsRow{'rows_examined_avg'}, $$detailsRow{'rows_examined_max'});
++            }
++            $emailText .= "\n";
++        }
++        
++        $i = 0;
++        $emailText .= "\n";
++    }
++    
++    $emailHeaders{'To'} = $op{email};
++    $emailHeaders{'From'} = $fromAddress;
++    $emailHeaders{'Subject'} = 'SQL Profiler Report';
++    $mailer = Mail::Mailer->new('sendmail');
++    $mailer->open(\%emailHeaders);
++    print $mailer $emailText;
++    $mailer->close();
++    
++    exit;
++}
++
++sub do_table_insert {
++    my $i = $op{top};
++    my $x;
++    my $jobId;
++    my $logType;
++    my $logName;
++    
++    for (keys %q_h) {
++        # If the --time-each-query option was used, or user requested
++        # sorting by execution time (e) or approx. total query execution
++        # time (c*e), run through the queries in %q_h, determining their 
++        # times.
++        if($op{te} || $op{sort} eq 'e' || $op{sort} eq 'ce') {
++            time_query($_);
++        }
++
++        # If the user requested sorting by approx. total query execution
++        # time, calculate total time by multiplying how many times each given
++        # query was seen by its execution time.
++        if($op{sort} eq 'ce') {
++            $q_h{$_}->{ce} = $q_h{$_}->{c} * $q_h{$_}->{e};
++        }
++
++        # If --explain was requested, or if the user requested sorting by
++        # rows produced (rp) or rows read (rr), then EXPLAIN each query.
++        if($op{ex} || $op{sort} eq 'rp' || $op{sort} eq 'rr') {
++            EXPLAIN($_);
++        }
++
++        # If we're parsing a slow log, calculate the average query time (at),
++        # setting $res as a side effect (resolution, e.g. ms for milliseconds),
++        # average lock time (al) and average lock time resolution.  Do this for
++        # each query.
++        if ($op{slow}) {
++            $q_h{$_}->{at} = mnp($q_h{$_}->{t} / $q_h{$_}->{c});
++            $q_h{$_}->{at_res} = $res;
++
++            $q_h{$_}->{al} = mnp($q_h{$_}->{l} / $q_h{$_}->{c});
++            $q_h{$_}->{al_res} = $res;
++        }
++    }
++
++    if ($op{general}) {
++        $logType = $logTypes{GENERAL};
++        $logName = $op{general};
++    } elsif ($op{slow}) {
++        $logType = $logTypes{SLOW};
++        $logName = $op{slow};
++    } elsif ($op{raw}) {
++        $logType = $logTypes{RAW};
++        $logName = $op{raw};
++    } else {
++        $logType = $logTypes{UNKNOWN};
++        $logName = 'Unknown';
++    }
++    
++    # Select the datbase that contains our tables
++    $profilerQuery = $profilerDbh->prepare("USE $profilerDatabase");
++    $profilerQuery->execute();
++    
++    if (!defined($logStart)) { $logStart = 0; }
++    if (!defined($logEnd)) { $logEnd = 0; }
++    
++    $profilerQuery = $profilerDbh->prepare("INSERT INTO sqlprofiler_job (server_name,log_type,filename,start,end) "
++                        .  "VALUES ('" 
++                        .  (defined($dbName) && $dbName ne '' ? $dbName : (defined($dbHost) && $dbHost ne '' ? $dbHost : 'Unknown')) 
++                        . "', $logType, '$logName',FROM_UNIXTIME($logStart),FROM_UNIXTIME($logEnd))");
++    $profilerQuery->execute();
++    $jobId = $profilerQuery->{mysql_insertid};
++    
++    for(sort { $q_h{$b}->{$op{sort}} <=> $q_h{$a}->{$op{sort}} } keys(%q_h)) {
++        my $quotedSQL;
++        my @result;
++        
++        $x = $q_h{$_};
++        
++        $quotedSQL = $_;
++        $quotedSQL =~ s/'/\\'/g;
++        $profilerQuery = $profilerDbh->prepare("SELECT count(*) FROM sqlprofiler_master WHERE sql_hash = MD5('$quotedSQL')");
++        $profilerQuery->execute();
++
++        my $explainStr = '';
++        
++        # User wants queries to be EXPLAINed
++        if($op{ex}) {
++            if($x->{EXPLAIN_err}) {
++                $explainStr = "EXPLAIN error: $x->{EXPLAIN_err}";
++            } else {
++                my $j;
++
++                for($j = 0; $j < (scalar @{$x->{EXPLAIN}}); $j += 2)
++                {
++                    $explainStr .= $x->{EXPLAIN}[$j] . ": " .  $x->{EXPLAIN}[$j + 1] . "\n";
++                }
++            }
++        }
++        
++
++        @result = $profilerQuery->fetchrow_array();
++        if (!@result || $result[0] == 0) {
++            $profilerQuery = $profilerDbh->prepare("INSERT INTO sqlprofiler_master (sql_hash,introduced,query,query_explain) VALUES (MD5('$quotedSQL'),NOW(),'$quotedSQL','$explainStr')");
++            $profilerQuery->execute();
++        }
++
++        $profilerQuery = $profilerDbh->prepare("UPDATE sqlprofiler_master SET last_seen=NOW() WHERE sql_hash=MD5('$quotedSQL')");
++        $profilerQuery->execute();
++        
++        
++        $profilerQuery = $profilerDbh->prepare("INSERT INTO sqlprofiler_queries (job_id,sql_hash,count,percent,db_name,user) VALUES (" . 
++            $jobId . "," .
++            "MD5('$quotedSQL')," . 
++            $x->{c} . "," . 
++            perc($x->{c}, $total_queries) . "," .
++            "'" . ($x->{db} ? $x->{db} : 'Unknown') . "'," .
++            "'" . ($x->{user} ? $x->{user} : 'Unknown') . "')"
++        );
++        $profilerQuery->execute();
++        
++        # The values for sqlprofiler_queries table are only calculated
++        # for slow logs.
++        if ($op{slow}) {
++            my %nth_vals;
++            calculate_nth_vals($x->{t_a}, \%nth_vals);
++            
++            my $sql;
++            
++            $sql = "UPDATE sqlprofiler_queries SET " .
++                "time_total="       . $x->{t} . "," . 
++                "time_average="     . $x->{at} . "," . 
++                "time_min="         . $x->{t_min} . "," .
++                "time_max="         . $x->{t_max} . "," .
++                "nthp="             . $op{nthp} . "," .
++                "nthp_time_total="  . $nth_vals{sum} . "," .
++                "nthp_time_average=". $nth_vals{avg} . "," .
++                "nthp_time_min="    . $nth_vals{min} . "," .
++                "nthp_time_max="    . $nth_vals{max} . "," .
++                "lock_time_total="  . $x->{l} . "," .
++                "lock_time_average=". $x->{al} . "," .
++                "lock_time_min="    . $x->{l_min} . "," .
++                "lock_time_max="    . $x->{l_max} . "," .
++                "rows_sent_avg="    . $x->{rs} / $x->{c} . "," .
++                "rows_sent_min="    . $x->{rs_min} . "," .
++                "rows_sent_max="    . $x->{rs_max} . "," .
++                "rows_examined_avg=". $x->{re} / $x->{c} . "," .
++                "rows_examined_min=". $x->{rs_min} . "," .
++                "rows_examined_max=". $x->{rs_max} .
++                " WHERE job_id=$jobId AND sql_hash=MD5('$quotedSQL')";
++                
++            $profilerQuery = $profilerDbh->prepare($sql);
++            $profilerQuery->execute();
++            if ($profilerQuery->err()) {
++                print "DBI error: " . $profilerQuery->errstr() . "\n";
++            }
++        }
++        
++        $i--;
++        
++        if ($i eq 0) {
++            # Exit the for loop after the specified number of queries
++            # has been processed.
++            last;
++        }
++    }
++    
++    $profilerQuery = $profilerDbh->prepare("UPDATE sqlprofiler_job SET processed=NOW() WHERE id=$jobId");
++    $profilerQuery->execute();
++    
++}
+ sub do_reports
+ {
+    my $i = $op{top};
+    my $x;
+ 
+-   if($op{te} || $op{sort} eq 'e' || $op{sort} eq 'ce')
+-      { for(keys %q_h) { time_query($_); } }
+-
+-   if($op{sort} eq 'ce')
+-      { for(keys %q_h) { $q_h{$_}->{ce} = $q_h{$_}->{c} * $q_h{$_}->{e}; } }
+-
+-   if($op{ex} || $op{sort} eq 'rp' || $op{sort} eq 'rr')
+-      { for(keys %q_h) { EXPLAIN($_); } }
+-
+-   if($op{slow})
+-   {
+-      for(keys %q_h)
+-      {
+-         $q_h{$_}->{at} = mnp($q_h{$_}->{t} / $q_h{$_}->{c});
+-         $q_h{$_}->{at_res} = $res;
+-
+-         $q_h{$_}->{al} = mnp($q_h{$_}->{l} / $q_h{$_}->{c});
+-         $q_h{$_}->{al_res} = $res;
+-      }
++   for (keys %q_h) {
++       # If the --time-each-query option was used, or user requested
++       # sorting by execution time (e) or approx. total query execution
++       # time (c*e), run through the queries in %q_h, determining their 
++       # times.
++       if($op{te} || $op{sort} eq 'e' || $op{sort} eq 'ce') {
++           time_query($_);
++       }
++       
++       # If the user requested sorting by approx. total query execution
++       # time, calculate total time by multiplying how many times each given
++       # query was seen by its execution time.
++       if($op{sort} eq 'ce') {
++           $q_h{$_}->{ce} = $q_h{$_}->{c} * $q_h{$_}->{e};
++       }
++
++       # If --explain was requested, or if the user requested sorting by
++       # rows produced (rp) or rows read (rr), then EXPLAIN each query.
++       if($op{ex} || $op{sort} eq 'rp' || $op{sort} eq 'rr') {
++           EXPLAIN($_);
++       }
++       
++       # If we're parsing a slow log, calculate the average query time (at),
++       # setting $res as a side effect (resolution, e.g. ms for milliseconds),
++       # average lock time (al) and average lock time resolution.  Do this for
++       # each query.
++       if ($op{slow}) {
++           $q_h{$_}->{at} = mnp($q_h{$_}->{t} / $q_h{$_}->{c});
++           $q_h{$_}->{at_res} = $res;
++
++           $q_h{$_}->{al} = mnp($q_h{$_}->{l} / $q_h{$_}->{c});
++           $q_h{$_}->{al_res} = $res;
++       }
+    }
+ 
++   # Crank through all the queries, sorting as user requested
+    for(sort { $q_h{$b}->{$op{sort}} <=> $q_h{$a}->{$op{sort}} } keys(%q_h))
+    {
+       print_report_marker($op{top} - $i + 1);
+ 
++      # Set x to make dealing with this particular query less cumbersome.
+       $x = $q_h{$_};
+ 
+       printf "Count         : %d (%d%%)\n", $x->{c}, perc($x->{c}, $total_queries);
+ 
++      # If we're parsing a slow log:
+       if($op{slow})
+       {
++         # Make times "pretty".
+          $x->{t}= mnp($x->{t});
+          $x->{t_res} = $res;
+ 
+@@ -956,9 +1361,13 @@
+          $x->{l_max} = mnp($x->{l_max});
+          $x->{l_max_res} = $res;
+ 
++         # Display timings for this query
+          print "Time          : $x->{t} $x->{t_res} total, $x->{at} $x->{at_res} avg, $x->{t_min} $x->{t_min_res} to $x->{t_max} $x->{t_max_res} max\n";
+ 
++         # Display percentile (default 95th) timings for this query
+          print_nth_vals($x->{t_a});
++         
++         # Display distribution
+          print_dist($x->{t_a}) if $op{pd};
+ 
+          printf "Lock Time     : $x->{l} $x->{l_res} total, $x->{al} $x->{al_res} avg, $x->{l_min} $x->{l_min_res} to $x->{l_max} $x->{l_max_res} max\n";
+@@ -1035,6 +1444,54 @@
+    }
+ }
+ 
++sub timespec_to_seconds {
++    my $ts = shift @_;
++    my @pieces;
++    my %tsHash;
++    
++    @pieces = split(/([yMwdhms])/, $ts);
++    %tsHash = (reverse @pieces);
++    
++    return (
++        (exists $tsHash{'y'} ? $tsHash{'y'} * 31536000  : 0) +
++        (exists $tsHash{'M'} ? $tsHash{'M'} * 2592000   : 0) +
++        (exists $tsHash{'w'} ? $tsHash{'w'} * 604800    : 0) +
++        (exists $tsHash{'d'} ? $tsHash{'d'} * 86400     : 0) +
++        (exists $tsHash{'h'} ? $tsHash{'h'} * 3600      : 0) +
++        (exists $tsHash{'m'} ? $tsHash{'m'} * 60        : 0) +
++        (exists $tsHash{'s'} ? $tsHash{'s'}             : 0)
++    );
++}
++
++# Process a DSN string as passed by a user.
++# Parsed DSN will be made into a hash, which will
++# then be returned.
++sub parse_dsn {
++    my $dsnString = shift @_;
++    my $component;
++    my ($name,$user,$pass,$host,$db,$port,$socket) = (undef,undef,undef,undef,undef,undef,undef);
++    
++    for $component (split(/,/, $dsnString)) {
++        if ($component =~ /N=(\w[\w\s]+)/) {
++            $name = $1;
++        } elsif ($component =~ /u=(\w+)/) {
++            $user = $1;
++        } elsif ($component =~ /p=(.*)/) {
++            $pass = $1;
++        } elsif ($component =~ /h=(\w[\w\s\.]+)/) {
++            $host = $1;
++        } elsif ($component =~ /D=(\w[\w\s]+)/) {
++            $db = $1;
++        } elsif ($component =~ /P=(\d+)/) {
++            $port = $1;
++        } elsif ($component =~ /S=(\w[\w\s\/]+)/) {
++            $socket = $1;
++        }
++    }
++    
++    return ($name,$user,$pass,$host,$db,$port,$socket);
++}
++
+ sub avg
+ {
+    my $avg = shift;
+@@ -1111,6 +1568,29 @@
+    print "$op{nthp}\% of Time   : $sum $sum_res total, $avg $avg_res avg, $min $min_res to $max $max_res max\n";
+ }
+ 
++sub calculate_nth_vals
++{
++   my $x = shift; # Ref to array of values
++   my $nth_vals = shift;
++   my @s;
++   my $n;
++   my $sum;
++
++   return if scalar @$x == 1;
++
++   @s = sort { $a <=> $b } @$x;
++   $n = ((scalar @$x) * $op{nthp}) / 100;
++   @s = splice(@s, 0, $n);
++
++   $$nth_vals{avg} = avg(0, @s);
++   $$nth_vals{min} = $s[0];
++   $$nth_vals{max} = $s[$n - 1];
++   
++   for(@s) { $sum += $_ };
++   $$nth_vals{sum} = $sum;
++}
++
++
+ sub print_queries
+ {
+    print "\n__ All Queries _________________________________________________________\n\n";
+@@ -1127,6 +1607,8 @@
+    my $x;
+ 
+    $x = $q_h{$k};
++   d("EXPLAIN: k = '$k'");
++   d("Dump of \$x:\n" . Dumper($x));
+ 
+    $x->{EXPLAIN_err} = 0;
+    $x->{rp} = -1;
+@@ -1167,6 +1649,8 @@
+       }
+    }
+ 
++   d("About to prepare, dump of \$x:\n" . Dumper($x));
++   d("Dump of \$dbh:\n" . Dumper($dbh));
+    $query = $dbh->prepare("USE $x->{db};");
+    $query->execute();
+    if($DBI::err)
+@@ -1372,4 +1856,4 @@
+    $debug_msg =~ s/\n\'$/'/;
+ 
+    print "$debug_msg\n";
+-}
++}
+\ No newline at end of file

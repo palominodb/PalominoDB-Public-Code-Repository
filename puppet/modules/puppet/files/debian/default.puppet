@@ -1,0 +1,2 @@
+# This allows the init script to actually start puppet.
+START=yes

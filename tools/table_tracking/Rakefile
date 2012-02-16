@@ -1,0 +1,100 @@
+require 'rubygems'
+require 'rubygems/package_task'
+require 'spec/rake/spectask'
+require 'active_record'
+require 'yaml'
+
+$: << "#{Dir.pwd}/lib"
+
+require 'ttt/db'
+
+ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
+
+TTT::Db.open(ttt_config)
+ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
+ActiveRecord::Base.colorize_logging = false
+
+task :default => :test
+
+spec = Gem::Specification.new do |s|
+  s.name = "table-tracking-toolkit"
+  s.version = "1.5.1"
+  s.author = "Brian Smith"
+  s.email = "dba@palominodb.com"
+  s.homepage = "http://blog.palominodb.com/blog/"
+  s.platform = Gem::Platform::RUBY
+  s.summary = "Track Database table schema, and size changes"
+  s.description =<<E_DESC
+Table Tracking Toolkit allows simple collecting and reporting on:
+ - Table schema changes (tracking 'show create table' changes over time)
+ - Table volume-metrics (tracking table size over time)
+TTT has a pluggable system for implementing new metrics which could be used
+to track other things like "SHOW STATUS".
+
+TTT also has a pluggable reporting/querying interface which out of the box
+support for generating reports suitable for:
+- text viewing ( in the moment troubleshooting, see when it went wrong )
+- email ( being kept apprise of developer madness )
+- nagios ( being alerted of developer madness )
+
+The API docs contain examples, and reference to get you started.
+E_DESC
+  s.files = FileList["{bin,lib}/**/*"].to_a
+  s.executables = ["ttt-collect", "ttt-query", "ttt-admin"]
+  s.require_path = "lib"
+  s.has_rdoc = true
+  s.extra_rdoc_files = ["README", "sample-config.yml"]
+  s.add_dependency("pdb-dsn", ">= 0.2.6")
+  s.add_dependency("activerecord", ">= 2.3.2")
+  s.add_dependency("actionmailer", ">= 2.3.2")
+  s.add_dependency("actionpack", ">= 2.3.2")
+  s.add_dependency("text-reform", ">= 0.2.0")
+  s.add_dependency("sqlite3-ruby",">= 1.2.4")
+  s.add_dependency("diff-lcs",">= 1.1.2")
+end
+
+Gem::PackageTask.new(spec) do |pkg|
+  pkg.need_tar = true
+end
+
+task :clean do
+  rm 'test-db.sqlite3' rescue nil
+end
+Spec::Rake::SpecTask.new do |t|
+  t.spec_files = FileList['test/lib/*.rb']
+  t.spec_files += FileList['test/[0-9]*.rb']
+  t.rcov =  true
+  t.spec_opts = ['--format', 'specdoc']
+  t.rcov_opts = ['-t', '--exclude', '/Library' ]
+end
+
+task :test => [:clean, :spec]
+
+test_data_tasks=[]
+FileList['test/data/*.desc'].each do |dfile|
+  dname = "test/data/#{(File.basename(dfile).split ".")[0]}"
+  directory dname
+  open(dfile, 'r') do |f|
+    f.each do |l|
+      l.chomp!
+      fname,args = l.split /\s+/, 2
+      fname = "#{dname}/#{fname}"
+      test_data_tasks << fname
+      file fname => [dname] do
+        sh %{perl ../gen_tbdata.pl -i #{args} -o #{fname}}
+      end
+    end
+  end
+end
+
+task :gen_data => test_data_tasks
+
+namespace :db do
+  task :rollback do
+    step = ENV['STEP'] ? ENV['STEP'].to_i : 1
+    ActiveRecord::Migrator.rollback('lib/ttt/db/', step)
+  end
+  task :migrate do
+    TTT::Db.migrate
+  end
+end

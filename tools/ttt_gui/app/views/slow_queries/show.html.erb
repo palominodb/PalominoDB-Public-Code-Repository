@@ -1,0 +1,9 @@
+<h1>Slow Queries <%= params[:server_id].nil? ? "" : "for #{params[:server_id]}" %></h1>
+
+<%= render(:partial => 'include_reviewed_form') if @host %>
+
+<%= render :partial => @host ? 'host_query_diagram' : 'query_diagram', :locals => { :queries => @queries, :host => @host, :reviewed => @include_reviewed } %>
+
+<% (@queries.sort { |q1,q2| q1.first_seen <=> q2.first_seen }).each do |q| %>
+  <%= render :partial => 'slow_queries/query', :locals => { :query => q, :query_history => @query_histories[q.checksum] } %>
+<% end %>

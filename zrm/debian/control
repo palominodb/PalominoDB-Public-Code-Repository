@@ -1,0 +1,15 @@
+Source: zrm-innobackupex
+Section: utils
+Priority: extra
+Maintainer: Brian Smith <brian@palominodb.com>
+Build-Depends: debhelper (>= 7), perl (>= 5.8.8)
+Standards-Version: 3.8.0
+Homepage: http://blog.palominodb.com/
+
+Package: zrm-innobackupex
+Section: utils
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, perl (>= 5.8.8), xtrabackup (>= 1.0), xinetd (>= 2.3.14)
+Description: Hotbackup for MySQL using ZRM and innobackupex.
+  This package provides the server (db server) and client (backup server)
+  plugins to ZRM necessary to do xtrabackup backups.

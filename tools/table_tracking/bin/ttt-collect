@@ -1,0 +1,168 @@
+#!/usr/bin/ruby
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+# 
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+# 
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+# 
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+# 
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+# 
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+require 'rubygems'
+require 'yaml'
+require 'getoptlong'
+require 'open-uri'
+require 'text/reform'
+
+require 'pdb/dsn'
+require 'ttt/db'
+require 'ttt/collector'
+require 'ttt/crash_reporter'
+
+opts = GetoptLong.new(
+  [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
+  [ '--config', '-c', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--dsn', '-d', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--debug', GetoptLong::NO_ARGUMENT ],
+  [ '--verbose', GetoptLong::NO_ARGUMENT ],
+  [ '--stat', '-s', GetoptLong::REQUIRED_ARGUMENT ],
+  [ '--list-stats', '-l', GetoptLong::NO_ARGUMENT ]
+)
+
+TTT::CollectorRegistry.load
+
+dsn=nil
+cfg=nil
+debug=false
+verbose=false
+stats=[]
+
+opts.each do |opt, val|
+  case opt
+    when '--help'
+      puts <<DOC_EOF
+== Synopsis
+
+ttt-collect: Run a table tracking collection
+
+== Usage
+
+ttt-collect [--help] --config config.yml --dsn servers.yml
+
+-h, --help:
+   This help
+--config file, -c file:
+   Path to ttt config file.
+--debug:
+   Make the tool VERY noisy.
+--dsn file, -d file:
+   Path to PalominoDB dsn.yml
+--stat statistic:
+   Collect a single <statistic>.
+   See --list-stats for available statistics.
+--list-stats, -l:
+   List available statistics.
+DOC_EOF
+      exit 1
+    when '--config'
+      cfg = YAML.load_file(val)
+    when '--dsn'
+      dsn = Pdb::DSN.new(val)
+      dsn.validate
+    when '--debug'
+      debug=true
+    when '--verbose'
+      verbose=true
+    when '--stat'
+      stats<<TTT::TrackingTable.tables[val.to_sym]
+    when '--list-stats'
+      rf=Text::Reform.new
+      rf.trim=true
+      cols=TTT::CollectorRegistry.all
+      names= cols.map { |c| c.stat.collector }
+      descs= cols.map { |c| c.desc }
+      puts rf.format("Available statistics:", "[[[[[[[[[[[[[[[ - "+ ("["*80), names,descs)
+      exit(0)
+  end
+end
+
+if cfg.nil?
+  puts "Must specify configuration."
+  puts "Use --help for more."
+  exit 1
+end
+if dsn.nil?
+  puts "Must specify dsn."
+  puts "Use --help for more."
+  exit 1
+end
+
+if debug then
+  ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
+else
+  ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::INFO)
+end
+
+TTT::Db.open(cfg)
+# Creates the database, if it doesn't exist,
+# and will upgrade it too!
+TTT::Db.migrate
+
+TTT::Collector.verbose = verbose
+
+Runtime=Time.now
+cur_col=nil
+director=nil
+begin
+  TTT::Snapshot.transaction do |txn_id|
+    hosts=dsn.get_all_hosts.select { |h| dsn.host_active?( h ) and dsn.server_ttt?( h ) }
+    director = TTT::CollectionDirector.new(cfg, Runtime)
+    rds={}
+    hosts.each do |host|
+      TTT::CollectorRegistry.all.each do |coller|
+        next unless stats.empty? or stats.include? coller.stat
+        cur_col=coller
+        rd=director.collect(host, coller)
+        rds[rd.stat] = [] if rds[rd.stat].nil?
+        puts "NEW TXN: #{txn_id}"
+        puts "rd changed: #{rd.changed?}"
+        rds[rd.stat]<<rd
+      end
+    end
+    rds.each do |k,v|
+      if v.any? { |r| r.changed? }
+        v.each { |r| r.save txn_id }
+      end
+    end
+  end
+rescue Exception => e
+  if !cfg.has_key? 'send_crashreports' or ( cfg.has_key? 'send_crashreports' and cfg['send_crashreports'] )
+    TTT::CrashMailer.deliver_crash(e, director, cur_col)
+    $stderr.puts "ttt-collect has encountered an error. Details of this crash have been emailed to PalominoDB for analysis, thank you."
+  end
+  $stderr.puts e
+  $stderr.puts e.backtrace
+  exit 1
+end
+
+exit 0

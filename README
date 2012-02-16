@@ -1,0 +1,13 @@
+This is the PalominoDB git repository.
+It contains many wonderful and useful things.
+
+For information on getting started with git please see: http://git-scm.com.
+
+Sub directory usage:
+ - nagios/:
+   - Used for nagios plugins.
+   - Should be one directory per-plugin.
+   - Every plugin should come with a README in addition to any built-in documentation.
+ - configs/:
+   - Used for stored configs.
+   - Should be one directory per service. (e.g., 'nagios', 'mysql').
