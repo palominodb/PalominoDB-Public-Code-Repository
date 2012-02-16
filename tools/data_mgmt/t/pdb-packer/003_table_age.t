@@ -6,7 +6,7 @@ use DateTime;
 
 my $now = DateTime->now( time_zone => 'local');
 BEGIN {
-  require_ok('src/pdb-packer.in.pl');
+  require_ok('src/pdb-packer');
   my $tdb = TestDB->new();
   $tdb->clean_db();
   $tdb->use('pdb_packer_age');

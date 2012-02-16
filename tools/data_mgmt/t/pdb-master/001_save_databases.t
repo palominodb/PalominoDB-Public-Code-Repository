@@ -32,7 +32,7 @@ BEGIN {
 }
 
 BEGIN {
-  require_ok('src/pdb-master.in.pl');
+  require_ok('src/pdb-master');
 }
 
 END {

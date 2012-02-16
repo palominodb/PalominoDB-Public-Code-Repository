@@ -9,98 +9,48 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-
-
-
-
-configure: configure-stamp
-configure-stamp:
-	dh_testdir
-	# Add here commands to configure the package.
-
-	touch configure-stamp
-
-
 build: build-stamp
 
-build-stamp: configure-stamp  
+build-stamp:
 	dh_testdir
+	$(MAKE)
+	touch build-stamp
 
-	# Add here commands to compile the package.
-	#$(MAKE)
-	#docbook-to-man debian/zrm-innobackupex.sgml > zrm-innobackupex.1
-
-	touch $@
-
-clean: 
+clean:
 	dh_testdir
 	dh_testroot
-	rm -f build-stamp configure-stamp
-	rm -f debian/files
-
-	# Add here commands to clean up after the build process.
-	#$(MAKE) clean
-
-	dh_clean 
+	-rm -f build-stamp
+	dh_clean
 
 install: build
 	dh_testdir
 	dh_testroot
-	dh_clean -k 
+	dh_clean
 	dh_installdirs
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/zrm-innobackupex
 
-	install -D -m 0755 -g mysql -o mysql plugins/socket-copy.palomino.pl $(CURDIR)/debian/zrm-innobackupex/usr/share/mysql-zrm/plugins/socket-copy.palomino.pl
-	install -D -m 0755 -g mysql -o mysql plugins/socket-server.palomino.pl $(CURDIR)/debian/zrm-innobackupex/usr/share/mysql-zrm/plugins/socket-server.palomino.pl
-	install -D -m 0644 -g mysql -o mysql examples/socket-server.conf $(CURDIR)/debian/zrm-innobackupex/usr/share/mysql-zrm/plugins/socket-server.conf
-	install -D -m 0644 -g root -o root examples/zrm-palomino.xinetd $(CURDIR)/debian/zrm-innobackupex/etc/xinetd.d/zrm-palomino
+binary-arch:
 
 
-# Build architecture-independent files here.
 binary-indep: build install
 	dh_testdir
 	dh_testroot
-	dh_installchangelogs 
 	dh_installdocs
-	dh_installexamples
+	dh_installmenu
+	dh_installchangelogs CHANGELOG
+	dh_installdocs
+	dh_install
+	dh_installman
 	dh_compress
 	dh_fixperms
 	dh_perl
 	dh_installdeb
-	dh_shlibdeps
 	dh_gencontrol
 	dh_md5sums
 	dh_builddeb
 
-# Build architecture-dependent files here.
-binary-arch: build install
-#	dh_testdir
-#	dh_testroot
-#	dh_installchangelogs 
-#	dh_installdocs
-#	dh_installexamples
-##	dh_install
-##	dh_installmenu
-##	dh_installdebconf	
-##	dh_installlogrotate
-##	dh_installemacsen
-##	dh_installpam
-##	dh_installmime
-##	dh_python
-##	dh_installinit
-##	dh_installcron
-##	dh_installinfo
-##	dh_installman
-##	dh_link
-##	dh_strip
-#	dh_compress
-#	dh_fixperms
-##	dh_perl
-##	dh_makeshlibs
-#	dh_installdeb
-#	dh_shlibdeps
-#	dh_gencontrol
-#	dh_md5sums
-#	dh_builddeb
+binary: binary-indep
 
-binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install configure
+.PHONY: binary binary-arch binary-indep clean checkroot
+#%:
+#	dh $@ 

@@ -115,10 +115,38 @@ sub change_master_to {
     MASTER_CONNECT_RETRY => 1,
     MASTER_SSL_VERIFY_SERVER_CERT => 1
   );
+  my %dsn_to_master = (
+    'h' => 'MASTER_HOST',
+    'u' => 'MASTER_USER',
+    'p' => 'MASTER_PASSWORD',
+    'P' => 'MASTER_PORT',
+    'SSL_key' => 'MASTER_SSL_KEY',
+    'SSL_cert' => 'MASTER_SSL_CERT',
+    'SSL_CA' => 'MASTER_SSL_CA',
+    'SSL_CA_path' => 'MASTER_SSL_CAPATH',
+    'SSL_cipher' => 'MASTER_SSL_CIPHER'
+  );
+
   my $sql = 'CHANGE MASTER TO ';
   my %keys = ();
-  if(ref($args[0])) {
+  if(ref($args[0]) and ref($args[0]) eq 'HASH') {
     %keys = %{$args[0]};
+  }
+  elsif(ref($args[0]) and ref($args[0]) eq 'DSN') {
+    # support passing DSNs as the first object
+    # to copy many common keys
+    my $dsn = shift @args;
+    my %args = @args;
+    # copy and convert keys from the dsn
+    foreach my $k (keys %$dsn) {
+      if(exists $dsn_to_master{$k}) {
+        $keys{ $dsn_to_master{$k} } = $dsn->get($k) if($dsn->has($k));
+      }
+    }
+    # overwrite and set keys present later in the arguments
+    for(keys %args) {
+      $keys{$_} = $args{$_};
+    }
   }
   else {
     %keys = @args;

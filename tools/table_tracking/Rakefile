@@ -6,11 +6,17 @@ require 'yaml'
 
 $: << "#{Dir.pwd}/lib"
 
-require 'ttt/db'
+$DEV_CONFIGURED = false
+begin
+  require 'ttt/db'
+  ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
+  TTT::Db.open(ttt_config)
+  $DEV_CONFIGURED = true
+rescue Exception => e
+  print "Dev setup not configured. Please create dev-config.yml\n"
+  print e
+end
 
-ttt_config = YAML.load_file(ENV['TTT_CONFIG'] ? ENV['TTT_CONFIG'] : "#{Dir.pwd}/dev-config.yml")
-
-TTT::Db.open(ttt_config)
 ActiveRecord::Base.logger = ActiveSupport::BufferedLogger.new(STDOUT, ActiveSupport::BufferedLogger::Severity::DEBUG)
 ActiveRecord::Base.colorize_logging = false
 
@@ -18,10 +24,10 @@ task :default => :test
 
 spec = Gem::Specification.new do |s|
   s.name = "table-tracking-toolkit"
-  s.version = "1.5.1"
+  s.version = "1.5.3"
   s.author = "Brian Smith"
   s.email = "dba@palominodb.com"
-  s.homepage = "http://blog.palominodb.com/blog/"
+  s.homepage = "http://www.palominodb.com/"
   s.platform = Gem::Platform::RUBY
   s.summary = "Track Database table schema, and size changes"
   s.description =<<E_DESC
@@ -58,14 +64,22 @@ Gem::PackageTask.new(spec) do |pkg|
 end
 
 task :clean do
-  rm 'test-db.sqlite3' rescue nil
+  if $DEV_CONFIGURED
+    rm 'test-db.sqlite3' rescue nil
+  else
+    print "clean: Dev not configured properly\n"
+  end
 end
 Spec::Rake::SpecTask.new do |t|
-  t.spec_files = FileList['test/lib/*.rb']
-  t.spec_files += FileList['test/[0-9]*.rb']
-  t.rcov =  true
-  t.spec_opts = ['--format', 'specdoc']
-  t.rcov_opts = ['-t', '--exclude', '/Library' ]
+  if $DEV_CONFIGURED
+    t.spec_files = FileList['test/lib/*.rb']
+    t.spec_files += FileList['test/[0-9]*.rb']
+    t.rcov =  true
+    t.spec_opts = ['--format', 'specdoc']
+    t.rcov_opts = ['-t', '--exclude', '/Library' ]
+  else
+    print "spec: Dev not configured properly\n"
+  end
 end
 
 task :test => [:clean, :spec]

@@ -1,20 +1,20 @@
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -27,7 +27,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 # ###########################################################################
-# RObj::Base package 4bb5a6302f358fcf73e3824a06c75e5783e97adf
+# RObj::Base package aa1709ed384a22901b394e2f9932fea40bdd143f
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -36,7 +36,6 @@ use 5.0008;
 use English qw(-no_match_vars);
 use Storable qw(thaw nfreeze);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use Carp;
 
 use Data::Dumper;
@@ -78,28 +77,18 @@ sub read_message {
   if($self->{Msg_Buffer} =~ /^ok$/m) {
     ROBJ_NET_DEBUG >=2 && print STDERR "recv: Found message delimiter\n";
     my @lines = split /\n/, $self->{Msg_Buffer};
-    my ($b64, $sha1) = ("", "");
+    my $b64 = "";
     for (@lines) {
       ROBJ_NET_DEBUG >=2 && print STDERR "recv: parsing: $_\n";
-      if(/^ok$/ and sha1_hex($b64) eq $sha1) {
+      if(/^ok$/) {
         ROBJ_NET_DEBUG >=2 && print STDERR "recv: found complete object\n";
         eval {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}\n"];
         }
         $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^ok$/ and sha1_hex($b64) ne $sha1) {
-        ROBJ_NET_DEBUG >=2 && print STDERR "recv: found invalid object\n";
-        push @res, ['INVALID OBJECT', "${b64}$sha1\n"];
-        $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^[a-f0-9]{40}$/) {
-        $sha1 = $_ if($sha1 eq "");
       }
       elsif(/^[A-Za-z0-9+\/=]+$/) {
         $b64 .= "$_\n";
@@ -123,10 +112,9 @@ sub write_message {
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
   }
-  $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
-  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
-  return syswrite($fh, $buf ."\nok\n");
+  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): ${buf}ok\n";
+  return syswrite($fh, $buf ."ok\n");
 }
 
 sub sys_error {
@@ -140,12 +128,11 @@ sub sys_error {
 # ###########################################################################
 package RObj;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use 5.008;
 
 use Storable qw(nfreeze thaw);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use IPC::Open3;
 use IO::Select;
 use IO::Handle;
@@ -153,6 +140,11 @@ use POSIX;
 use Exporter;
 use B::Deparse;
 use Carp;
+use ProcessLog;
+use Data::Dumper;
+
+$Data::Dumper::Indent = 0;
+$Data::Dumper::Sortkeys = 1;
 
 # Bring exported symbols into this package.
 RObj::Base->import;
@@ -163,19 +155,32 @@ $VERSION = 0.01;
 
 @EXPORT = qw(R_die R_exit R_read R_write COMPILE_FAILURE TRANSPORT_FAILURE OK);
 
-no warnings 'once';
-$Storable::Deparse = 1;
-use warnings FATAL => 'all';
+{
+  no warnings 'once';
+  $Storable::Deparse = 1;
+}
+
 
 sub new {
-  my ($class, $host, $user, $ssh_key) = @_;
+  my ($class, $host, $user, $ssh_key, $pw_auth) = @_;
   my $s = RObj::Base->new;
   bless $s, $class;
-  $s->{host} = $host;
-  $s->{user} = $user;
-  $s->{ssh_key} = $ssh_key;
+
+  # If the first argument is a DSN, go ahead
+  # and setup the RObj appropriately
+  if(ref($host) and ref($host) eq 'DSN') {
+    $s->{host} = $host->get('h');
+    $s->{user} = $host->get('sU');
+    $s->{ssh_key} = $host->get('sK');
+  }
+  else {
+    $s->{host} = $host;
+    $s->{user} = $user;
+    $s->{ssh_key} = $ssh_key;
+  }
   $s->{code} = ();
   $s->{recvq} = ();
+  $s->{password_auth} = $pw_auth;
   return $s;
 }
 
@@ -186,9 +191,38 @@ sub copy {
   $s->{host} = $self->{host};
   $s->{user} = $self->{user};
   $s->{ssh_key} = $self->{ssh_key};
+  $s->{password_auth} = $self->{password_auth};
   $s->{code} = ();
   $s->{recvq} = ();
   return $s;
+}
+
+sub _pong_end {
+  return 'ok';
+}
+
+# ping the remote end to ensure connectivity
+#
+# $cksub should be a subroutine that sends
+# 'pong' on success - and anything else on error.
+# this subroutine will croak() with any errors.
+#
+# if $cksub is not given, then a default
+# 'connectivity' test is done.
+sub check {
+  my ($self, $cksub) = @_;
+  my @r;
+  my $ro = $self->copy;
+  $ro->add_main($cksub || \&_pong_end);
+  eval {
+    @r = $ro->do();
+    unless($r[1] eq 'ok') {
+      croak($r[1]);
+    }
+  };
+  chomp($@);
+  croak('failed check: '. $@) if($@);
+  return @r;
 }
 
 # This is the subroutine that will
@@ -275,6 +309,15 @@ sub debug {
   $self->{debug} = $to;
 }
 
+sub password_auth {
+  my ($self, $allow) = @_;
+  my $old_set = $self->{password_auth};
+  if(defined $allow) {
+    $self->{password_auth} = $allow;
+  }
+  return $old_set;
+}
+
 sub start {
   my ($self, @rparams) = @_;
   if(!@rparams) {
@@ -284,7 +327,8 @@ sub start {
   my ($ssh_out, $ssh_err, $ssh_in, $exitv, $out, $err);
   $self->{ssh_pid} = open3($ssh_in, $ssh_out, $ssh_err,
     'ssh', $self->{ssh_key} ? ('-i', $self->{ssh_key}) : (),
-    '-l', $self->{user}, $self->{host}, '-o', 'BatchMode=yes',
+    '-l', $self->{user}, $self->{host},
+    '-o', $self->{password_auth} ? ('BatchMode=yes') : ('BatchMode=no'),
     $self->{debug} ?
       qq(PERLDB_OPTS="RemotePort=$self->{debug}" perl -d)
       : 'perl');
@@ -299,11 +343,14 @@ sub start {
   $self->{ssh_efh} = $ssh_err;
   $self->{ssh_ofh} = $ssh_out;
   # Wait for remote end to come up.
-  my @r = $self->read();
+  my @r = ($self->read(), @{$self->{recvq}});
+  $self->{recvq} = ();
   if(not $r[0] or $r[0] ne 'READY') {
     croak "Remote end did not come up properly. Expected: 'READY'; Got: ". (!$r[0] ? 'undef': join(' ',@r));
   }
   else {
+    ProcessLog::_PdbDEBUG >= ProcessLog::Level2
+    && $::PL->d("Sending parameters to remote:\n", Dumper(\@rparams));
     unless($self->write(@rparams)) {
       croak "Sending initial parameters to RObj failed.";
     }
@@ -339,11 +386,12 @@ sub _wrap {
     }
     push @$code, [$c->[0], $ctxt];
   }
+  ProcessLog::_PdbDEBUG >= ProcessLog::Level3
+  && $::PL->d("Decompiled code to be serialized:\n", Dumper($code));
   $code = encode_base64(nfreeze($code));
-  my $code_sha = sha1_hex($code);
   my $cnt =<<'EOF';
 # ###########################################################################
-# RObj::E package 165a5088444988d397941403acfecef7e3af0b7d
+# RObj::E package fcdb022f2e18920a8d6c0a1188e852a5d105b0fa
 # ###########################################################################
 package RObj::Base;
 use strict;
@@ -352,7 +400,6 @@ use 5.0008;
 use English qw(-no_match_vars);
 use Storable qw(thaw nfreeze);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use Carp;
 
 use Data::Dumper;
@@ -394,28 +441,18 @@ sub read_message {
   if($self->{Msg_Buffer} =~ /^ok$/m) {
     ROBJ_NET_DEBUG >=2 && print STDERR "recv: Found message delimiter\n";
     my @lines = split /\n/, $self->{Msg_Buffer};
-    my ($b64, $sha1) = ("", "");
+    my $b64 = "";
     for (@lines) {
       ROBJ_NET_DEBUG >=2 && print STDERR "recv: parsing: $_\n";
-      if(/^ok$/ and sha1_hex($b64) eq $sha1) {
+      if(/^ok$/) {
         ROBJ_NET_DEBUG >=2 && print STDERR "recv: found complete object\n";
         eval {
           push @res, @{thaw(decode_base64($b64))};
         };
         if($EVAL_ERROR) {
-          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}$sha1\n"];
+          push @res, ['INVALID MESSAGE', $EVAL_ERROR, "${b64}\n"];
         }
         $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^ok$/ and sha1_hex($b64) ne $sha1) {
-        ROBJ_NET_DEBUG >=2 && print STDERR "recv: found invalid object\n";
-        push @res, ['INVALID OBJECT', "${b64}$sha1\n"];
-        $b64 = "";
-        $sha1 = "";
-      }
-      elsif(/^[a-f0-9]{40}$/) {
-        $sha1 = $_ if($sha1 eq "");
       }
       elsif(/^[A-Za-z0-9+\/=]+$/) {
         $b64 .= "$_\n";
@@ -439,10 +476,9 @@ sub write_message {
   if($EVAL_ERROR) {
     croak $EVAL_ERROR;
   }
-  $buf .= sha1_hex($buf);
   $self->{Sys_Error} = 0;
-  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): $buf\nok\n";
-  return syswrite($fh, $buf ."\nok\n");
+  ROBJ_NET_DEBUG && print STDERR "send(". length($buf) ."b): ${buf}ok\n";
+  return syswrite($fh, $buf ."ok\n");
 }
 
 sub sys_error {
@@ -456,9 +492,16 @@ package main;
 use strict;
 use warnings FATAL => 'all';
 use 5.0008;
+BEGIN {
+  $SIG{__DIE__} = sub {
+    die @_ if $^S;
+    my $ro = RObj::Base->new;
+    $ro->write_message(\*STDOUT, @_);
+    exit(RObj::Base::COMPILE_FAILURE);
+  };
+}
 use Storable qw(nfreeze thaw);
 use MIME::Base64;
-use Digest::SHA qw(sha1_hex);
 use IO::Handle;
 use English qw(-no_match_vars);
 
@@ -481,7 +524,7 @@ sub R_die {
 sub R_exit {
   my ($exit_code) = @_;
   R_print('EXIT', $exit_code);
-  exit($exit_code);
+  exit(OK);
 }
 
 sub R_print {
@@ -495,44 +538,42 @@ sub R_read {
 }
 
 use constant CODE => '__CODE__';
-use constant CODE_DIGEST => '__SHA1__';
 $0 = "Remote perl object from ". ($ENV{'SSH_CLIENT'} || 'localhost');
-
-R_die(TRANSPORT_FAILURE, "Code digest does not match") unless(sha1_hex(CODE) eq CODE_DIGEST);
 
 my $code = thaw(decode_base64(CODE));
 
-no strict 'refs';
-foreach my $cr (@{$code}) {
-  my $name = $cr->[0];
-  if($name =~ /^_use_/ ) {
-    &{eval "sub $cr->[1]"}();
-    if($@) {
-      R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+{
+  no strict 'refs';
+  foreach my $cr (@{$code}) {
+    my $name = $cr->[0];
+    if($name =~ /^_use_/ ) {
+      &{eval "sub $cr->[1]"}();
+      if($@) {
+        R_die(COMPILE_FAILURE, "Unable to use ($name). eval: $@");
+      }
+      next;
     }
-    next;
-  }
-  if($name =~ /::BEGIN/) {
-    eval "$name $cr->[1]";
-    if($@) {
-      R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+    if($name =~ /::BEGIN/) {
+      eval "$name $cr->[1]";
+      if($@) {
+        R_die(COMPILE_FAILURE, "Unable to compile transported BEGIN ($name). eval: $@");
+      }
+      next;
     }
-    next;
+    my $subref = eval "sub $cr->[1];";
+    if($@) {
+      R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
+    }
+    *{$name} = $subref;
   }
-  my $subref = eval "sub $cr->[1];";
-  if($@) {
-    R_die(COMPILE_FAILURE, "Unable to compile transported sub ($name). eval: $@");
-  }
-  *{$name} = $subref;
 }
-use strict;
 
 $| = 1;
 
 R_print('READY');
 my @args = R_read();
 R_print('ACK');
-$SIG{__DIE__} = sub { R_die(NATIVE_DEATH, @_); };
+$SIG{__DIE__} = sub { die @_ if $^S; R_die(NATIVE_DEATH, @_); };
 R_exit(
   R_main(
     @args
@@ -545,9 +586,7 @@ R_exit(
 # ###########################################################################
 EOF
   $cnt =~ s/__CODE__/$code/;
-  $cnt =~ s/__SHA1__/$code_sha/;
-
-  $cnt;
+  return $cnt;
 }
 
 sub R_read {
@@ -613,15 +652,32 @@ correctly, subs can even be used locally which simplifies testing.
 
 =over 8
 
-=item C<new($host, $user, [$ssh_key])>
+=item C<new($host_or_dsn, $user[, $ssh_key, $pw_auth])>
 
 Create a new RObj which will connect to C<$user@$host> with C<$ssh_key>.
+
+If C<$host_or_dsn> is a DSN object, then, all other parameters are optional, since,
+the DSN object will have all the required information.
+
+The C<$pw_auth> parameter specifies whether or not to allow password authentication.
+By default it is disabled since RObj's may connect and disconnect very frequently.
 
 =item C<copy()>
 
 Returns a new RObj sharing the host, user, and ssh_key of the old RObj
 and none of the code. This is for when you need to perform unrelated
 tasks remotely on the same host.
+
+=item C<check([$coderef])>
+
+Perform a 'ping' of the remote system. Serializes a minimal subroutine and waits
+for the response of 'ok'. If that isn't received then some kind of error occured,
+and an exception is raised.
+
+If C<$coderef> is present, then it is used in place of the default ping method.
+Custom subroutines MUST return 'ok', or anything else on error. The contents of the
+string on error are inserted into the exception for presentation or other error
+handling.
 
 =item C<add_main($coderef)>
 
@@ -634,6 +690,17 @@ remote name is 'R_main', but, that could change so don't rely on that behavior.
 In addition to your main method, you must also pass any other methods your
 main method calls. The C<$name> may include a package name to serialize object
 methods.
+
+=item C<add_use($to_pkg, $pkg)>
+
+Ensures that C<$pkg> is required and imported into C<$to_pkg's> namespace.
+
+Example:
+
+  $ro->add_use('MyPackage', 'DBI');
+
+Ensures that DBI is loaded and ready for using in calls to MyPackage on the
+remote end.
 
 =item C<add_package($pkg_name)>
 

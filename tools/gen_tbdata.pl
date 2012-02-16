@@ -1,21 +1,21 @@
 #!/usr/bin/env perl
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -34,6 +34,7 @@ use warnings FATAL => 'all';
 use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use Data::Dumper;
+use POSIX qw(floor);
 
 my $out="random_test_data.sql";
 my $table="test_data";
@@ -86,13 +87,13 @@ sub generate_words {
 }
 
 sub generate_varchar {
-  my $length_of_randomstring=shift;# the length of 
+  my $length_of_randomstring=shift;# the length of
   # the random string to generate
 
   my @chars=('a'..'z','A'..'Z','0'..'9','_');
   my $random_string;
   foreach (1..$length_of_randomstring) {
-    # rand @chars will generate a random 
+    # rand @chars will generate a random
     # number between 0 and scalar @chars
     $random_string.=$chars[rand @chars];
   }
@@ -132,6 +133,15 @@ sub generate_linear_timestamp {
   return $grator;
 }
 
+sub generate_linear_integer {
+  my $mshift = shift || 100;
+  my $base   = 1;
+  my $grator = sub {
+    return ($base += (floor(rand($mshift))||1));
+  };
+  return $grator;
+}
+
 unless($out eq "-") {
   open SQL, ">$out";
 }
@@ -146,6 +156,9 @@ map {
   if($t =~ /linear_timestamp(?:\((\d*)\))?/) {
     $gen{$c} = generate_linear_timestamp($1);
   }
+  if($t =~ /linear_integer(?:\((\d*)\))?/) {
+    $gen{$c} = generate_linear_integer($1);
+  }
   if($t =~ /words/) {
     open my $dict_fh, "</usr/share/dict/words" or die($!);
     chomp(@dict = <$dict_fh>);
@@ -154,7 +167,7 @@ map {
 } keys %columns;
 
 if($generate_table and !$for_infile) {
-  print SQL "USE $database; ";
+  print SQL "USE $database;\n";
   print SQL "DROP TABLE IF EXISTS $table;\n\n";
   my $sql_columns = "";
   map {
@@ -195,6 +208,14 @@ foreach my $i ($pk_start..$n_rows) {
       }
     }
     elsif($t =~ /linear_timestamp(?:\((\d*)\))?/) {
+      if($for_infile) {
+        $vals .= $gen{$k}->() .",";
+      }
+      else {
+        $vals .= "'". $gen{$k}->() ."',";
+      }
+    }
+    elsif($t =~ /linear_integer(?:\((\d*)\))?/) {
       if($for_infile) {
         $vals .= $gen{$k}->() .",";
       }
@@ -270,7 +291,7 @@ Options:
 Pseudo Column Types:
 In addition to the support normal column types, there are some Pseudo-types
 that have specific alternate behavior other than 'random':
-  
+
   int_pk:
     This type is used as the primary key for the table.
     It can only be specified once, and it produces no random values.
@@ -288,6 +309,10 @@ that have specific alternate behavior other than 'random':
     If max_shift specified, it indicates how much the timestamp is allowed
     to increase, in seconds.
     It defaults to 300 seconds.
+
+  linear_int(max_shift):
+    This produces an integer column that increases monotonically in random
+    amounts. Normally max_shift is 100.
 
   words(count):
     This type is very similar to the varchar() type above, but, instead

@@ -1,20 +1,41 @@
-This package was debianized by Brian Smith <brian@palominodb.com> on
-Thu, 15 Apr 2010 02:34:42 -0700.
+This work was packaged for Debian by:
 
-It was downloaded from <ssh://bastion.palominodb.com/opt/git/pdb-code.git>
+    Brian Smith <eng@palominodb.com> on Wed, 16 Feb 2011 17:06:28 -0800
 
-Upstream Author:
+It was downloaded from:
 
-    Brian Smith <brian@palominodb.com>
-    Adapted from the original code produced by Zmanda.
+    http://dev.palominodb.com/dist/zrm-innobackupex-0.80.2.tar.gz
 
 Copyright:
 
-    Copyright (C) 2010 Brian Smith
+    Copyright (C) 2010 PalominoDB, Inc.
 
 License:
 
-    GPL
+    This package is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
 
-The Debian packaging is (C) 2010, Brian Smith <brian@palominodb.com> and
-is licensed under the GPL, see `/usr/share/common-licenses/GPL'.
+    This package is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>
+
+On Debian systems, the complete text of the GNU General
+Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+
+The Debian packaging is:
+
+    Copyright (C) 2011 Brian Smith <eng@palominodb.com>
+
+you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+# Please also look if there are files or directories which have a
+# different copyright/license attached and list them here.

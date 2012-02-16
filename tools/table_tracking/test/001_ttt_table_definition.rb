@@ -10,6 +10,29 @@ class MutateTestDataTable < TestMigration
   end
 end
 
+class CreateTableWithPk < TestMigration
+  def self.up
+    connection.execute('CREATE DATABASE IF NOT EXISTS test')
+    create_table('test.test_pk', :options => 'ENGINE=InnoDB CHARSET=utf8') do |t|
+    end
+  end
+  def self.down
+  end
+end
+
+class InsertPkRows < TestMigration
+  def self.up
+    execute("INSERT INTO `test`.`test_pk` () VALUES ()")
+    execute("INSERT INTO `test`.`test_pk` () VALUES ()")
+    execute("ALTER TABLE `test`.`test_pk` ENGINE=InnoDB")
+    execute("INSERT INTO `test`.`test_pk` () VALUES ()")
+    execute("INSERT INTO `test`.`test_pk` () VALUES ()")
+  end
+  def self.down
+    execute("TRUNCATE TABLE `test`.`test_pk`");
+  end
+end
+
 describe TTT::TableDefinition do
   include TestDbHelper
   def create_entry(serv,db,table,create,created_at=Time.now, updated_at=Time.now)
@@ -87,6 +110,8 @@ describe TTT::TableDefinition, 'collect' do
     ObjectSpace.each_object() { |o| @defn_collector=o if o.instance_of? TTT::Collector and o.stat == TTT::TableDefinition }
     test_connect
     test_connect_is('localhost')
+
+    @defn_collector.verbose = true
   end
 
   before do
@@ -110,7 +135,7 @@ describe TTT::TableDefinition, 'collect' do
                                   )
         }
 
-        rd=cd.collect('localhost', @defn_collector).dup
+        rd=cd.collect('localhost', @defn_collector)
         rd.changed?.should == truth
         rd.save(id)
         outrd=rd
@@ -120,17 +145,27 @@ describe TTT::TableDefinition, 'collect' do
 
   it 'should find test.test_data' do
     test_migration(CreateTestDataTable)
-    rd=run_collection(0, true, TTT::TABLE.get('test', 'test_data'), TIMES[0])
+    rd=run_collection(1, true, TTT::TABLE.get('test', 'test_data'), TIMES[0])
     TTT::TableDefinition.find(:last).status.should == :new
   end
 
   it 'should find test.test_data changed' do
     test_migration(CreateTestDataTable)
     rd=run_collection(1, true, TTT::TABLE.get('test', 'test_data'), TIMES[0])
-    TTT::TableDefinition.find(:last).status.should == :new
     test_migration(MutateTestDataTable)
     rd=run_collection(2, true, TTT::TABLE.get('test', 'test_data'), TIMES[1])
     TTT::TableDefinition.find(:last).status.should == :changed
+  end
+
+  # this test is to validate that we don't find a table changed due to
+  # an auto_increment change per ticket [9babce26e5e802dbc14737404cb73d84d605ef71].
+  it 'should not find test.test_pk changed' do
+    test_migration(CreateTableWithPk)
+    rd=run_collection(1, true, TTT::TABLE.get('test', 'test_pk'), TIMES[0])
+    TTT::TableDefinition.find(:last).status.should == :new
+    test_migration(InsertPkRows)
+    rd=run_collection(2, false, TTT::TABLE.get('test', 'test_pk'), TIMES[1])
+    TTT::TableDefinition.find(:last).status.should == :new
   end
 end
 

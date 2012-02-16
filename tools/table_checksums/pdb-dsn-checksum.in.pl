@@ -1,19 +1,55 @@
 #!/usr/bin/env perl
+# Copyright (c) 2009-2010, PalominoDB, Inc.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+#   * Redistributions of source code must retain the above copyright notice,
+#     this list of conditions and the following disclaimer.
+#
+#   * Redistributions in binary form must reproduce the above copyright notice,
+#     this list of conditions and the following disclaimer in the documentation
+#     and/or other materials provided with the distribution.
+#
+#   * Neither the name of PalominoDB, Inc. nor the names of its contributors
+#     may be used to endorse or promote products derived from this software
+#     without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
 use strict;
 use warnings FATAL => 'all';
 
 # ###########################################################################
-# ProcessLog package GIT_VERSION
+# ProcessLog package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
 # End ProcessLog package
 # ###########################################################################
 
 # ###########################################################################
-# Pdb::DSN package GIT_VERSION
+# YAMLDSN package FSL_VERSION
 # ###########################################################################
 # ###########################################################################
-# End Pdb::DSN package
+# End YAMLDSN package
+# ###########################################################################
+
+# ###########################################################################
+# Lockfile package FSL_VERSION
+# ###########################################################################
+# ###########################################################################
+# End Lockfile package
 # ###########################################################################
 
 package pdb_dsn_checksum;
@@ -26,7 +62,7 @@ use Getopt::Long qw(:config no_ignore_case);
 use Pod::Usage;
 use List::Util qw(max);
 
-use Pdb::DSN;
+use YAMLDSN;
 use ProcessLog;
 
 my $pl = undef;
@@ -53,12 +89,14 @@ my $csum_dbh = undef;
 
 my $default_chunk_size = 50_000;
 my $cluster = undef;
+my $lock = undef;
+my $lock_timeout = undef;
 
-my $cli_chunk_size = 0;
-my $cli_since = '';
+my $dp;
 
 sub main {
   my (@ARGV) = @_;
+  my $program_lock;
   GetOptions(
     'help|?'  => sub { pod2usage(-verbose => 99); },
     'dsn|d=s' => \$dsnuri,
@@ -72,8 +110,8 @@ sub main {
     'pretend' => \$pretend,
     'mk-table-checksum-path=s' => \$mk_table_checksum_path,
     'cluster=s' => \$cluster,
-    'chunk-size=s' => \$cli_chunk_size,
-    'since=s' => \$cli_since
+    'lock=s' => \$lock,
+    'lock-timeout=i' => \$lock_timeout
   ) or die('Try --help');
 
   unless(defined($central_dsn) and defined($dsnuri) and defined($user) and defined($password) and defined($repl_table)) {
@@ -84,6 +122,17 @@ sub main {
   $pl = ProcessLog->new($0, $loguri, undef);
   $pl->start;
 
+  if($lock) {
+    eval {
+      $program_lock = Lockfile->get($lock, $lock_timeout);
+    };
+    if($@) {
+      $pl->e("$@");
+      $pl->end();
+      return 1;
+    }
+  }
+
   $ENV{MKDEBUG} = exists $ENV{MKDEBUG} ? $ENV{MKDEBUG} : $pretend;
   eval "require '$mk_table_checksum_path'";
   if($EVAL_ERROR) {
@@ -91,8 +140,9 @@ sub main {
     return 1;
   }
 
-  my $dsn = Pdb::DSN->new($dsnuri);
-  my $dp = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
+  my $dsn = YAMLDSN->new($dsnuri);
+  ## This DSNParser is not the PalominoDB one, but the Maatkit one.
+  $dp       = DSNParser->new({key => 't', 'desc' => 'Table to write to', copy => 0});
   $csum_dsn = $dp->parse($central_dsn);
   $csum_dbh = $dp->get_dbh($dp->get_cxn_params($csum_dsn));
 
@@ -125,24 +175,48 @@ sub main {
   unless ($only_report) {
     foreach my $cm (@checksum_masters) {
       $pl->i("CHECKSUMMING CLUSTER PRIMARY:",$cm);
+      my $c_size = undef;
       my @ignore_databases = (@{$checksum_master_opts{$cm}{ignore_databases} || []}, @global_ignore_databases);
       my @ignore_tables    = (@{$checksum_master_opts{$cm}{ignore_tables} || []}, @global_ignore_tables);
-      my @do_tables        = @{$checksum_master_opts{$cm}{tables} || []};
-      my $c_size           = $cli_chunk_size || $checksum_master_opts{$cm}{chunk_size} || $default_chunk_size;
-      my $since            = $cli_since || $checksum_master_opts{$cm}{since};
+      my %do_tables        = %{$checksum_master_opts{$cm}{tables} || {}};
+      if(exists $checksum_master_opts{$cm}{chunk_size}) {
+        $c_size = $checksum_master_opts{$cm}{chunk_size};
+      }
+      else {
+        $c_size = $default_chunk_size;
+      }
+      my $since            = $checksum_master_opts{$cm}{since};
+      my $ignore_indexes   = 0;
 
       # Run through individual tables if 'tables:'
       # key exists
-      if(scalar @do_tables) {
-        my %w_vals = ();
-        foreach my $t (@do_tables) {
-          foreach my $k (keys %$t) {
-            $w_vals{$t->{$k}} ||= [];
-            push @{$w_vals{$t->{$k}}}, $k;
+      if(scalar %do_tables) {
+        foreach my $t (keys %do_tables) {
+          ## Per-table config values. May be just a where clause (plain string),
+          ## or could be a hash-ref, in which case it contains option overrides.
+          my $tv = $do_tables{$t};
+          my $where = undef;
+
+          if(ref($tv) eq 'HASH') {
+            $where = $$tv{'where'};
+            if(exists $$tv{'chunk_size'}) {
+              $c_size = $$tv{'chunk_size'};
+            }
+            if(exists $$tv{'since'}) {
+              $since = $$tv{'since'};
+            }
+            if(exists $$tv{'no_use_index'}) {
+              $ignore_indexes = $$tv{'no_use_index'};
+            }
           }
-        }
-        foreach my $w (keys %w_vals) {
-          my @tbls = @{$w_vals{$w}};
+          elsif(!ref($do_tables{$t})) {
+            $where = $tv;
+          }
+          else {
+            $pl->ed($cm. ' checksum_options.tables contained an invalid entry '.
+                    'for '. $t, 'Not a string or key value list.');
+          }
+
           my @mk_args = (
             $pretend ? ('--explain') : (),
             !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
@@ -153,51 +227,36 @@ sub main {
             '--password', $password,
             scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
             scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
-            scalar @do_tables ? ('--tables', join(',',@tbls)) : (),
+            '--tables', $t,
             $since ? ('--since', $since) : (),
-            '--chunk-size', $c_size,
-            '--where', $w,
+            $c_size ? ('--chunk-size', $c_size) : (),
+            $ignore_indexes ? ('--no-use-index') : (),
+            $where ? ('--where', $where) : (),
             $cm
           );
-          run_mk_checksum(@mk_args);
+          run_mk_checksum($cm, @mk_args);
         }
       }
       else {
-          my @mk_args = (
-            $pretend ? ('--explain') : (),
-            !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
-            '--create-replicate-table',
-            '--empty-replicate-table',
-            '--replicate', $repl_table,
-            '--user', $user,
-            '--password', $password,
-            scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
-            scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
-            $since ? ('--since', $since) : (),
-            '--chunk-size', $c_size,
-            $cm
-          );
-          run_mk_checksum(@mk_args);
+        my @mk_args = (
+          $pretend ? ('--explain') : (),
+          !$ENV{Pdb_DEBUG} ? ('--quiet') : (),
+          '--create-replicate-table',
+          '--empty-replicate-table',
+          '--replicate', $repl_table,
+          '--user', $user,
+          '--password', $password,
+          scalar @ignore_databases ? ('--ignore-databases', join(',', @ignore_databases)) : (),
+          scalar @ignore_tables ? ('--ignore-tables', join(',',@ignore_tables)) : (),
+          $since ? ('--since', $since) : (),
+          $c_size ? ('--chunk-size', $c_size) : (),
+          $ignore_indexes ? ('--no-use-index') : (),
+          $cm
+        );
+        run_mk_checksum(@mk_args);
       }
     }
   }
-
-  foreach my $cm (@checksum_masters) {
-    my $ms = MasterSlave->new();
-    my $master_dsn = $dp->parse("h=$cm,u=$user,p=$password");
-    my $master_dbh = $dp->get_dbh($dp->get_cxn_params($master_dsn));
-    $pl->i("RETRIEVING CLUSTER CHECKSUMS:", $cm);
-    $ms->recurse_to_slaves(
-      {
-        dbh  => $master_dbh,
-        dsn  => $master_dsn,
-        dsn_parser => $dp,
-        callback => \&save_to_central_server
-      }
-    );
-    $master_dbh->disconnect;
-  }
-  $csum_dbh->commit;
 
   (my $sql = <<"EOF") =~ s/\s+/ /gm;
    SELECT host, db, tbl, chunk, boundaries,
@@ -234,6 +293,8 @@ EOF
 }
 
 sub run_mk_checksum {
+  my $cm = shift;
+  my $master_dbh = undef;
   $pl->d("CHECKSUM ARGUMENTS:", Dumper(\@_));
   my $r = $pl->x(\&mk_table_checksum::main, @_);
   {
@@ -242,7 +303,30 @@ sub run_mk_checksum {
     $pl->d(<$fh>);
   }
   if($r->{rcode}) {
-    $pl->e("Error calling mk-table-checksum:", 'exit:', $r->{rcode}, $r->{error});
+    $pl->ed("Error calling mk-table-checksum:", 'exit:', $r->{rcode}, $r->{error});
+  }
+
+  eval {
+    my $ms = MasterSlave->new();
+    my $master_dsn = $dp->parse("h=$cm,u=$user,p=$password");
+    $master_dbh = $dp->get_dbh($dp->get_cxn_params($master_dsn));
+    $pl->i("RETRIEVING CHECKSUMS FROM:", $cm);
+    $ms->recurse_to_slaves(
+      {
+        dbh  => $master_dbh,
+        dsn  => $master_dsn,
+        dsn_parser => $dp,
+        callback => \&save_to_central_server
+      }
+    );
+    $master_dbh->disconnect();
+    $csum_dbh->commit();
+    $csum_dbh->{AutoCommit} = 0;
+  };
+  if($@) {
+    $csum_dbh->rollback();
+    $master_dbh->disconnect();
+    $pl->ed("Error during retrieval of checksum results: $@");
   }
 }
 
@@ -250,7 +334,7 @@ sub save_to_central_server {
   my ( $dsn, $dbh, $level, $parent ) = @_;
   my $central_table = "`$csum_dsn->{D}`.`$csum_dsn->{t}`";
   my $host = $dbh->quote($dsn->{h});
-  my $del_sql = qq#DELETE FROM $central_table WHERE host=$host AND ts < NOW() - INTERVAL 1 WEEK#;
+  my $del_sql = qq#DELETE FROM $central_table WHERE host=$host AND ts < NOW() - INTERVAL 12 HOUR#;
   $pl->d('SQL:', $del_sql);
   RETRY:
   eval {
@@ -271,8 +355,9 @@ sub save_to_central_server {
         master_crc char(40)         NULL,
         master_cnt int              NULL,
         ts         timestamp    NOT NULL,
-        PRIMARY KEY (host, db, tbl, chunk, ts)
-      ) ENGINE=InnoDB
+        PRIMARY KEY (host, db, tbl, chunk, ts),
+        KEY `host_and_ts` (`host`,`ts`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8
     EOF
     $pl->d('SQL:', $creat_sql);
     $csum_dbh->do($creat_sql);
@@ -420,6 +505,14 @@ to log to syslog.
 
 Default: ./pdb-dsn-checksum.log
 
+=item --lock <file>
+
+Use file as a lockfile to prevent multiple concurrent runs.
+
+=item --lock-timeout <seconds>
+
+Only wait up to seconds for the lock to become available.
+
 =item --allow-slave-lag,-a
 
 Normally pdb-dsn-checksum will spin on each slave until it's caught
@@ -441,6 +534,7 @@ This tool recognizes the following keys in a YAML DSN:
 These all go on primary hosts, not clusters.
 
 =over 4
+
 =item checksum
 
 type: boolean (y/n)

@@ -17,6 +17,22 @@ flushes = 3
 ; How long to sleep between log flushes
 flush_sleep = 5
 
+; What type of shutdown InnoDB should be told to do
+; We default to whatever mysql is set to.
+; 0 = full sync (may take HOURS) (this is the safest value),
+; 1 = (mysql default) do nothing,
+; 2 = simple log and trx flush (will force an InnoDB recovery on startup)
+; innodb_shutdown = 0
+
+;; Sample hook script to curl a nagios install with a downtime.cgi
+;; "nagios_url" is a custom variable used by nagios_downtime.sh
+;; to point to the root of the nagios install
+;; "nagios_downtime_length" is the length in minutes that the downtime
+;; should last.
+; nagios_url = http://nagios/nagios/
+; nagios_downtime_length = 600
+; hook_script = /usr/share/mysqlctl/nagios_downtime.sh
+
 ;; These are only for unusual configurations.
 ;; They set the path to the required utilities,
 ;; should they not be in $PATH

@@ -76,6 +76,9 @@ MYCTL_CNF=/etc/myctl.cnf
 
 INIT_NAME=
 
+## If the script is called from a known init directory
+## we set the tname of the init script to the filename of the script.
+## This supports calling the script something other than mysqlctl
 case $0 in
   *rc?.d*)
     INIT_NAME=$(basename $(readlink $0))
@@ -85,6 +88,8 @@ case $0 in
   ;;
 esac
 
+## Explicit $PATH is needed for during boot
+## It also adds a modicum of extra security
 PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export PATH
 
@@ -92,21 +97,28 @@ pid_file=
 datadir=
 mysqld_safebin=
 mysqladminbin=
+mysqlclientbin=
 user=mysql
 socket=
+basedir=
 
-# mysqlctl vars
+# mysqlctl default vars
+# Both start and stop actions have timeouts
+# because otherwise scripts which call us may hang
+# indefinitely if mysql doesn't start or stop
+# and that's bad.
 start_timeout=1800
 stop_timeout=1800
 flushes=3
 flush_sleep=5
+ulimit_locked=unlimited
 
 if [[ ! -f $MYCTL_CNF ]] ; then
   echo Unable to find $MYCTL_CNF
   exit 7
 fi
 
-for l in `my_print_defaults mysqld`; do
+for l in `my_print_defaults mysqld mysqld_safe`; do
   case $l in
     --pid-file=*)
       pid_file=$(echo $l | sed -e 's/^[^=]*=//')
@@ -120,13 +132,11 @@ for l in `my_print_defaults mysqld`; do
     --socket=*)
       socket=$(echo $l | sed -e 's/^[^=]*=//')
       ;;
+    --basedir=*)
+      basedir=$(echo $l | sed -e 's/^[^=]*=//')
+      ;;
   esac
 done
-
-if [[ -z $pid_file ]] ; then
-  echo Missing --pid-file in defaults.
-  exit 3
-fi
 
 if [[ -z $socket ]] ; then
   echo Missing --socket in defaults.
@@ -136,6 +146,10 @@ fi
 if [[ -z $datadir ]] ; then
   echo Missing --datadir in defaults.
   exit 3
+fi
+
+if [[ -z $pid_file ]] ; then
+  pid_file=$datadir/$(hostname).pid
 fi
 
 # collect defaults from $MYCTL_CNF
@@ -149,21 +163,51 @@ for l in `my_print_defaults --defaults-file=$MYCTL_CNF mysqlctl`; do
   esac
 done
 
-if [[ -z "$basedir" ]] ; then
+hook_start() {
+  : # default no-op implementation
+}
+
+hook_stop() {
+  : # default no-op implementation
+}
+
+if [[ -n "$hook_script" ]]; then
+  . $hook_script
+fi
+
+## If basedir is defined then add
+## $basedir/{bin,sbin} to the path so that we
+## might find mysqld and utilties
+if [[ -n "$basedir" ]] ; then
   PATH=${PATH}:$basedir/bin:$basedir/sbin
   export PATH
 fi
 
-mysqld_safebin=$(which mysqld_safe)
-mysqladminbin=$(which mysqladmin)
+## Set default paths if not set in the config.
+if [[ -z "$mysqld_safebin" ]]; then
+  mysqld_safebin=$(which mysqld_safe)
+fi
+if [[ -z "$mysqladminbin" ]]; then
+  mysqladminbin=$(which mysqladmin)
+fi
+if [[ -z "$mysqlclientbin" ]]; then
+  mysqlclientbin=$(which mysql)
+fi
+
+## Deal with some ulimit values
+if [[ -n "$ulimit_locked" ]]; then
+  ulimit -l $ulimit_locked
+fi
 
 start_mysql() {
   if [[ -f $pid_file ]] ; then
     pid=$(cat $pid_file)
     if [[ -d "/proc/$pid" ]] ; then
+      hook_start already_running
       echo MySQL Running.
       exit 6
     fi
+    hook_start stale_pidfile
     echo Stale pid-file. Did MySQL crash?
     echo Remove $pid_file if ok
     exit 2
@@ -175,14 +219,17 @@ start_mysql() {
   while [[ $i -lt $start_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ -f $pid_file ]] ; then
+      ## /var/lock/subsys is for redhat type init systems
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         touch /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
+      hook_start started
       echo MySQL Started.
       exit 0
     fi
     i=$(( $i + 1 ))
   done
+  hook_start timed_out
   echo MySQL start timed out.
   exit 1
 }
@@ -191,24 +238,34 @@ stop_mysql() {
   if [[ -f $pid_file ]] ; then
     pid=$(cat $pid_file)
     if [[ ! -d "/proc/$pid" ]] ; then
+      hook_stop stale_pidfile
       echo Stale pid-file. Did MySQL crash?
       echo Remove $pid_file if ok
       exit 2
     fi
   elif [[ -f $socket ]] ; then
+    hook_stop socket_but_no_pidfile
     echo Socket present, but pid-file missing.
     echo Need pid-file.
     exit 2
   else
+    hook_stop already_stopped
     echo MySQL not running.
     exit 6
   fi
 
+  ## Set InnoDB shutdown type, if it was specified in the config
+  if [[ -n "$innodb_shutdown" ]]; then
+    $mysqlclientbin --defaults-file=$MYCTL_CNF --socket=$socket -e "SET GLOBAL innodb_fast_shutdown=$innodb_shutdown"
+  fi
+
+  ## Flush logs $flushes times to ensure that binlog data is synced to disk.
   $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket stop-slave
   while [[ $flushes -gt 0 ]] ; do
     $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket flush-logs
     if [[ ! $? ]] ; then
       $mysqladminbin --defaults-file=$MYCTL_CNF --socket=$socket start-slave
+      hook_stop flush_logs_failed
       echo MySQL flush logs failed.
       exit 4
     fi
@@ -222,14 +279,17 @@ stop_mysql() {
   while [[ $i -lt $stop_timeout ]]; do
     sleep 1 # Always sleep at least one second.
     if [[ ! -f $pid_file ]] ; then
+      ## /var/lock/subsys is for redhat type init systems
       if [[ -d "/var/lock/subsys" && -n "$INIT_NAME" ]]; then
         rm -f /var/lock/subsys/$INIT_NAME &>/dev/null
       fi
+      hook_stop stopped
       echo MySQL Stopped.
       exit 0
     fi
     i=$(( $i + 1 ))
   done
+  hook_stop timed_out
   echo MySQL stop timed out.
   exit 1
 }
@@ -292,20 +352,39 @@ It's a regular my.cnf file, so, configuration for this
 script should be placed under a [mysqlctl] section.
 
 Currently supported tunables are:
-  - start_timeout   How long to wait for mysql to start.
-                    Currently set: $start_timeout
+  - start_timeout     How long to wait for mysql to start.
+                      Currently set: $start_timeout
 
-  - stop_timeout    How long to wait for mysql to stop
-                    mysql May still stop After this time,
-                    but this script will not wait indefinitely.
-                    Currently set: $stop_timeout
+  - stop_timeout      How long to wait for mysql to stop
+                      mysql May still stop After this time,
+                      but this script will not wait indefinitely.
+                      Currently set: $stop_timeout
 
-  - flushes         How many times to execute FLUSH LOGS
-                    Currently set: $flushes
+  - flushes           How many times to execute FLUSH LOGS
+                      Currently set: $flushes
 
-  - flush_sleep     How long to sleep between flushing.
-                    Currently set: $flush_sleep
+  - flush_sleep       How long to sleep between flushing.
+                      Currently set: $flush_sleep
 
+  - innodb_shutdown   What kind of shutdown InnoDB should do.
+                      Currently set: $innodb_shutdown
+                      See the sample config for values, or [1].
+
+  - hook_script       Script to call with the success or failure
+                      of the start and stop actions.
+
+Advanced tuneables:
+  These options are available in the config file, but, are best
+  left to their default values, since they only need changing in
+  special circumstances.
+
+  - ulimit_locked     Tune the ulimit for locked memory for mysql.
+                      Currently set: $ulimit_locked
+                      See the ulimit manpage for more.
+
+
+References:
+[1]  http://dev.mysql.com/doc/refman/5.1/en/innodb-parameters.html#sysvar_innodb_fast_shutdown
 EOF
   ;;
 esac

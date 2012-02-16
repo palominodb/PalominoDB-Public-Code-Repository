@@ -4,6 +4,7 @@ package SrcUtils;
 use strict;
 use warnings FATAL => 'all';
 use English qw(-no_match_vars);
+use Digest::SHA qw(sha1_hex);
 use File::Basename;
 
 my ($f, $d, $s) = fileparse(__FILE__);
@@ -25,12 +26,11 @@ sub insert_module {
   }
   close $file;
 
-  my ($ver) = split(/\n/,qx@${DIR}/../gitver.sh $mpath@);
-  chomp($ver);
+  my $ver = sha1_hex($module_src);
 
   $module_src =~ s/^ *#.*\n//gm; # strip comments out
   $module_src =~ s/=pod\n.*?\n=cut\n//gs; # strip out pod
-  $input =~ s/ $module package ([a-f0-9]{40}|GIT_VERSION)/ $module package/; # strip revision
+  $input =~ s/ $module package ([a-f0-9]{40}|GIT_VERSION|FSL_VERSION)/ $module package/; # strip revision
   my $line = "# ###########################################################################\n";
   my $marker = qr/($line# (?:End )?$module package\n$line)/;
   $input =~ s/$marker.*?$marker/$1$module_src$2/s;

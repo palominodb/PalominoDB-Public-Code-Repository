@@ -8,11 +8,12 @@ use warnings FATAL => 'all';
 use DBI;
 use DSN;
 use IniFile;
+use File::Basename;
 
 our $cnf = {IniFile::read_config($ENV{PDB_SANDBOX_CNF})};
 our $port = $cnf->{'mysqld'}->{'port'};
 our $socket = $cnf->{'mysqld'}->{'socket'};
-our $dsnstr = "h=localhost,u=msandbox,p=msandbox,P=$port,S=$socket";
+our $dsnstr = "h=localhost,u=root,p=msandbox,P=$port,S=$socket";
 
 sub new {
   my ($class, $args) = @_;
@@ -21,8 +22,32 @@ sub new {
 
   $args->{dsn} = DSNParser->default()->parse($dsnstr);
   $args->{dbh}  = $args->{dsn}->get_dbh();
+  # Create a user with no super privilege
+  $args->{dbh}->do(q|
+    GRANT SELECT, INSERT, UPDATE, DELETE, CREATE,
+    DROP, RELOAD, SHUTDOWN, PROCESS, FILE, INDEX, ALTER,
+    SHOW DATABASES, CREATE TEMPORARY TABLES, LOCK TABLES,
+    EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT,
+    CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE
+      ON *.* TO 'nosuper'@'%' IDENTIFIED BY 'superpw'
+  |);
 
   return $args;
+}
+
+sub stop {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/stop");
+}
+
+sub start {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/start");
+}
+
+sub fsclear {
+  my ($self) = @_;
+  system(dirname($ENV{PDB_SANDBOX_CNF}) ."/clear");
 }
 
 sub DESTROY {
@@ -42,6 +67,31 @@ sub user {
 sub password {
   my ($self) = @_;
   return $self->{dsn}->get('p');
+}
+
+sub rand_data {
+  my ($self, $file, $always_new, @args) = @_;
+  my $fh;
+  unshift(@args, '-o', $file);
+  if(! -f $file || $always_new) {
+    system($ENV{'PDB_CODE_ROOT'} . '/tools/gen_tbdata.pl', @args);
+  }
+  eval {
+    $self->{dbh}->{AutoCommit} = 0;
+    open($fh, '<', $file);
+    while(<$fh>) {
+      chomp;
+      next unless($_);
+      $self->{dbh}->do($_);
+    }
+    $self->{dbh}->commit;
+    $self->{dbh}->{AutoCommit} = 0;
+  };
+  if($@) {
+    $_ = "$@";
+    $self->{dbh}->rollback;
+    croak($_);
+  }
 }
 
 sub use {

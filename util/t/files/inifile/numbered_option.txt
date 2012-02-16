@@ -1,0 +1,6 @@
+[section]
+key[0]  = value0
+key [1] = value1
+key[2]  = value2
+key[ 9 ]  = value3
+key[] = value4

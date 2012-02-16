@@ -15,8 +15,7 @@ open($fh, "+>", undef);
 $rb->write_message( $fh, ["test1", "test2"] );
 seek($fh, 0, SEEK_SET);
 sysread($fh, $content, 10240);
-is($content, 'BAcIMTIzNDU2NzgECAgIAgEAAAAEAgIAAAAKBXRlc3QxCgV0ZXN0Mg==
-30d575944d8f58807501fcd6604d53f81352fb52
+is($content, 'BQcCAAAAAQQCAAAAAgoFdGVzdDEKBXRlc3Qy
 ok
 ', 'test array serialized');
 

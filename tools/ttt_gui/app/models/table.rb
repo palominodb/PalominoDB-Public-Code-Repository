@@ -51,6 +51,10 @@ class Table
     table_type == :base ? @stats[:definition].created_at : @stats[:view].run_time
   end
 
+  def run_time
+    table_type == :base ? @stats[:definition].run_time : @stats[:view].run_time
+  end
+
   def previous_version
     table_type == :base ? @stats[:definition].previous_version : @stats[:view].previous_version
   end

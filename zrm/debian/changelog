@@ -1,6 +1,26 @@
-zrm-innobackupex (0.75-1) unstable; urgency=low
+zrm-innobackupex (0.81.3-1) unstable; urgency=low
 
-  * Initial release for debian
+  * Bugfix release - allow more through the protocol taint checking.
 
- -- Brian Smith <brian@palominodb.com>  Thu, 15 Apr 2010 01:31:17 -0700
+ -- Brian Smith <eng@palominodb.com>  Fri, 04 Mar 2011 10:00:00 -0000
 
+zrm-innobackupex (0.81.2-1) unstable; urgency=low
+
+  * Bugfix release - regession with older uuencoding.
+
+ -- Brian Smith <eng@palominodb.com>  Fri, 04 Mar 2011 10:00:00 -0000
+
+zrm-innobackupex (0.81.1-1) unstable; urgency=low
+
+  * New stream encodings.
+  * Centralized configuration.
+  * Improve handling of option combinations.
+  * New options.
+
+ -- Brian Smith <eng@palominodb.com>  Wed, 16 Feb 2011 17:06:28 -0800
+
+zrm-innobackupex (0.80.2-1) unstable; urgency=low
+
+  * Initial release
+
+ -- Brian Smith <eng@palominodb.com>  Wed, 16 Feb 2011 17:06:28 -0800

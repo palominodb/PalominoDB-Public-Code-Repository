@@ -1,0 +1,80 @@
+= Xtrabackup Agent Protocol =
+
+This document describes the protocol spoken between the client and the agent
+to negotiate a backup as of protocol version 0.76.1. It also details the
+overall enduring format of the protocol.
+
+== General Format ==
+
+Each request and response between the client and agent are organized as
+a sequence of lines prefixed by the number of lines, and terminated by a
+blank line. A non-formal "schema" is shown below. Client requests always
+contain the version of the request, and agent responses do not contain
+the version. In the codebase, requests and responses are called KV blocks.
+
+  [VERSION]\n
+  <N>\n
+  <key>=<value>\n{N}
+  \n
+
+Where '\n' corresponds to exactly an ASCII Linefeed character.
+'<N>' is the number of lines, and then is followed by a series of key value
+pairs separated by the character '=', terminated by '\n'. The number of pairs
+must exactly match the stated number of pairs to follow. Example request:
+
+  0.76.1\n
+  6\n
+  action=copy from\n
+  user=backupdb\n
+  password=s3cUre\n
+  backup-level=0\n
+  replication=1\n
+  file=/srv/backups/BackupSet/20110304005033/ZRM_LINKS/.\n
+  \n
+
+The above is a complete and functional request for a full backup.
+
+The initial agent response is in the form:
+
+  READY\n
+
+It is then followed by one or more KV responses after which an encoded
+tar stream will be sent over the wire.
+
+=== Versioning ===
+
+The protocol is versioned so that updates to it can be made in backwards
+compatible ways, whenever possible. The scheme is roughly modeled on semantic
+versioning <http://semver.org/>. The version number is split into three
+revisions separated by periods (.), so, 0.76.1 is valid, but, 76.1 is not.
+The revisions are named (from left to right), Major, Minor, and Micro.
+The rules for changing the revisions are as follows:
+
+ * Revisions are stricly monotonically increasing.
+ * Major revision changes are always incompatible.
+ * Minor revision changes are only compatible if the agent
+   is newer than the client.
+ * Micro revision chnages MUST never break backwards compatibility,
+   and SHOULD be incremented for bugfixes, and compatible protocol enhancements.
+
+=== History ===
+
+Note that the interactions between client and agent are overly complex because
+there was originally a requirement to maintain backwards compatibility with
+much older client versions (then called socket-copy). That requirement was
+removed when it was determined that implementing all other functionality would
+conflict with that requirement, and the long term goals of making the codebase
+testable. Unfortunately, the design was "finalized" and placed into production
+before the protocol could be fixed - leading to the current situation.
+
+Fortunately, the versioning scheme detailed above provides a way to fix the
+protocol over time.
+
+=== Common keys ===
+
+Various parts of the code make use of some common keys, they are:
+
+status:: The status of an informational message.
+msg:: An informational message to be displayed by the client.
+sid:: Session ID (or, cookie). Used to relate independent requests.
+

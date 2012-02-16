@@ -1,0 +1,14 @@
+service xtrabackup-agent
+{
+        type            = UNLISTED
+        disable         = no
+        socket_type     = stream
+        protocol        = tcp
+        wait            = no
+        user            = mysql
+        group           = mysql
+        instances       = 2
+        server          = /usr/share/mysql-zrm/plugins/xtrabackup-agent.pl
+        port            = 25300
+}
+

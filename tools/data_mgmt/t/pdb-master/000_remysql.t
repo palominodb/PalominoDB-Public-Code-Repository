@@ -3,5 +3,5 @@ use warnings FATAL => 'all';
 use Test::More tests => 4;
 
 BEGIN {
-  require_ok('src/pdb-master2.in.pl');
+  require_ok('src/pdb-master');
 }

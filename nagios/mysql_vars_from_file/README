@@ -1,0 +1,21 @@
+Nagios plugin to compare MySQL status/system variables in a file to a threshold
+
+Usage: $0 -l <label> -c <comparison and threshold> -e <expr> -f </path/to/variables-files> [options]
+
+Options:
+  -l, --label=STRING
+     label of this check, ie "% max connections"
+  -c, --comparison=STRING
+    comparison and threshold (Perl syntax), e.g. ">80"
+  -e, --expression=STRING
+    the calculation, a Perl expression with MySQL variable names
+    e.g. "Max_used_connections/max_connections * 100"
+  -f, --input-file=STRING
+    full path to the variables file 
+  -t, --timeout=INTEGER
+    Number of seconds before plugin times out (default: 15)
+  -v, --verbose
+    Print extra debugging information
+  -V, --version
+     Show version information
+

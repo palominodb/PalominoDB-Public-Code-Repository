@@ -2,12 +2,15 @@ use strict;
 use warnings FATAL => 'all';
 use Test::More tests => 20;
 use TestDB;
+use DSN;
 use TestUtil;
 
 BEGIN {
   use_ok('MysqlSlave');
   my $tdb = TestDB->new();
   # Ensure that read_only is the way we expect
+  eval { $tdb->dbh()->do('RESET MASTER'); };
+  eval { $tdb->dbh()->do('RESET SLAVE'); };
   eval { $tdb->dbh()->do('STOP SLAVE'); };
   $tdb->dbh()->do('SET GLOBAL read_only = 0');
   $tdb->dbh()->do("CHANGE MASTER TO MASTER_HOST='fakehost', MASTER_USER='msandbox', MASTER_PASSWORD='msandbox', MASTER_LOG_FILE='fakehost-bin.000001', MASTER_LOG_POS=4");
@@ -86,6 +89,11 @@ $slave->change_master_to(
   master_log_file => 'fakehost-bin.000001',
   master_log_pos  => 4
 );
+
+eval {
+  $slave->change_master_to($tdb->{dsn}, master_log_file => 'mysql-bin.000001', master_log_pos => 4);
+};
+is($@, '', 'change_master_to with dsn');
 
 eval {
   $slave->change_master_to(

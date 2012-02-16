@@ -3,7 +3,7 @@ use warnings FATAL => 'all';
 use Test::More tests => 7;
 
 BEGIN {
-  require_ok('src/pdb-master.in.pl');
+  require_ok('src/pdb-master');
 }
 
 is_deeply(scalar pdb_master::parse_hostref('user1@host1:/path1'),
@@ -15,6 +15,6 @@ is_deeply(scalar pdb_master::parse_hostref('user1@host1'),
 is_deeply(scalar pdb_master::parse_hostref('host1'),
   [undef, 'host1', undef], 'just host');
 
-  
+
 isnt(pdb_master::parse_hostref(''), '', 'empty ref');
 ok(not pdb_master::parse_hostref('user@:/path1'), 'missing host');

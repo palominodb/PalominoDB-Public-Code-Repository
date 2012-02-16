@@ -1,20 +1,20 @@
 # Copyright (c) 2009-2010, PalominoDB, Inc.
 # All rights reserved.
-# 
+#
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
-# 
+#
 #   * Redistributions of source code must retain the above copyright notice,
 #     this list of conditions and the following disclaimer.
-# 
+#
 #   * Redistributions in binary form must reproduce the above copyright notice,
 #     this list of conditions and the following disclaimer in the documentation
 #     and/or other materials provided with the distribution.
-# 
+#
 #   * Neither the name of PalominoDB, Inc. nor the names of its contributors
 #     may be used to endorse or promote products derived from this software
 #     without specific prior written permission.
-# 
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -34,14 +34,16 @@ use English qw(-no_match_vars);
 use Data::Dumper;
 
 use ProcessLog;
+use DSN;
+use DBI;
 
 sub new {
-  my ( $class, $pl, $dbh, $schema, $name ) = @_;
+  my ( $class, $pl, $dsn ) = @_;
   my $self = ();
-  $self->{dbh} = $dbh;
+  $self->{dbh} = $dsn->get_dbh(1);
   $self->{pl} = $pl;
-  $self->{schema} = $schema;
-  $self->{name} = $name;
+  $self->{schema} = $dsn->get('D');
+  $self->{name} = $dsn->get('t');
   bless $self, $class;
 
   $self->_get_partitions();
@@ -185,9 +187,6 @@ sub has_maxvalue_data {
       my (undef, $fn, $cfn) = $self->expr_datelike;
       if($fn) {
         $descr = "$cfn($descr)";
-      }
-      else {
-        die("No support for maxvalue calculation unless using to_days or unix_timestamp for dates");
       }
     }
   }

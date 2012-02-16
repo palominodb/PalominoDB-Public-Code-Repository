@@ -1,4 +1,8 @@
-So uh, this is a rather informal changelog.
+0.80.0:
+ - New versioning scheme.
+ - Essentially complete rewrite.
+ - Re-added GPL license.
+
 0.75:
  - Start to modularize code, use our ProcessLog framework
  - new config options: mysql_socket, perl_dbi_path, mysql_install_path,

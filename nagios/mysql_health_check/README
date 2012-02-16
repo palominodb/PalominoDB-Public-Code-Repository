@@ -1,0 +1,59 @@
+
+README to mysql_health_check.pl
+-------------------------------------------
+Requirements:
+
+A recent version of perl5.
+
+CPAN Modules: 
+Nagios::Plugin - if you're lucky, rpmforge repo is configured in yum and you 
+can issue 'yum install perl-Nagios-Plugin' to install everything you need.
+
+(optional) Writable directory for meta data cache from mysql.  Defaults to 
+'/tmp/pdb_nagios_cache'.  Can also run in non-caching mode, see below or 
+--help for more info. 
+
+To install:
+
+* copy plugin to nagios plugin directory.
+* chmod 755.  
+* Make sure cache directory is writable by nagios user. 
+
+Usage examples:
+
+To check for long running queries, warn at 40 seconds, critical at 60 seconds:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode=long-query \
+--warning=900 --critical=1800
+
+To checked for locked queries:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode=locked-query
+
+To check mysql status and variables; for example max connections, alert at > 80% used:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode=varcomp \
+--expression="Max_used_connections/max_connections * 100" --comparison=">80" \
+--shortname=max_connections
+
+In varcomp, you can use any variable from 'SHOW GLOBAL STATUS' and 
+'SHOW GLOBAL VARIABLES'.
+
+To compare status and variables from previous run's cache file, you can do something like:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode lastrun-varcomp \
+ --comparison ">80" \
+--expression "(current{Queries} - lastrun{Queries}) / (current{Uptime} - lastrun{Uptime})"
+
+current{keyword} and lastrun{keyword} will be replaced with the appropriate value from the cache.  
+
+WARNING: There isn't good sanity checking here yet, so please get the keywords right or else you'll see warnings.
+
+General Notes:
+
+--warning and --critical Thresholds are very flexible, please see: 
+http://nagiosplug.sourceforge.net/developer-guidelines.html#THRESHOLDFORMAT
+for detailed info on how to use them.  
+Please note, --mode=varcomp does not use --warning or --critical thresholds yet.
+
+Use --help to a full list of supported arguments.

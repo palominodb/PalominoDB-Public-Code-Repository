@@ -1,3 +1,5 @@
+import "class/*"
+import "define/*"
 import "nodes/*"
 
 # When DNS is available this should be changed to the DNS name.

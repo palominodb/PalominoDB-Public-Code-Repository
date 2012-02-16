@@ -1,0 +1,51 @@
+[
+ # header
+ {
+  'event_lengths' => [
+                      0,
+                      0,
+                      13,
+                      0,
+                      8,
+                      0,
+                      18,
+                      0,
+                      4,
+                      4,
+                      4,
+                      4,
+                      18,
+                      0,
+                      0,
+                      83,
+                      0,
+                      4,
+                      26,
+                      8,
+                      0,
+                      0,
+                      0,
+                      8,
+                      8,
+                      8,
+                      2
+                     ],
+  'len' => 102,
+  'flags' => 0,
+  'next_position' => 106,
+  'server_version' => '5.1.47-log',
+  'header_length' => 19,
+  'server_id' => 1,
+  'type' => 15
+ },
+ # event 0
+ {
+  'len' => 55,
+  'rotate_file' => 'mysql_sandbox5147-bin.000002',
+  'flags' => 0,
+  'next_position' => 161,
+  'server_id' => 1,
+  'rotate_pos' => 4,
+  'type' => 4
+ }
+]

@@ -5,7 +5,7 @@ use File::Path qw(rmtree);
 use Cwd 'abs_path';
 
 BEGIN {
-  require_ok('src/pdb-master.in.pl');
+  require_ok('src/pdb-master');
   mkdir('t_srcdir');
   mkdir('t_srcdir/data');
   for(qw(one two three)) {

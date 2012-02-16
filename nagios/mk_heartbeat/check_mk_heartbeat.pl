@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 use strict;
-use warnings;
-
+use warnings FATAL => 'all';
+use IPC::Open3;
 use Getopt::Long;
 
 use constant OK => 0;
@@ -47,10 +47,10 @@ sub usage {
   "  --warn-max=i           Warn maximum lag. Default: ". WARN_MAX_LAG_DEFAULT . "\n".
   "  --crit-max=i           Critial maximum lag. Default: ". CRIT_MAX_LAG_DEFAULT . "\n".
   "  --db-host=s            (Mandatory) Database server to connect to. No Default.\n".
-  "  --db-user=s            Database user to use. Default: ". DB_USER_DEFAULT ."\n".
-  "  --db-pass=s            Database pass to use. Default: ". DB_PASS_DEFAULT ."\n".
-  "  --db-schema=s          Database schema to use. Default: ". DB_SCHEMA_DEFAULT ."\n".
-  "  --db-table=s           Database table to use. Default: ". DB_TABLE_DEFAULT ."\n".
+  "  --db-user=s            (Mandatory) Database user to use. Default: ". DB_USER_DEFAULT ."\n".
+  "  --db-pass=s            (Mandatory) Database pass to use. Default: ". DB_PASS_DEFAULT ."\n".
+  "  --db-schema=s          (Mandatory) Database schema to use. Default: ". DB_SCHEMA_DEFAULT ."\n".
+  "  --db-table=s           (Mandatory) Database table to use. Default: ". DB_TABLE_DEFAULT ."\n".
   "  --mk-heartbeat-path=s  Path to mk-heartbeat. Default: ". MK_HEARTBEAT_DEFAULT . "\n";
 }
 
@@ -68,17 +68,42 @@ GetOptions(
   'mk-heartbeat-path=s' => \$mk_heartbeat_path
 );
 
-unless($db_host) {
+unless($db_host or $db_pass or $db_user or $db_schema or $db_table) {
   usage();
   exit(UNKNOWN);
 }
 
 my $rint = undef;
-my $rstr = qx/$mk_heartbeat_path --host "$db_host" --user "$db_user" --password "$db_pass" --database "$db_schema" --table "$db_table" --check 2>&1/;
-chomp($rstr);
+my $rstr = undef;
 
-if($rstr =~ /(-?\d+)s?/) {
-  $rint = $1;
+eval {
+  my ($in_fh, $out_fh);
+  my $pid = open3($in_fh, $out_fh, undef,
+    'perl', $mk_heartbeat_path,
+    '--host', $db_host,
+    '--user', $db_user,
+    '--password', $db_pass,
+    '--database', $db_schema,
+    '--table', $db_table,
+    '--check'
+  );
+  close($in_fh);
+  die("Unable to spawn $mk_heartbeat_path") unless($pid);
+
+  chomp($rstr = <$out_fh>);
+  close($out_fh);
+  waitpid($pid, 0);
+
+  if($rstr =~ /^(-?\d+)s?$/) {
+    $rint = $1;
+  }
+  else {
+    die($rstr ."\n");
+  }
+};
+if($@) {
+  print("UNKNOWN: Caught exception: $@");
+  exit(UNKNOWN);
 }
 
 if(not defined($rint)) {

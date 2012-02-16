@@ -1,0 +1,14 @@
+---
+servers:
+  s1:
+    version: ~
+    active: y
+    writefor: c1
+    readfor: c1
+clusters:
+  c1:
+    active: y
+    servers: s1
+    schemas: ~
+    primary: s1
+    failover: s1
