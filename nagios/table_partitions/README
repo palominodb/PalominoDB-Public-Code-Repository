@@ -1,1 +1,5 @@
 table_partitions - Ensure partitions exist for the next N months/weeks/days.
+
+Last did a check of this check on 2012-06-22.  You may need to add the perl modules DateTime and DateTime::Format::Strptime if they are not installed already.  Also, you will need to have the util directory from this repo, and have that accessible to the perl script, for example using -I <path> if it's not already in your perl include path.
+
+
