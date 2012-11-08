@@ -1,0 +1,11 @@
+Script Name: opsview_rest_api_downtime.sh
+Purpose: CLI interface for simply putting opsview hosts into downtime. Suitable for shell scripts, cron jobs, etc.
+
+Directions:
+As a minimum, you'll need to change the OPSVIEW_HOSTNAME to reflect your opsview installation. You may need to change the USERNAME or CURL if your system is different.  You may also change the default 'hours_of_downtime' to reflect how you'll use the script.
+
+Then, call the script with
+
+opsview_rest_api_downtime.sh -p <opsview apiuser password> -h <host> -c (create|delete) [-t <hours_of_downtime>]
+
+Where host is the opsview name for the host you want to put into downtime.  If the call fails, you should get an error message.
