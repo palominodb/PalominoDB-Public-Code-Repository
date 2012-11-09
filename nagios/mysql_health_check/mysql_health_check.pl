@@ -115,8 +115,21 @@ switch ($np->opts->mode)
       $np->add_message(OK, $msg);
     }
   }
-  else 
-  { 
+  case "sec-behind-master"
+  {
+    my $seconds_behind_master = $data->{current}->{slave_status}[0]{'Seconds_Behind_Master'};
+    my $code = $np->check_threshold(check => $seconds_behind_master, warning => $np->opts->warning, critical => $np->opts->critical);
+    if($code)
+      {
+        my $msg = sprintf("Locked query detected: %s", $seconds_behind_master);
+        $np->add_message($code, $msg);
+       } else {
+          my $msg = sprintf("Seconds behind master: %s | sec_behind_master=%s;%s;%s", $seconds_behind_master,$seconds_behind_master,$np->opts->warning,$np->opts->critical);
+          $np->add_message('OK', $msg);
+       }
+  }
+  else
+  {
     $np->nagios_die("Unknown run mode.");
   }
 }
@@ -290,6 +303,8 @@ sub fetch_server_meta_data
       $data->{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
       pdebug("\tSHOW GLOBAL STATUS...\n");
       $data->{varstatus} = hash_merge($data->{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
+      pdebug("\tSHOW SLAVE STATUS...\n");
+      $data->{slave_status} = dbi_exec_for_loh($dbh, q|SHOW SLAVE STATUS|);
     }
   }
   elsif($args->{'type'} eq 'lastrun')
@@ -322,14 +337,14 @@ sub get_from_cache
       my $has_lock = lock_cache();
       if($cf_age >= $np->opts->max_cache_age && $has_lock)
       {
-	# we can lock, so refresh
-	pdebug("Refreshing cache from server...\n");
-	$data = refresh_cache();
+        # we can lock, so refresh
+        pdebug("Refreshing cache from server...\n");
+        $data = refresh_cache();
       }
       else
       {
-	pdebug("Using cache file ($cache_info->{'file'})...\n");
-	$data = retrieve($cache_info->{'file'});
+        pdebug("Using cache file ($cache_info->{'file'})...\n");
+        $data = retrieve($cache_info->{'file'});
       }
     }
   }
@@ -426,9 +441,9 @@ sub pdebug
 sub init_plugin
 {
   my $np = Nagios::Plugin->new(
-	usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|lastrun-varcomp|locked-query|long-query>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison <math expression>] [--expression <math expression>] ",
-	version => $VERSION,
-	license => "Copyright (c) 2009-2010, PalominoDB, Inc.",
+        usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|lastrun-varcomp|locked-query|long-query|sec-behind-master>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison <math expression>] [--expression <math expression>] ",
+        version => $VERSION,
+        license => "Copyright (c) 2009-2010, PalominoDB, Inc.",
 );
 
   $np->add_arg(spec => 'hostname|H=s', required => 1, help => "-H, --hostname\n\tMySQL server hostname");
@@ -444,6 +459,7 @@ sub init_plugin
     qq|\t\tvarcomp\t\tVariable comparison (--comparison and --expression)\n| . 
     qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison and --expression)\n| . 
     qq|\t\tlocked-query\tCheck for queries in the 'Locked' state\n| .
+    qq|\t\tsec-behind-master\tCheck for value of seconds behind master from show slave status\n| .
     qq|\t\tlong-query\tCheck for long running queries\n|
   );
   $np->add_arg(spec => 'cache_dir=s', required => 0, default => "/tmp/pdb_nagios_cache", help => "-d, --database\n\tMySQL database");
@@ -524,7 +540,7 @@ sub prepare_and_exec
   $flags = shift if ($_[0] =~ /^\d+$/);
   my ($query, @binds) = @_;
   my $sth = (($flags & DBI_CACHE_STMT()) ? $dbh->prepare_cached($query) : $dbh->prepare($query)) 
-	|| croak "error preparing query: ".$dbh->errstr." ($query)";
+        || croak "error preparing query: ".$dbh->errstr." ($query)";
   $sth->execute(@binds) || croak "error executing query: ".$dbh->errstr." ($query)";
   return $sth;
 }
