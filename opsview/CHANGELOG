@@ -1,3 +1,12 @@
+commit 5cf7f526c160e458658cd9fc9a8aa5bb50faf343
+Author: David Edwards <davidwords@gmail.com>
+Date:   Mon Dec 3 13:51:15 2012 -0500
+
+    - added CHANGELOG (output of `git log`)
+    - added COPYING per
+      https://www.gnu.org/licenses/old-licenses/gpl-2.0.html#SEC4
+    - added GPLv2 header to opsview_rest_api_downtime.sh
+
 commit 95d2f950009ece4338e0536c80e26e214e041cff
 Author: Moss Gross <moss@palominodb.com>
 Date:   Thu Nov 8 19:09:59 2012 -0800
