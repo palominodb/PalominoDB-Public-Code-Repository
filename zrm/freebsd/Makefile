@@ -1,6 +1,6 @@
 # New ports collection makefile for:   zrm-innobackupex
 # Date created:        08 Dec 2009
-# Whom:                brian
+# Whom:                
 #
 # $FreeBSD$
 #
@@ -11,7 +11,7 @@ DISTFILES =     ${PORTNAME}-${PORTVERSION}.tgz
 CATEGORIES =    sysutils
 MASTER_SITES =  http://bastion.palominodb.com/src/
 
-MAINTAINER =    brian@palominodb.com
+MAINTAINER =    eng@palominodb.com
 COMMENT =       InnobackupEX support for ZRM
 
 PREFIX   = /usr

@@ -1,3 +1,6 @@
+Note: This file is kept for archival purposes, and is not up-to-date.  For a
+current record of changes, please use `git log`.
+
 0.80.0:
  - New versioning scheme.
  - Essentially complete rewrite.

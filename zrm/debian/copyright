@@ -1,6 +1,6 @@
 This work was packaged for Debian by:
 
-    Brian Smith <eng@palominodb.com> on Wed, 16 Feb 2011 17:06:28 -0800
+    Moss Gross <eng@palominodb.com> on Wed, 16 Feb 2011 17:06:28 -0800
 
 It was downloaded from:
 
@@ -8,29 +8,27 @@ It was downloaded from:
 
 Copyright:
 
-    Copyright (C) 2010 PalominoDB, Inc.
+    Copyright (C) 2010-2012 PalominoDB, Inc.
 
 License:
 
-    This package is free software; you can redistribute it and/or modify
+    This program is free software; you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation; either version 2 of the License, or
     (at your option) any later version.
 
-    This package is distributed in the hope that it will be useful,
+    This program is distributed in the hope that it will be useful,
     but WITHOUT ANY WARRANTY; without even the implied warranty of
     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
     GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program. If not, see <http://www.gnu.org/licenses/>
-
-On Debian systems, the complete text of the GNU General
-Public License version 2 can be found in "/usr/share/common-licenses/GPL-2".
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc.,
+    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 The Debian packaging is:
 
-    Copyright (C) 2011 Brian Smith <eng@palominodb.com>
+    Copyright (C) 2011,2012 Moss Gross <eng@palominodb.com>
 
 you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

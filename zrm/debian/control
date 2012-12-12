@@ -1,7 +1,7 @@
 Source: zrm-innobackupex
 Section: net
 Priority: optional
-Maintainer: Brian Smith <eng@palominodb.com>
+Maintainer: Moss Gross <eng@palominodb.com>
 Build-Depends: debhelper (>= 7.0.50~)
 Build-Depends-Indep: perl (>= 5.8.0)
 Standards-Version: 3.8.4
