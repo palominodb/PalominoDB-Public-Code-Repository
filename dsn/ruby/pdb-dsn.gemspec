@@ -1,9 +1,9 @@
 spec = Gem::Specification.new do |s|
   s.name = "pdb-dsn"
   s.version = "0.2.6"
-  s.author = "Brian Smith"
-  s.email = "dba@palominodb.com"
-  s.homepage = "http://blog.palominodb.com/blog/"
+  s.author = "PalominoDB Engineering"
+  s.email = "eng@palominodb.com"
+  s.homepage = "http://palominodb.com"
   s.platform = Gem::Platform::RUBY
   s.summary = "API for PalominoDB DSN"
   s.description =<<E_DESC
