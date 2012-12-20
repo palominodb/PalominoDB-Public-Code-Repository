@@ -1,17 +1,23 @@
 #!/usr/bin/env perl
-# This program is copyright (c) 2012 PalominoDB. 
+# table_partitions: Ensure partitions exist for N days/weeks/months.
+# Copyright (C) 2012 PalominoDB, Inc.
 # 
-# THIS PROGRAM IS PROVIDED "AS IS" AND WITHOUT ANY EXPRESS OR IMPLIED 
-# WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF 
-# MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE. 
+# You may contact the maintainers at eng@palominodb.com.
 # 
-# This program is free software; you can redistribute it and/or modify it under 
-# the terms of the GNU General Public License as published by the Free Software 
-# Foundation, version 2. 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
 # 
-# You should have received a copy of the GNU General Public License along with 
-# this program; if not, write to the Free Software Foundation, Inc., 59 Temple 
-# Place, Suite 330, Boston, MA 02111-1307 USA.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+
 use strict;
 use warnings;
 
