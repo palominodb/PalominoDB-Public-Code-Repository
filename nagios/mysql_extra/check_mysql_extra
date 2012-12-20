@@ -1,5 +1,5 @@
 #! /usr/bin/perl
-# <one line to give the program's name and a brief idea of what it does.>
+# check_mysql_extra - MySQL Extended Monitoring check plugin for Nagios.
 # Copyright (C) 2009-2012 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
@@ -43,7 +43,7 @@ my %o;
 sub print_help(;$) {
   my $err = ($_[0] ? "Error: $_[0]" : "");
   print <<EOF;
-Copyright (c) 2009-2010, PalominoDB, Inc.
+Copyright (c) 2009-2012, PalominoDB, Inc.
 
 MySQL Extended Monitoring check plugin for Nagios
 

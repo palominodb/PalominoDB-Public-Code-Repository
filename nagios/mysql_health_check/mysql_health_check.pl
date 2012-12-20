@@ -1,8 +1,6 @@
 #!/usr/bin/perl -w
-### work around for ePn until I can refactor completely.
-# nagios: -epn
-###
-# <one line to give the program's name and a brief idea of what it does.>
+# mysql_health_check.pl - A Nagios plugin that performs various health checks
+# on MySQL databases.
 # Copyright (c) 2009-2012, PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
@@ -21,6 +19,9 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+### work around for ePn until I can refactor completely.
+# nagios: -epn
+###
 $| = 1;
 our $VERSION = "1.2.0";
 

@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# <one line to give the program's name and a brief idea of what it does.>
+# dump_cache.pl
 # Copyright (C) 2012 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

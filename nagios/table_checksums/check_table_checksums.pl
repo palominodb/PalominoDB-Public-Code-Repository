@@ -1,5 +1,6 @@
 #!/usr/bin/env perl
-# <one line to give the program's name and a brief idea of what it does.>
+# check_table_checksums.pl - Check checksums on MySQL database tables
+# within a time interval, and that the results are the same and not empty.
 # Copyright (C) 2012 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# <one line to give the program's name and a brief idea of what it does.>
+# check_mysql_extra monitors replication delay on a slave.
 # Copyright (C) 2012  PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
