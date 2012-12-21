@@ -1,9 +1,10 @@
 #!/bin/bash
-#
-# opsview_rest_api_downtime.sh
-# create or delete downtime for a single host using opsview curl rest api
+# opsview_rest_api_downtime.sh - a commmand-line interface for simply putting
+# opsview hosts into downtime. Suitable for shell scripts, cron jobs, etc.
 #
 # Copyright 2012 PalominoDB, Inc.
+#
+# You may contact the maintainers at eng@palominodb.com.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,8 +16,9 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 # 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 CURL=/usr/bin/curl
 OPSVIEW_HOSTNAME="opsview.example.com" # HOSTNAME for opsview admin interface
