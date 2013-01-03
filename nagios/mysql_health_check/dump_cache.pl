@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
-# dump_cache.pl
-# Copyright (C) 2012 PalominoDB, Inc.
+# dump_cache.pl - outputs the contents of the cache named as the first argument.
+# Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
 # 
