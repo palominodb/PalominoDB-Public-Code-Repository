@@ -25,7 +25,7 @@ node "ops.example.com" {
     palomino::sql_profiler::profile { $name:
       cfg_file  => "${palomino::cfg_dir}/sql_profiler/${name}.cfg",
       log_path =>  $log_path,
-      email_to => 'eng-db@palominodb.com',
+      email_to => 'eng@palominodb.com',
       ttt_name => $ttt_name ? {
         '' => $name,
         default => $ttt_name,
