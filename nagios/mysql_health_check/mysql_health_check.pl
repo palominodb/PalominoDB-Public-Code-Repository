@@ -79,34 +79,47 @@ switch ($np->opts->mode)
       } 
     }
   }
-  case "varcomp" 
+  case /varcomp/
   { 
-    my ($comp_res, $expr_res) = mode_varcomp($data);
-    if($comp_res)
-    {
-      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      $np->add_message(CRITICAL, $msg);
+    my $comp_res_code;
+    my $expr_res;
+
+    if ($np->opts->mode eq 'lastrun-varcomp') {
+      ($comp_res_code, $expr_res) = mode_lastrun_varcomp($data);
+    } else {
+      ($comp_res_code, $expr_res) = mode_varcomp($data);
     }
-    else
-    {
-      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      $np->add_message(OK, $msg);
+    my $description;
+    my $expression;
+    my $comparison;
+
+    if ($comp_res_code == WARNING) {
+      $description = "warning level";
+      $comparison = $np->opts->comparison_warning;
+    } elsif ($comp_res_code == CRITICAL) {
+      $description = "critical level";
+      $comparison = $np->opts->comparison_critical;
+    } else {
+      $comparison = $np->opts->comparison_warning;
+      $description = "passed";
     }
+    my $msg = sprintf("Comparison check %s: (%s) %s = %s", $description, $np->opts->expression, $comparison, $expr_res);
+    $np->add_message($comp_res_code, $msg);
   }
-  case "lastrun-varcomp"
-  {
-    my ($comp_res, $expr_res) = mode_lastrun_varcomp($data);
-    if($comp_res)
-    {
-      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      $np->add_message(CRITICAL, $msg);
-    }
-    else
-    {
-      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
-      $np->add_message(OK, $msg);
-    }
-  }
+#  case "lastrun-varcomp"
+#  {
+#    my ($comp_res, $expr_res) = mode_lastrun_varcomp($data);
+#    if($comp_res)
+#    {
+#      my $msg = sprintf("Comparison check failed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+#      $np->add_message(CRITICAL, $msg);
+#    }
+#    else
+#    {
+#      my $msg = sprintf("Comparison check passed: (%s) %s = %s", $np->opts->expression, $np->opts->comparison, $expr_res);
+#      $np->add_message(OK, $msg);
+#    }
+#  }
   case "sec-behind-master"
   {
     my $seconds_behind_master = $data->{current}->{slave_status}[0]{'Seconds_Behind_Master'};
@@ -146,9 +159,11 @@ sub mode_varcomp
   my $parsed_expr = '';
   my $expr_res = '';
   my $comp_res = '';
+  my $comp_res_code;
 
   pdebug("expr (" . $np->opts->expression . ")\n"); 
-  pdebug("comp (" . $np->opts->comparison . ")\n"); 
+  pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n"); 
+  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n"); 
 
   my $do_math = 0;
   foreach my $word (split(/\b/, $np->opts->expression)) 
@@ -181,12 +196,18 @@ sub mode_varcomp
   {
     $expr_res = "'$parsed_expr'";
   }
-  
-  my $comp_expr = $expr_res . $np->opts->comparison;
-  $comp_res = eval($comp_expr);  
-
-  pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
-  return $comp_res, $expr_res; 
+  if (eval($expr_res . $np->opts->comparison_critical)) {
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") = TRUE\n");
+    $comp_res_code = CRITICAL;
+  } elsif (eval($expr_res . $np->opts->comparison_warning)) { 
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_warning.") = TRUE\n");
+    $comp_res_code = WARNING;
+  } else {
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") == (".$expr_res . $np->opts->comparison_warning.") == FALSE\n");
+    $comp_res_code = OK;
+  }
+    
+  return $comp_res_code, $expr_res; 
 }
 
 #####
@@ -198,9 +219,11 @@ sub mode_lastrun_varcomp
   my $parsed_expr = '';
   my $expr_res = '';
   my $comp_res = '';
+  my $comp_res_code;
 
   pdebug("expr (" . $np->opts->expression . ")\n"); 
-  pdebug("comp (" . $np->opts->comparison . ")\n"); 
+  pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n"); 
+  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n"); 
 
   unless(exists($meta_data->{lastrun}->{varstatus}))
   {
@@ -222,11 +245,17 @@ sub mode_lastrun_varcomp
   #if it's a float, round to two decimal places.
   $expr_res = nearest(.01, $expr_res) if($expr_res =~ /\d+\.?\d*/);
  
-  my $comp_expr = $expr_res . $np->opts->comparison;
-  $comp_res = eval($comp_expr);
-  
-  pdebug("Parsed ($parsed_expr) = ($expr_res) | ($comp_expr) = ($comp_res)\n");
-  return $comp_res, $expr_res; 
+  if (eval($expr_res . $np->opts->comparison_critical)) {
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") = TRUE\n");
+    $comp_res_code = CRITICAL;
+  } elsif (eval($expr_res . $np->opts->comparison_warning)) { 
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_warning.") = TRUE\n");
+    $comp_res_code = WARNING;
+  } else {
+    pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") == (".$expr_res . $np->opts->comparison_warning.") == FALSE\n");
+  }
+    
+  return $comp_res_code, $expr_res; 
 }
 
 
@@ -433,7 +462,7 @@ sub pdebug
 sub init_plugin
 {
   my $np = Nagios::Plugin->new(
-        usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|lastrun-varcomp|locked-query|long-query|sec-behind-master>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison <math expression>] [--expression <math expression>] ",
+        usage => "Usage: %s [-v|-verbose] [-H|--hostname <host>] [-P|--port <port>] [-u|--user <user>] [-p|--password <passwd>] [-d|--database <database>] [-w|--warning <threshold>] [-c|--critical <threshold>] [--shortname <shortname>] [-m|--mode <varcomp|lastrun-varcomp|locked-query|long-query|sec-behind-master>] [--cache_dir <directory>] [--no_cache] [--max_cache_age <seconds>] [--comparison_warning <math expression>] [--comparison_critical <math expression>] [--expression <math expression>] ",
         version => $VERSION,
         license => "Copyright (c) 2009-2010, PalominoDB, Inc.",
 );
@@ -448,8 +477,8 @@ sub init_plugin
   $np->add_arg(spec => 'shortname=s', required => 0, default => '', help => qq|--shortname\n\tName/Label to give this check i.e "max_connections"|);
   $np->add_arg(spec => 'mode|m=s', required => 1, help => 
     qq|-m, --mode\n\tRun mode\n| . 
-    qq|\t\tvarcomp\t\tVariable comparison (--comparison and --expression)\n| . 
-    qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison and --expression)\n| . 
+    qq|\t\tvarcomp\t\tVariable comparison (--comparison_warning, --comparison_critical, and --expression)\n| . 
+    qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison_warning, --comparison_critical, and --expression)\n| . 
     qq|\t\tlocked-query\tCheck for queries in the 'Locked' state\n| .
     qq|\t\tsec-behind-master\tCheck for value of seconds behind master from show slave status\n| .
     qq|\t\tlong-query\tCheck for long running queries\n|
@@ -457,7 +486,8 @@ sub init_plugin
   $np->add_arg(spec => 'cache_dir=s', required => 0, default => "/tmp/pdb_nagios_cache", help => "-d, --database\n\tMySQL database");
   $np->add_arg(spec => 'no_cache', required => 0, help => "--no_cache\n\tIgnore var/processlist cache");
   $np->add_arg(spec => 'max_cache_age=i', required => 0, default => 300, help => "--max_cache_age\n\tNumber of seconds before the meta data cache is considered stale and refreshed");
-  $np->add_arg(spec => 'comparison=s', required => 0, help => qq|--comparison\n\tComparison and threshold (Perl syntax), e.g. ">80"|);
+  $np->add_arg(spec => 'comparison_warning=s', required => 0, help => qq|--comparison_warning\n\tComparison warning threshold (Perl syntax), e.g. ">80"|);
+  $np->add_arg(spec => 'comparison_critical=s', required => 0, help => qq|--comparison_critical\n\tComparison critical threshold (Perl syntax), e.g. ">100"|);
   $np->add_arg(spec => 'expression=s', required => 0, help => qq|--expression\n\tThe calculation, a Perl expression with MySQL variable names|);
 
   # process the command line args...
@@ -483,17 +513,17 @@ sub init_plugin
     case "varcomp"
     {
       $np->shortname('mysql_varcomp') unless($np->opts->shortname);
-      unless($np->opts->comparison && $np->opts->expression)
+      unless($np->opts->comparison_warning && $np->opts->comparison_critical && $np->opts->expression)
       {
-        $np->nagios_die("ERROR: run mode 'varcomp' requires --comparison and --expression params.");
+        $np->nagios_die("ERROR: run mode 'varcomp' requires --comparison_warning, --comparison_critical and --expression params.");
       }
     }    
     case "lastrun-varcomp"
     {
       $np->shortname('mysql_lastrun-varcomp') unless($np->opts->shortname);
-      unless($np->opts->comparison && $np->opts->expression)
+      unless($np->opts->comparison_warning && $np->opts->comparison_critical && $np->opts->expression)
       {
-        $np->nagios_die("ERROR: run mode 'lastrun-varcomp' requires --comparison and --expression params.");
+        $np->nagios_die("ERROR: run mode 'lastrun-varcomp' requires --comparison_warning, --comparison_critical and --expression params.");
       }
     }
   } 

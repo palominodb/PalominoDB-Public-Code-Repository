@@ -33,7 +33,8 @@ mysql_health_check.pl --hostname=localhost --user=root --mode=locked-query
 To check mysql status and variables; for example max connections, alert at > 80% used:
 
 mysql_health_check.pl --hostname=localhost --user=root --mode=varcomp \
---expression="Max_used_connections/max_connections * 100" --comparison=">80" \
+--expression="Max_used_connections/max_connections * 100" --comparison_warning=">80" \
+--comparison_critical=">100"
 --shortname=max_connections
 
 In varcomp, you can use any variable from 'SHOW GLOBAL STATUS' and 
@@ -42,7 +43,8 @@ In varcomp, you can use any variable from 'SHOW GLOBAL STATUS' and
 To compare status and variables from previous run's cache file, you can do something like:
 
 mysql_health_check.pl --hostname=localhost --user=root --mode lastrun-varcomp \
- --comparison ">80" \
+ --comparison_warning ">80" \
+ --comparison_critical ">100" \
 --expression "(current{Queries} - lastrun{Queries}) / (current{Uptime} - lastrun{Uptime})"
 
 current{keyword} and lastrun{keyword} will be replaced with the appropriate value from the cache.  
@@ -54,6 +56,5 @@ General Notes:
 --warning and --critical Thresholds are very flexible, please see: 
 http://nagiosplug.sourceforge.net/developer-guidelines.html#THRESHOLDFORMAT
 for detailed info on how to use them.  
-Please note, --mode=varcomp does not use --warning or --critical thresholds yet.
 
 Use --help to a full list of supported arguments.
