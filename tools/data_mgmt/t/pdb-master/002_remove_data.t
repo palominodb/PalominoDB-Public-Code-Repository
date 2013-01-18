@@ -1,4 +1,4 @@
-# 002_remove_data.t - crepsucule
+# 002_remove_data.t
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

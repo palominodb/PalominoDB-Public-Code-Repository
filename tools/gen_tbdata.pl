@@ -1,5 +1,5 @@
 #!/usr/bin/env perl
-# gen_tbdata.pl - crepsucule
+# gen_tbdata.pl
 # Copyright (C) 2009-2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

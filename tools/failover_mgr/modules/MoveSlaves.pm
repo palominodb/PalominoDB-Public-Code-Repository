@@ -1,4 +1,4 @@
-# MmoveSlaves.pm - crepsucule
+# MmoveSlaves.pm
 # Copyright (C) 2009-2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

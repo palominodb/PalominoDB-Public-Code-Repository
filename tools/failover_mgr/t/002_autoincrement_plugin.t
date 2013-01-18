@@ -1,4 +1,4 @@
-# 002_autoincrement_plugin.t - crepsucule
+# 002_autoincrement_plugin.t
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

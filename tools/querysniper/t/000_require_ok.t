@@ -1,4 +1,4 @@
-# 000_require_ok.t - crepsucule
+# 000_require_ok.t
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

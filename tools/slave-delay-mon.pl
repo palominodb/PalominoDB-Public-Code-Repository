@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# slave-delay-mon.pl - crepsucule 
+# slave-delay-mon.pl 
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

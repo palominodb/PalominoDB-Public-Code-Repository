@@ -1,4 +1,4 @@
-# 002_replication_lag_plugin.t - crepsucule
+# 002_replication_lag_plugin.t
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
