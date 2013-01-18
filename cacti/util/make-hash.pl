@@ -1,8 +1,6 @@
 #!/usr/bin/env perl
-#
-# make-hash.pl
-# generate and output hashes from input values
-# Copyright (c) 2012 PalominoDB, Inc.
+# make-hash.pl - generate and output hashes from input values
+# Copyright (C) 2013 PalominoDB, Inc.
 #
 # You may contact the maintainers at eng@palominodb.com.
 # 

@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 # table_partitions: Ensure partitions exist for N days/weeks/months.
-# Copyright (C) 2012 PalominoDB, Inc.
+# Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
 # 

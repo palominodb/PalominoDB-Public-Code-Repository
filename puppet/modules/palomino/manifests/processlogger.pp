@@ -1,4 +1,4 @@
-# processlogger.pp
+# processlogger.pp - a Puppet class for installing the processlogger module used in other PDB tools.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

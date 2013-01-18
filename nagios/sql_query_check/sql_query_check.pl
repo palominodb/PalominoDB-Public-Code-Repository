@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # sql_query_check: Monitor SQL queries with nagios.
-# Copyright (C) 2012 PalominoDB, Inc.
+# Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
 # 

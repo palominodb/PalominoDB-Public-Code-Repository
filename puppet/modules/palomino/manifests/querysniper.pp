@@ -1,4 +1,4 @@
-# querysniper.pp
+# querysniper.pp - a Puppet class for installing the PalominoDB query sniper tool.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

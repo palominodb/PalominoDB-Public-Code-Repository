@@ -1,4 +1,5 @@
-# ProcesslistLogger.pm
+# ProcesslistLogger.pm - a Perl module used in many PalominoDB Perl tools,
+# that takes care of logging data about the tool to a specific database.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

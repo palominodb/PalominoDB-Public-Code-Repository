@@ -3,7 +3,7 @@
 # Makes a tarball suitable for passing to 'rpmbuild -tb <tarball>'
 # And hopefully good enough to make a debian package out of, too.
 #
-# Copyright (C) 2012 PalominoDB, Inc.
+# Copyright (C) 2013 PalominoDB, Inc.
 #
 # You may contact the maintainers at eng@palominodb.com.
 #

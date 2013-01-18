@@ -1,11 +1,11 @@
 #!/usr/bin/perl -w
 # vim:fenc=utf-8:ts=4:sw=4:et
 
-# SQLProfiler v0.1 modifications to mysqlsla, based on
-# mysqlsla v1.8 DEBUG Apr 17 2008
-# Modifications are Copyright (c) 2008 Palomino DB and Robert Liesenfeld <robert at palominodb dot com>.
-# All rights reserved.  Modifications fall under the original mysqlsla
-# GPLv2 license.  Original work copyrights below.
+# SQLProfiler v0.1 modifications to mysqlsla, based on mysqlsla v1.8 DEBUG Apr 17 2008
+#
+# Modifications Copyright (c) 2008-2013 PalominoDB, Inc.
+# Modifications fall under the original mysqlsla GPLv2 license.  Original work
+# copyrights below.
 #
 # mysqlsla v1.8 DEBUG Apr 17 2008
 # http://hackmysql.com/mysqlsla

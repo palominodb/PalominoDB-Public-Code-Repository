@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
-# mysql_health_check.pl - A Nagios plugin that performs various health checks
-# on MySQL databases.
-# Copyright (c) 2009-2012, PalominoDB, Inc.
+# mysql_health_check.pl - A Nagios health check to monitory any variable from 
+# 'SHOW GLOBAL STATUS' or 'SHOW GLOBAL VARIABLES'.
+# Copyright (c) 2009-2013, PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
 # 

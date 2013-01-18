@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# dump_cache.pl - outputs the contents of the cache named as the first argument.
+# dump_cache.pl - prints out the contents of Dumper's cache.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

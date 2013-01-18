@@ -1,4 +1,4 @@
-# sql_profiler.pp
+# sql_profiler.pp - a Puppet class for installing the sql_profiler.sh tool.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

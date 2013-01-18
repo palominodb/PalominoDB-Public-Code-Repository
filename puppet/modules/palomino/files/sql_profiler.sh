@@ -1,5 +1,6 @@
 #!/bin/bash
-# sql_profiler.sh
+# sql_profiler.sh - a wrapper for mk-query-digest to profile a database, store
+# the results in a local table, and send a report email if desired.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

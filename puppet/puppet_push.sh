@@ -1,5 +1,6 @@
 #!/bin/bash
-# puppet-push.sh
+# puppet-push.sh - a script for pushing out changes in local puppet
+# configurations to git repository.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

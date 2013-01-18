@@ -1,4 +1,5 @@
-# init.pp
+# init.pp - a puppet class for installing mk-loadavg; used as a basis for other
+# tool installations.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.

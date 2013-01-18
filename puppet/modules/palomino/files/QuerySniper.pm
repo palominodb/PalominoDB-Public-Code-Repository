@@ -1,4 +1,4 @@
-# QuerySniper.pm - 
+# QuerySniper.pm - a Perl module that kills running queries that meet given criteria.
 # Copyright (C) 2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
