@@ -1,4 +1,4 @@
-# MysqlMasterInfo.pm - Fore reading and generating a MySQL master.info file.
+# MysqlMasterInfo.pm - For reading and generating a MySQL master.info file.
 # Copyright (C) 2009-2013 PalominoDB, Inc.
 # 
 # You may contact the maintainers at eng@palominodb.com.
