@@ -1,8 +1,7 @@
 #!/usr/bin/perl
-# 
-# Post-backup hook script for mysql-zrm backup which, when enabled,
-# automatically re-enables notifications for the database hosts getting backed
-# up.
+# post-backup.pdb.pl - Post-backup hook script for mysql-zrm backup which,
+# when enabled, automatically re-enables notifications for the database hosts
+# getting backed up.
 #
 # Copyright (C) 2013 PalominoDB, Inc.
 #

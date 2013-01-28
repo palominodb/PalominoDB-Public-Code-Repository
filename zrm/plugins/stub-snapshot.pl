@@ -1,10 +1,9 @@
 #!/usr/bin/perl
+# stub-snapshot.pl - A stub program to convince ZRM that it is calling a
+# snapshot plug-in.  Based on socket-copy.pl and socket-server.pl distributed
+# in ZRM version 2.0 copyright Zmanda Inc.
 #
-# A stub program to convince ZRM that it is calling a snapshot plug-in.
-# Based on socket-copy.pl and socket-server.pl distributed in
-# ZRM version 2.0 copyright Zmanda Inc.
-#
-# Copyright (C) 2010-2012 PalominoDB, Inc.
+# Copyright (C) 2010-2013 PalominoDB, Inc.
 #
 # You may contact the maintainers at eng@palominodb.com.
 # 

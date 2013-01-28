@@ -1,7 +1,6 @@
 #!/bin/bash
-#
-# Makes a tarball suitable for passing to 'rpmbuild -tb <tarball>'
-# And hopefully good enough to make a debian package out of, too.
+# make_tarball.sh - Makes a tarball suitable for passing to 'rpmbuild -tb
+# <tarball>' And hopefully good enough to make a debian package out of, too.
 #
 # Copyright (C) 2013 PalominoDB, Inc.
 #

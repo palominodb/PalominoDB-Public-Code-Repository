@@ -1,8 +1,7 @@
 #!/usr/bin/perl
-# 
-# Pre-backup hook script for mysql-zrm backup which, when enabled,
-# automatically disables notifications for the database hosts getting backed
-# up.
+# pre-backup.pdb.pl - Pre-backup hook script for mysql-zrm backup which, when
+# enabled, automatically disables notifications for the database hosts getting
+# backed up.
 #
 # Copyright (C) 2013 PalominoDB, Inc.
 #

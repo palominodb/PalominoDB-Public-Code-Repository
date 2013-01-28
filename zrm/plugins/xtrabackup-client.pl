@@ -1,9 +1,8 @@
 #!/usr/bin/perl
+# xtrabackup-client.pl - Based on socket-copy.pl and socket-server.pl
+# distributed in ZRM version 2.0 copyright Zmanda Inc.
 #
-# Based on socket-copy.pl and socket-server.pl distributed in
-# ZRM version 2.0 copyright Zmanda Inc.
-#
-# Copyright (C) 2010-2011 PalominoDB, Inc.  All Rights Reserved.
+# Copyright (C) 2010-2013 PalominoDB, Inc.  All Rights Reserved.
 #
 # You may contact the maintainers at eng@palominodb.com.
 # 
