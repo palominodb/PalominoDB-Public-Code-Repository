@@ -1,4 +1,7 @@
 #!/usr/bin/perl -w
+### work around for ePn until I can refactor completely.
+# nagios: -epn
+###
 # mysql_health_check.pl - A Nagios health check to monitory any variable from 
 # 'SHOW GLOBAL STATUS' or 'SHOW GLOBAL VARIABLES'.
 # Copyright (c) 2009-2013, PalominoDB, Inc.
@@ -19,9 +22,6 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-### work around for ePn until I can refactor completely.
-# nagios: -epn
-###
 $| = 1;
 our $VERSION = "1.2.0";
 
