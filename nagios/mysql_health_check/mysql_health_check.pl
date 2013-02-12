@@ -133,6 +133,20 @@ switch ($np->opts->mode)
           $np->add_message('OK', $msg);
        }
   }
+  case "simple"
+  {
+    if($np->opts->expression eq 'read_only'){
+        my $is_read_only = uc($data->{current}->{varstatus}->{read_only}) eq 'ON' ? 'True' : 'False';
+        my $msg = sprintf("Read Only: %s", $is_read_only);
+        $np->add_message('OK', $msg);
+    }elsif($np->opts->expression eq 'engine'){
+        my $default_engine = $data->{current}->{varstatus}->{default_storage_engine};
+        my $msg = sprintf("Default Storage Engine: %s", $default_engine);
+        $np->add_message('OK', $msg);
+    }else{
+        $np->nagios_die("ERROR: run mode 'simple' only accepts 'read_only' or 'engine' as --expression param.");
+    }
+  }
   else
   {
     $np->nagios_die("Unknown run mode.");
@@ -524,6 +538,14 @@ sub init_plugin
       unless($np->opts->comparison_warning && $np->opts->comparison_critical && $np->opts->expression)
       {
         $np->nagios_die("ERROR: run mode 'lastrun-varcomp' requires --comparison_warning, --comparison_critical and --expression params.");
+      }
+    }
+    case "simple"
+    {
+      $np->shortname('mysql_simple') unless($np->opts->shortname);
+      unless($np->opts->expression)
+      {
+        $np->nagios_die("ERROR: run mode 'simple' requires --expression param.");
       }
     }
   } 
