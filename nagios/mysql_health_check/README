@@ -51,6 +51,14 @@ current{keyword} and lastrun{keyword} will be replaced with the appropriate valu
 
 WARNING: There isn't good sanity checking here yet, so please get the keywords right or else you'll see warnings.
 
+To check if mySQL is read-only, you can do:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode simple --expression read_only
+
+To check the default storage engine, you can do:
+
+mysql_health_check.pl --hostname=localhost --user=root --mode simple --expression engine
+
 General Notes:
 
 --warning and --critical Thresholds are very flexible, please see: 
