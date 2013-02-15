@@ -30,7 +30,7 @@ use DBI;
 use constant OK       => 0;
 use constant WARNING  => 1;
 use constant CRITICAL => 2;
-use constant UNKNOWN  => 2;
+use constant UNKNOWN  => 3;
 
 my $help = 0;
 my $csum_host = 'localhost';
@@ -44,6 +44,8 @@ my $csum_interval = 1;
 my $alert_crit = 0;
 
 my $alert_str = '';
+my $and_clause='';
+my $ignore_dbs='';
 
 my $dbh = undef;
 
@@ -55,6 +57,7 @@ GetOptions(
   'table|T=s'  => \$csum_table,
   'socket|S=s' => \$csum_sock,
   'critical|c' => \$alert_crit,
+  'ignore-db|b=s' => \$ignore_dbs,
   'interval|I=i' => \$csum_interval
 );
 
@@ -71,6 +74,7 @@ Options:
   --table,-T     Set table checksums are in. Default: $csum_table.
   --socket,-S    Set path to mysql socket, if needed.
   --critical,-c  Make alerts critical instead of warning.
+  --ignore-db,-b Ignore checksums of these databases (comma-separated list)
   --interval,-I  How often checksums should be running in hours.
                  Default: ${csum_interval}h
 
@@ -87,6 +91,11 @@ HELP_EOF
 }
 
 $alert_str = $alert_crit ? 'CRITICAL:' : 'WARNING:';
+if ($ignore_dbs) {
+  $and_clause .= "AND db NOT IN ('";
+  $and_clause .=join("','",split(/,/,$ignore_dbs));
+  $and_clause .= "')";
+}
 
 if($csum_sock ne '') {
   $csum_sock = ";mysql_socket=$csum_sock";
@@ -108,13 +117,13 @@ if($EVAL_ERROR) {
 }
 
 my $time_sql = <<EOFT;
-  SELECT host, db, tbl FROM $csum_table
+  SELECT db, tbl FROM $csum_table
   WHERE ts >= NOW() - INTERVAL $csum_interval HOUR
   LIMIT 1
 EOFT
 
 my $diff_sql = <<EOFD;
-   SELECT host, db, tbl, chunk, boundaries,
+   SELECT db, tbl, chunk, lower_boundary, upper_boundary,
       COALESCE(this_cnt-master_cnt, 0) AS cnt_diff,
       COALESCE(
          this_crc <> master_crc OR ISNULL(master_crc) <> ISNULL(this_crc),
@@ -126,7 +135,7 @@ my $diff_sql = <<EOFD;
    AND (
       master_cnt <> this_cnt OR master_crc <> this_crc
       OR ISNULL(master_crc) <> ISNULL(this_crc)
-   )
+   ) $and_clause
 EOFD
 
 my $time_r = undef;
@@ -153,7 +162,7 @@ if(scalar @$diff_r) {
   my $tbls = join(',', uniq(map {
       $_->{'db'} . '.' . $_->{'tbl'}
     } @$diff_r));
-  print "$alert_str found crc differences: $tbls\n\n";
+  print "$alert_str found crc differences: $tbls\n$and_clause\n";
   print "CHUNK TBL THIS_CRC MASTER_CRC THIS_CNT/MASTER_CNT\n";
   foreach my $tbl (@$diff_r) {
     print('On: ', $tbl->{'host'}, "\n") if $last_host ne $tbl->{'host'};
@@ -168,7 +177,7 @@ if(scalar @$diff_r) {
   exit($alert_crit ? CRITICAL : WARNING);
 }
 else {
-  print "OK: no crc differences in the last $csum_interval hours";
+  print "OK: no crc differences in the last $csum_interval hours $and_clause";
   exit(OK);
 }
 
