@@ -1,4 +1,23 @@
 #!/usr/bin/python -w
+# check_zrm_backup.py
+#
+# Copyright (C) 2010-2013 PalominoDB, Inc.
+#
+# You may contact the maintainers at eng@palominodb.com.
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
 import calendar
 import fileinput
@@ -66,7 +85,7 @@ class CheckZrmBackup(Plugin):
     
     def get_backupset_list(self, bdir):
         bsets = []
-        cmd = subprocess.Popen('sudo /usr/bin/mysql-zrm-reporter --fields backup-set --noheader --destination %s 2> /dev/null' % (self.options.bdir),
+        cmd = subprocess.Popen('/usr/bin/mysql-zrm-reporter --fields backup-set --noheader --destination %s 2> /dev/null' % (self.options.bdir),
                             shell=True, stdout=subprocess.PIPE)
         lines = cmd.stdout.readlines()
         lines = [line.strip() for line in lines]
@@ -77,7 +96,7 @@ class CheckZrmBackup(Plugin):
         lev0 = []
         lev1 = []
         #Use --type html for easier parsing
-        cmd = subprocess.Popen('sudo /usr/bin/mysql-zrm-reporter --fields backup-set,backup-status,backup-level,backup-date --type html --destination %s 2> /dev/null' % (bdir),
+        cmd = subprocess.Popen('/usr/bin/mysql-zrm-reporter --fields backup-set,backup-status,backup-level,backup-date --type html --destination %s 2> /dev/null' % (bdir),
                                 shell=True, stdout=subprocess.PIPE)
         doc = cmd.stdout.read()
         doc_soup = BeautifulSoup(doc)
