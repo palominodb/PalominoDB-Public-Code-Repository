@@ -39,7 +39,7 @@ class CheckXtraBackupLog(Plugin):
         for i in reversed(self.check_log(self.options.xtrabackup_log, self.options.days)):
             status_arr.append(i)
         
-        if status_arr[0] == 0:
+        if len(status_arr) > 0 and status_arr[0] == 0:
             return self.response_for_value(0, 'last backup is OK')
         else:
             return self.response_for_value(1, 'Problem found with last backup')
