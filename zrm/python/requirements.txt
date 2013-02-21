@@ -1,0 +1,2 @@
+pynagios==0.1.1
+BeautifulSoup==3.2.1
