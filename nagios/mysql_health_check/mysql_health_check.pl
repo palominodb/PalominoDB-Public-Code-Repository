@@ -137,8 +137,15 @@ switch ($np->opts->mode)
   {
     if($np->opts->expression eq 'read_only'){
         my $is_read_only = uc($data->{current}->{varstatus}->{read_only}) eq 'ON' ? 'True' : 'False';
-        my $msg = sprintf("Read Only: %s", $is_read_only);
-        $np->add_message('OK', $msg);
+        my $is_master = uc($data->{current}->{varstatus}->{Slave_running}) eq 'OFF' ? 'True' : 'False';
+        my $msg = sprintf("Is Master: %s Read Only: %s", $is_master, $is_read_only);
+        my $code;
+        if(($is_master eq 'True' and $is_read_only eq 'True') or ($is_master eq 'False' and $is_read_only eq 'False')){
+            $code = 'CRITICAL'
+        }else{
+            $code = 'OK'
+        }
+        $np->add_message($code, $msg);
     }elsif($np->opts->expression eq 'engine'){
         my $default_engine = $data->{current}->{varstatus}->{default_storage_engine};
         my $msg = sprintf("Default Storage Engine: %s", $default_engine);
