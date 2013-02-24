@@ -137,7 +137,7 @@ switch ($np->opts->mode)
   {
     if($np->opts->expression eq 'read_only'){
         my $is_read_only = uc($data->{current}->{varstatus}->{read_only}) eq 'ON' ? 'True' : 'False';
-        my $is_master = uc($data->{current}->{varstatus}->{Slave_running}) eq 'OFF' ? 'True' : 'False';
+        my $is_master = $np->opts->is_master eq 1 ? 'True' : 'False';
         my $msg = sprintf("Is Master: %s Read Only: %s", $is_master, $is_read_only);
         my $code;
         if(($is_master eq 'True' and $is_read_only eq 'True') or ($is_master eq 'False' and $is_read_only eq 'False')){
@@ -506,6 +506,7 @@ sub init_plugin
   );
   $np->add_arg(spec => 'cache_dir=s', required => 0, default => "/tmp/pdb_nagios_cache", help => "-d, --database\n\tMySQL database");
   $np->add_arg(spec => 'no_cache', required => 0, help => "--no_cache\n\tIgnore var/processlist cache");
+  $np->add_arg(spec => 'is_master', required => 0, default => 0, help => "--is_master\n\tMySQL Database is a master");
   $np->add_arg(spec => 'max_cache_age=i', required => 0, default => 300, help => "--max_cache_age\n\tNumber of seconds before the meta data cache is considered stale and refreshed");
   $np->add_arg(spec => 'comparison_warning=s', required => 0, help => qq|--comparison_warning\n\tComparison warning threshold (Perl syntax), e.g. ">80"|);
   $np->add_arg(spec => 'comparison_critical=s', required => 0, help => qq|--comparison_critical\n\tComparison critical threshold (Perl syntax), e.g. ">100"|);
