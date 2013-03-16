@@ -346,12 +346,14 @@ sub fetch_server_meta_data
       pdebug("Getting meta data from server (no cache)...\n");
       pdebug("\tSHOW FULL PROCESSLIST...\n");
       $data->{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
-      pdebug("\tSHOW ENGINE INNODB STATUS...\n");
-      $data->{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
       pdebug("\tSHOW GLOBAL VARIABLES...\n");
       $data->{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
       pdebug("\tSHOW GLOBAL STATUS...\n");
       $data->{varstatus} = hash_merge($data->{varstatus}, dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL STATUS|));
+	  if($np->opts->disable_innodb_status eq 0){
+		pdebug("\tSHOW ENGINE INNODB STATUS...\n");
+		$data->{innodb_status} = $dbh->selectall_arrayref(q|SHOW ENGINE INNODB STATUS|);
+	  }
       if($np->opts->disable_slave_status eq 0){
         pdebug("\tSHOW SLAVE STATUS...\n");
         $data->{slave_status} = dbi_exec_for_loh($dbh, q|SHOW SLAVE STATUS|);
@@ -517,6 +519,7 @@ sub init_plugin
   $np->add_arg(spec => 'cache_dir=s', required => 0, default => "/tmp/pdb_nagios_cache", help => "-d, --database\n\tMySQL database");
   $np->add_arg(spec => 'no_cache', required => 0, help => "--no_cache\n\tIgnore var/processlist cache");
   $np->add_arg(spec => 'is_master', required => 0, default => 0, help => "--is_master\n\tMySQL Database is a master");
+  $np->add_arg(spec => 'disable_innodb_status', required => 0, default => 0, help => "--disable_innodb_status\n\tDisable 'SHOW ENGINE INNODB STATUS' checking");
   $np->add_arg(spec => 'disable_slave_status', required => 0, default => 0, help => "--disable_slave_status\n\tDisable 'SHOW SLAVE STATUS' checking");
   $np->add_arg(spec => 'max_cache_age=i', required => 0, default => 300, help => "--max_cache_age\n\tNumber of seconds before the meta data cache is considered stale and refreshed");
   $np->add_arg(spec => 'comparison_warning=s', required => 0, help => qq|--comparison_warning\n\tComparison warning threshold (Perl syntax), e.g. ">80"|);
