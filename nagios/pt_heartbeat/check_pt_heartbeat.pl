@@ -34,6 +34,7 @@ use constant CRIT_MIN_LAG_DEFAULT => 0;
 use constant WARN_MAX_LAG_DEFAULT => 2;
 use constant CRIT_MAX_LAG_DEFAULT => 2;
 
+use constant DB_PORT_DEFAULT => 3306;
 use constant DB_USER_DEFAULT => 'heartbeat';
 use constant DB_PASS_DEFAULT => 'hb2';
 use constant DB_SCHEMA_DEFAULT => 'heartbeat';
@@ -49,6 +50,7 @@ my $crit_max = CRIT_MAX_LAG_DEFAULT;
 my $pt_heartbeat_path = PT_HEARTBEAT_DEFAULT;
 
 my $db_host = undef;
+my $db_port = undef;
 my $db_user = DB_USER_DEFAULT;
 my $db_pass = DB_PASS_DEFAULT;
 my $db_schema = DB_SCHEMA_DEFAULT;
@@ -70,6 +72,7 @@ sub usage {
   "  --db-pass=s            (Mandatory) Database pass to use. Default: ". DB_PASS_DEFAULT ."\n".
   "  --db-schema=s          (Mandatory) Database schema to use. Default: ". DB_SCHEMA_DEFAULT ."\n".
   "  --db-table=s           (Mandatory) Database table to use. Default: ". DB_TABLE_DEFAULT ."\n".
+  "  --db-port=i            Database server port to use. Default: ". DB_PORT_DEFAULT ."\n".
   "  --pt-heartbeat-path=s  Path to pt-heartbeat. Default: ". PT_HEARTBEAT_DEFAULT . "\n";
 }
 
@@ -84,12 +87,16 @@ GetOptions(
   'db-pass=s' => \$db_pass,
   'db-schema=s' => \$db_schema,
   'db-table=s'  => \$db_table,
+  'db-port=i' => \$db_port,
   'pt-heartbeat-path=s' => \$pt_heartbeat_path
 );
 
 unless($db_host or $db_pass or $db_user or $db_schema or $db_table) {
   usage();
   exit(UNKNOWN);
+}
+unless($db_port) {
+  $db_port = DB_PORT_DEFAULT;
 }
 
 my $rint = undef;
@@ -104,6 +111,7 @@ eval {
     '--password', $db_pass,
     '--database', $db_schema,
     '--table', $db_table,
+    '--port', $db_port,
     '--check'
   );
   close($in_fh);
