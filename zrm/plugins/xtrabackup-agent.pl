@@ -1201,7 +1201,7 @@ sub checkXtraBackupVersion {
       }
     }
     else {
-      printAndDie("ERROR", "xtrabackup did not return a valid version string");
+      printAndDie("ERROR", "xtrabackup did not return a valid version string: $_");
     }
   };
   if($@) {
