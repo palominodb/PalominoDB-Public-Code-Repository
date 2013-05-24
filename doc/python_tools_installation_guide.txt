@@ -1,0 +1,115 @@
+PalominoDB Tools Installation Guide
+===================================
+
+PalominoDB tools are recommended to be run in an isolated environment such
+as those provided by virtualenv.  Primary reason for doing this is to be
+able to provide the tools with compatible required packages without modifying
+the system installation of Python and its packages, and thus avoiding the
+risk of having an unstable system.
+
+To run a tool using a specific Python version, the following guide will
+provide instructions on how to setup a virtual environment that uses a
+specific Python version.
+
+
+Installing Multiple Version of Pythons Side-By-Side
+===================================================
+
+You will need to install the required packages to compile a Python interpreter.
+This varies between versions and target OS, please check the Python
+documentation for instructions. For example required packages to build
+Python 2.7.3 in CentOS can be installed by:
+
+# yum groupinstall "Development tools"
+# yum install zlib-devel bzip2-devel openssl-devel ncurses-devel sqlite-devel readline-devel tk-devel
+
+Download the source for the desired Python version, extract file, perform
+configure, make, and make altinstall.
+It is important to use "make altinstall" rather than "make install" to avoid
+overwriting the system version of Python.  All files and directories
+installed using "make altinstall" contain the major and minor version and
+can thus live side-by-side.
+
+For example to install Python 2.7.3, run the following command as root:
+
+# wget http://python.org/ftp/python/2.7.3/Python-2.7.3.tar.bz2
+# tar xf Python-2.7.3.tar.bz2
+# cd Python-2.7.3
+# ./configure --prefix=/usr/local
+# make && make altinstall
+
+Running "which python2.7" will show the location of the executable at:
+/usr/local/bin/python2.7
+
+
+Installing virtualenv
+=====================
+
+    Ubuntu:
+        sudo apt-get install python-virtualenv
+
+    CentOS:
+        sudo yum install python-virtualenv
+
+
+Creating a Virtual Environment
+------------------------------
+
+For example to create a new virtual environment named py27 for Python 2.7
+in ~/venv/ directory:
+
+$ virtualenv -p /usr/local/bin/python2.7 --no-site-packages ~/venv/py27
+
+-p option specifies Python executable to use
+--no-site-packages is used so that the virtual environment does not have
+    access to the global site-packages dir
+
+The virtual environment py27 now have its own python and pip executables at:
+~/venv/py27/bin/python
+~/venv/py27/bin/pip
+
+
+Activating a Virtual Environment
+--------------------------------
+
+To begin using the virtual environment, it needs to be activated:
+
+$ source ~/venv/py27/bin/activate
+
+At this point, you can being installing the tool or any new modules using pip
+without affecting the system default Python or other virtual environments.
+
+(py27)$ pip install -r requirements.txt
+
+
+Deactivating a Virtual Environment
+----------------------------------
+
+If you are done working in the virtual environment, you can deactivate it:
+
+(py27)$ deactivate
+
+
+Running a Script
+================
+
+To run a myscript.py in a virtual environment, you can either:
+
+    * Activate virtual environment and run script with Python:
+
+        $ source ~/venv/py27/bin/activate
+        (py27)$ python myscript.py
+        (py27)$ deactivate
+        $
+
+        or if mysqcript.py's first line is: #!/usr/bin/env python
+
+        $ source ~/venv/py27/bin/activate
+        (py27)$ ./myscript.py
+        (py27)$ deactivate
+        $
+
+    * Run using full path of virtual environment's version of Python:
+
+        $ ~/venv/py27/bin/python myscript.py
+
