@@ -113,3 +113,106 @@ To run a myscript.py in a virtual environment, you can either:
 
         $ ~/venv/py27/bin/python myscript.py
 
+
+Installing virtualenvwrapper
+============================
+
+virtualenvwrapper is a set of extensions to Ian Bicking’s virtualenv tool. The extensions include wrappers for creating and deleting virtual environments and otherwise managing your development workflow, making it easier to work on more than one project at a time without introducing conflicts in their dependencies.
+
+    To install virtualenvwrapper, you need to install pip and virtualenv first:
+        Ubuntu:
+            sudo apt-get install python-pip
+            sudo pip install virtualenv
+            sudo pip install virtualenvwrapper
+        
+        CentOS:
+            sudo yum install python-pip
+            echo 'alias pip="/usr/bin/pip-python"' >> $HOME/.bashrc
+            . $HOME/.bashrc
+            sudo pip install virtualenv
+            sudo pip install virtualenvwrapper
+            
+    Add the following lines to your ~/.bashrc file:
+        export WORKON_HOME=$HOME/.virtualenvs
+        source /usr/local/bin/virtualenvwrapper.sh
+        
+    Reload bash:
+        source ~/.bashrc
+        
+        * The first line sets where all the virtualenvs will be created. The second line loads all the virtualenvwrapper commands.
+        
+Creating a Virtual Environment using virtualenvwrapper
+------------------------------------------------------
+
+For example to create a new virtual environment named py27 for Python 2.7
+
+$ mkvirtualenv -p /usr/local/bin/python2.7 --no-site-packages py27
+
+-p option specifies Python executable to use
+--no-site-packages is used so that the virtual environment does not have
+    access to the global site-packages dir
+    
+Activating a Virtual Environment using virtualenvwrapper
+--------------------------------------------------------
+
+To begin using the virtual environment, it needs to be activated:
+
+$ workon py27
+
+At this point, you can being installing the tool or any new modules using pip
+without affecting the system default Python or other virtual environments.
+
+(py27)$ pip install -r requirements.txt
+
+Deactivating a Virtual Environment using virtualenvwrapper
+----------------------------------------------------------
+
+If you are done working in the virtual environment, you can deactivate it:
+
+(py27)$ deactivate
+
+Listing all Virtual Environments using virtualenvwrapper
+--------------------------------------------------------
+
+To view a list of all virtual environments created through virtualenvwrapper, you can use:
+
+$ lsvirtualenv
+
+Copying a Virtual Environment using virtualenvwrapper
+-----------------------------------------------------
+
+virtualenvwrapper provides a way to duplicate an existing virtual envrironment. To do this you can use:
+
+$ cpvirtualenv py27 py27-copy
+
+This command will copy the virtual environment and all the packages installed within the environment.
+
+Deleting a Virtual Environment using virtualenvwrapper
+------------------------------------------------------
+
+To delete a virtual environment, you can do:
+
+$ rmvirtualenv py27
+
+Running a Script
+================
+
+To run a myscript.py in a virtual environment, you can either:
+
+    * Activate virtual environment and run script with Python:
+
+        $ workon py27
+        (py27)$ python myscript.py
+        (py27)$ deactivate
+        $
+
+        or if mysqcript.py's first line is: #!/usr/bin/env python
+
+        $ workon py27
+        (py27)$ ./myscript.py
+        (py27)$ deactivate
+        $
+
+    * Run using full path of virtual environment's version of Python:
+
+        $ ~/.virtualenvs/py27/bin/python myscript.py
