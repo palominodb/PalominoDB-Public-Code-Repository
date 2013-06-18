@@ -1194,8 +1194,8 @@ sub checkXtraBackupVersion {
       printAndDie("ERROR", "xtrabackup is not properly installed, or not in \$PATH.");
     }
     $_ = qx/xtrabackup --version 2>&1/;
-    if(/^xtrabackup\s+Ver\s+(\d+\.\d+)/) {
-      $XTRABACKUP_VERSION=$1;
+    if(/^xtrabackup\s+(Ver|version)\s+(\d+\.\d+)/) {
+      $XTRABACKUP_VERSION=$2;
       if($MIN_XTRA_VERSION > $XTRABACKUP_VERSION) {
         printAndDie("ERROR", "xtrabackup is not of the minimum required version: $MIN_XTRA_VERSION > $XTRABACKUP_VERSION.");
       }
