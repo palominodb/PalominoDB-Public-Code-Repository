@@ -877,6 +877,7 @@ sub do_innobackupex {
              $cfg{'xtrabackup-agent:my.cnf-path'},
              $cfg{'xtrabackup-agent:innobackupex-opts'},
              "--slave-info", "--stream=tar", $tmp_directory,
+             "--ibbackup=xtrabackup",
              "2>/tmp/innobackupex-log");
 
   if($cfg{'xtrabackup-agent:inline-compress'}) {
