@@ -154,7 +154,7 @@ do
   $PSQL -U $PGUSER $PGHOST $i -xc "\
       select *, (tup_returned+tup_fetched)/(tup_inserted+tup_updated+tup_deleted)\
        || ' to 1' as Ratio_R_W \
-       from pg_stat_database where datname like '$i'" >> $LOG
+       from pg_stat_database where datname like \'$i\'" >> $LOG
 
   _line_
   _section_ "Activity in amounts: " 
