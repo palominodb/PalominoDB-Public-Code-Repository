@@ -15,10 +15,13 @@ VERSION="1.0b"
 
 # You should not change variables here, please use the parameters.
 LOG=review_$(hostname).log
+CG_LOG=review_conf_$(hostname).html
 DEF_PGUSER=postgres
 PGUSER=$DEF_PGUSER
 PGHOST=""
 PORT=5432
+HTML="-H"
+TAR_FILE=$(hostname)_review.tar
 
 usage()
 {
@@ -33,6 +36,7 @@ OPTIONS:
     -o <file>               Output the report to a file Default: $LOG
     -c                      Set log check (non available remotely or using -h option)
     -H                      THIS
+    -t                      Tar log files. Name $TAR_FILE
     -b <psql dir>           That is if you want to execute an specific psql command location (several versions?). Your actual psql is under: $(whereis psql || echo "You don't have it." ) 
     -u <POSTGRES USER>      The database user Default= $DEF_PGUSER
     -p <port>               Not implemented yet. Default: $PORT
@@ -52,6 +56,51 @@ _section_()
 }
 
 
+_html_head_()
+{
+
+echo "
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Configuration Report for $hostname</title>
+ 
+<link rel="stylesheet" href="css/main.css" type="text/css" />
+ 
+<!--[if IE]>
+	<script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+<!--[if lte IE 7]>
+	<script src="js/IE8.js" type="text/javascript"></script><![endif]-->
+<!--[if lt IE 7]>
+ 
+	<link rel="stylesheet" type="text/css" media="all" href="css/ie6.css"/><![endif]-->
+</head>
+<body>
+" > $CG_LOG
+
+}
+
+_html_close_()
+{
+  echo "</body></html>" >> $CG_LOG
+}
+
+_html_nl_()
+{
+  echo "<br>" >> $CG_LOG
+}
+
+_html_title_()
+{
+  echo "<h1>$1</h1>" >> $CG_LOG
+}
+
+_html_line_()
+{
+  echo "$1" >> $CG_LOG
+}
+
 if [ command -v pg_config >/dev/null 2>&1 ]
 then
   PGBINHOME=$(pg_config --bindir) 
@@ -59,9 +108,12 @@ else
   echo >&2 "We recommend to install pg_config utility" 
 fi
 
-while getopts h:o:cb:u:VH optname
+while getopts th:o:cb:u:VH optname
   do
     case "$optname" in
+      "t")
+        TAR=1
+        ;;
       "h")
         PGHOST="-h $OPTARG" || { echo "Error setting host variable" ; exit 10 ; }
         ;;
@@ -107,25 +159,34 @@ PG_LOGS=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select string_agg(setting,'/'
 PG_SIZE_ALL=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select pg_size_pretty(sum(pg_database_size(datname))::bigint) from pg_database; ")
 
 
+# Initialize HTML report
+########################
+
+_html_head_
+
 
 ## Cluster Info
 ###############
 
-_line_
-_section_ "CLUSTER DETAILS AND INFORMATION"
-_section_ "Size of all the DBs of the current cluster: $PG_SIZE_ALL"
-_line_
+_html_nl_
+_html_title_ "Cluster configuration"
+_html_line_ "Size of all the DBs of the current cluster: $PG_SIZE_ALL"
+_html_nl_
 
 _section_ "Configuration (only 1 output per cluster):" 
 
-$PSQL -U $PGUSER $PGHOST template1 -c "\
+$PSQL -U $PGUSER $PGHOST template1 $HTML -c "\
       select regexp_replace(category,'(Previous PostgreSQL|Compatibility|Settings$|and Authentication$)','','g') ,\
              context, name || ' = ' || setting \
          from pg_settings \
-        where  category !~ 'File Locations' order by category" >> $LOG
+        where  category !~ 'File Locations' order by category" >> $CG_LOG
+
+_html_close_
+
+_section_ "Configuration (only 1 output per cluster):"
 
 _line_
-_section_ "File Locations and file related:" 
+_section_ "File Locations:" 
 
 $PSQL -U $PGUSER $PGHOST template1 -c "select name, setting, context, category \
       from pg_settings where category ~ 'File Locations'" >> $LOG
@@ -152,7 +213,7 @@ do
   _section_ "Database stats:" 
 
   $PSQL -U $PGUSER $PGHOST $i -xc "\
-      select *, (tup_returned+tup_fetched)/(tup_inserted+tup_updated+tup_deleted)\
+      select *, (tup_returned+tup_fetched)/NULLIF(tup_inserted+tup_updated+tup_deleted,0)\
        || ' to 1' as Ratio_R_W \
        from pg_stat_database where datname like '$i'" >> $LOG
 
@@ -211,7 +272,7 @@ do
             FROM pg_stat_user_tables \
             ORDER by n_dead_tup desc limit 10; \
             SELECT sum(n_live_tup) as Total_Live_rows, sum(n_dead_tup) as Total_Dead_Rows, \
-            round(sum(n_dead_tup)*100/sum(n_live_tup),2) as Percentage_of_Dead_Rows, \
+            round(sum(n_dead_tup)*100/nullif(sum(n_live_tup),0),2) as Percentage_of_Dead_Rows, \
             pg_size_pretty(sum(pg_relation_size(schemaname || '.' || relname))::bigint) \
             FROM pg_stat_user_tables;" >> $LOG
   
@@ -322,14 +383,14 @@ do
   _section_ "Actual Table cache hit ratio"
   $PSQL -U $PGUSER $i $PGHOST -c" SELECT\
     'cache hit rate' AS name,\
-     sum(heap_blks_hit) / (sum(heap_blks_hit) + sum(heap_blks_read)) AS ratio \
+     sum(heap_blks_hit) / nullif((sum(heap_blks_hit) + sum(heap_blks_read)),0) AS ratio \
      FROM pg_statio_user_tables; " >> $LOG
 
   _line_
   _section_ "Actual Index cache hit ratio"
   $PSQL -U $PGUSER $i $PGHOST -c" SELECT\
     'index hit rate' AS name,\
-    (sum(idx_blks_hit)) / sum(idx_blks_hit + idx_blks_read) AS ratio\
+    (sum(idx_blks_hit)) / nullif(sum(idx_blks_hit + idx_blks_read),0) AS ratio\
     FROM pg_statio_user_indexes; " >>$LOG
 
 
@@ -348,13 +409,18 @@ then
   _line_
   _section_ "Timeouts:" 
   grep -c "canceling statement due to statement timeout" $PG_LOGS/* >> $LOG
+  _line_
+  _section_ "Checkpoints warning:"
+  grep -c "checkpoints are occurring too frequently" $PG_LOGS/* >> $LOG
 fi 
 
 
 ## The end
 ##########
 _line_
-echo "All the information was dump to $LOG file."
+echo "All the information was dump to $LOG and $CG_LOG files."
+
+[ $TAR ] && { tar -cf $TAR_FILE $LOG $CG_LOG ; echo "Tar file $TAR_FILE" ; }
 
 exit 0
 
