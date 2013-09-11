@@ -41,8 +41,23 @@ DELAY=$DEFHOURS
 #
 #restore_command = ''           # e.g. 'cp /mnt/server/archivedir/%f %p'
 
+_usage_()
+{
+  cat <<EOF
 
-while getopts 'D:d:x:' OPTION 
+= $0 =
+  Where I use this script? On the restore.conf. How?
+   restore_command = '$0 -D /var/data/xlogs_from_a_master/ -x %p'
+
+  Parameters:
+   -D <where_are_my_wal_files>    This is a mandatory parameter
+   -d <hours_to_delay>            by default is $DEFHOURS
+   -x <directory_to_copy>         an example will be: -x %p 
+
+EOF
+}
+
+while getopts 'D:d:x:h' OPTION 
 do
   case $OPTION in
     D)
@@ -55,13 +70,16 @@ do
       DELAY=$OPTARG
       ;;
     h)
-      usage
+      _usage_
+      exit 0
       ;;
     *)
       exit 1
       ;;
   esac
 done
+
+[ $RECFILE ] || { echo "You need to specify where I get the files with the -D option" ;  exit 1 }
 
 _DATE_=$(date -d "$DELAY hours ago")
 touch -d "$_DATE_" $TIMEFILE || { echo "Check permissions on the $TMPDIR folder" ; exit 5 ; }
