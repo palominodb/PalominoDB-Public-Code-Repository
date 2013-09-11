@@ -79,12 +79,12 @@ do
   esac
 done
 
-[ $RECFILE ] || { echo "You need to specify where I get the files with the -D option" ;  exit 1 }
+[ $RECFILE ] || { echo "The parameter -D is mandatory for specify the source directory of the archived WALs" ; exit 2 ; }
 
 _DATE_=$(date -d "$DELAY hours ago")
 touch -d "$_DATE_" $TIMEFILE || { echo "Check permissions on the $TMPDIR folder" ; exit 5 ; }
 
-#find $RECDIR -mtime $DELAYh -exec cp {} $XLOGDIR \;    ||  { echo "An error ocurred: $?" ; exit 3 ;  }
+find $RECDIR -mtime $DELAYh -exec cp {} $XLOGDIR \;    ||  { echo "An error ocurred: $?" ; exit 3 ;  }
 
 if [ $RECFILE -ot $TIMEFILE ]
 then
