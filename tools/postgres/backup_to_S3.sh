@@ -27,22 +27,27 @@
 VERSION="0 alpha"
  
 ## Configuration variables
-S3_FOLDER=backups
-EMAIL='dummy@domain.com'
-PUB_KEY_PATH=/default/key/location
-COMP_LEVEL=9   # We recommend the maximum level of compression
+S3_FOLDER="s3://backups"
+AWS_DEFAULT_REGION="us-west-1"
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
 
-# both paths are isolated due to some versioning problems on the platform
+#Postgres conf
 PGBINHOME=/usr/bin
 PGPSQL=/usr/bin/psql
 DBUSER=postgres
+
+#Email conf
+EMAIL='dummy@domain.com'
 MAIL=/home/db_sync/bin/send_gmail.py
-# Set to 1 if you want mails if backup is OK:
-MAIL_ME=1
-MAIL_IF_OK=1
- 
-#AWS settings
-REGION="us-west-1"
+MAIL_ME=1      # 0 means no mail, only log
+MAIL_IF_OK=1   # Set to 1 if you want mails if backup is OK:
+
+# Security
+PUB_KEY_PATH=/default/key/location
+
+#Fine tuning
+COMP_LEVEL=9   # We recommend the maximum level of compression
 
 
 ################### Don't change upon this line ################################
@@ -76,7 +81,8 @@ OPTIONS:
     -h                      Show this message
     -b PUB_KEY_PATH         Public key for encryption.               Default: $PUB_KEY_PATH
     -e EMAIL                Email address where errors will be sent. Default: $EMAIL
-    -f S3_FOLDER            S3 folder to put the backup.             Default: $S3_FOLDER
+    -f S3_FOLDER            S3 folder to put the backup. Used the S3 path.
+                            I.e.: s3://bakcup_floder                 Default: $S3_FOLDER
     -u DBUSER               Which user connects to Postgres          Default: $DBUSER
     -r REGION               Region for S3 upload                     Default: $REGION
     -c <integer>            Compression level                        Default: $COMP_LEVEL
@@ -117,8 +123,14 @@ do
         c)
             COMP_LEVEL=$OPTARG
             ;;
+        C)
+            CHECK_KEYS=1
+            ;;
+        P)
+            PRIVATE_KEY_PATH=$OPTARG
+            ;;
         r)
-            REGION=$OPTARG
+            AWS_DEFAULT_REGION=$OPTARG
             ;;
         u)
             DBUSER=$OPTARG
@@ -157,6 +169,14 @@ then
     exit 1
 fi
  
+if [ $CHECK_KEYS -a ! -f $PRIVATE_KEY_PATH ]
+then
+  echo "You need to specify the private key path to check"
+  exit 15
+fi
+
+#Check key health here
+
 #Check if pg_dumpall command exists
 if ! test -e ${PGBINHOME}/pg_dumpall
 then
@@ -165,7 +185,7 @@ then
 fi
  
 #Check if S3_FOLDER exists
-perl $AWS ls $S3_FOLDER > /dev/null || { echo "S3 folder provided doesn't exist or not privileges are set" ; exit 33 ; }
+aws ls  $S3_FOLDER > /dev/null || { echo "S3 folder provided doesn't exist or not privileges are set" ; exit 33 ; }
  
 #Check if we have connection to the database
 $PGPSQL -U$DBUSER  template1 -o /tmp/trash -Atc 'select 0'
