@@ -113,6 +113,7 @@ do
             ;;
         b)
             PUB_KEY_PATH=$OPTARG
+	    PUB_KEY_FINGERPRINT=$(openssl x509 -subject -dates -fingerprint -in $PUB_KEY_PATH | grep -i Fingerprint)
             ;;
         e)
             EMAIL=$OPTARG
@@ -190,15 +191,17 @@ aws ls  $S3_FOLDER > /dev/null || { echo "S3 folder provided doesn't exist or no
 #Check if we have connection to the database
 $PGPSQL -U$DBUSER  template1 -o /tmp/trash -Atc 'select 0'
 if [ ! "$?" -eq "0" ] ; then
-    echo "Check if the database is running or if the user has privileges."
+    echo "Check if the database is running or if the useri ($PGUSER) has privileges."
     exit 3
 fi
 
 
 #Check the fingerprint of the public key. Useful to reference when restore.
-
-PUB_KEY_MD5=$(openssl x509 -noout -modulus -in $PUB_KEY_PATH | openssl md5) 
- 
+if [ $CHECK_KEYS ] 
+then
+  PRIV_KEY_MD5=$(openssl rsa -noout -modulus -in $PRIV_KEY_PATH | openssl md5)
+  PUB_KEY_MD5=$(openssl x509 -noout -modulus -in $PUB_KEY_PATH | openssl md5) 
+fi
 
 #Backup command
 $PGBINHOME/pg_dumpall -U $DBUSER | gzip -$COMP_LEVEL -c | openssl smime -encrypt -aes256 -binary -outform DER -out backups.zip.enc $PUB_KEY_PATH  || { BACKUP_STATUS=5 ; echo "failed to dump database" ; mail "failed to dump database" $BACKUP_STATUS ;   }
@@ -206,7 +209,7 @@ $PGBINHOME/pg_dumpall -U $DBUSER | gzip -$COMP_LEVEL -c | openssl smime -encrypt
   echo "Backup Size:"  >> $EMAILMESSAGE
   du -h backups.zip.enc | cut -f1 >> $EMAILMESSAGE
   echo "" >> $EMAILMESSAGE
-  echo "Public key hash $PUB_KEY_MD5 " >> $EMAILMESSAGE
+  echo "Public key Fingerprint $PUB_KEY_FINGERPRINT " >> $EMAILMESSAGE
   echo "" >> $EMAILMESSAGE
   echo "List of databases in the backup:" >> $EMAILMESSAGE
   $PGPSQL -U$DBUSER  template1 -l >> $EMAILMESSAGE
