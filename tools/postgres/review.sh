@@ -173,7 +173,8 @@ $PSQL -U $PGUSER $PGHOST $HTML template1 -l >> $CG_LOG
 _html_nl_
 _html_title_ "Databases sizes:"
 $PSQL -U $PGUSER $PGHOST $HTML template1 -c "select psd.*, pg_size_pretty(pg_database_size(datname)) as size \
-                               from pg_database pd join pg_stat_database psd using (datname)" >> $CG_LOG
+                               from pg_database pd join pg_stat_database psd using (datname)\
+                               order by pg_database_size(datname) desc" >> $CG_LOG
 
 
 _html_nl_
