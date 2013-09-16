@@ -66,15 +66,6 @@ echo "
 <meta charset="utf-8" />
 <title>Configuration Report for $hostname</title>
  
-<link rel="stylesheet" href="css/main.css" type="text/css" />
- 
-<!--[if IE]>
-	<script src="http://html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
-<!--[if lte IE 7]>
-	<script src="js/IE8.js" type="text/javascript"></script><![endif]-->
-<!--[if lt IE 7]>
- 
-	<link rel="stylesheet" type="text/css" media="all" href="css/ie6.css"/><![endif]-->
 </head>
 <body>
 " > $CG_LOG
@@ -192,7 +183,7 @@ $PSQL -U $PGUSER $PGHOST template1 $HTML -c "\
              CASE WHEN setting = boot_val THEN setting WHEN setting != boot_val THEN '<b>' || setting::text || '</b>' ELSE setting END, \
              boot_val as default
          from pg_settings \
-        where  category !~ 'File Locations' order by category" >> $CG_LOG
+        where  category !~ 'File Locations' order by category" | sed 's/&lt;/</g' | sed 's/&gt;/>/g' >> $CG_LOG
 
 _html_nl_
 _html_title_ "File locations:"
