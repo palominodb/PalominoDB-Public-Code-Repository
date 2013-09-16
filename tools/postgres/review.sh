@@ -149,8 +149,8 @@ PSQL="$PGBINHOME/psql"
 $PSQL -U $PGUSER $PGHOST template1 -c "select 0" > /dev/null || { echo "Failed to connect to postgres, code $?" ; exit 9 ; }
 
 PG_LOGS=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select string_agg(setting,'/') from pg_settings where name ~ 'log_directory|data_directory'")
-PG_SIZE_ALL=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select pg_size_pretty(sum(pg_database_size(datname))::bigint) from pg_database; ")
-
+PG_SIZE_ALL=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select pg_size_pretty(sum(pg_database_size(datname))::bigint) from pg_database ")
+PG_VERSION=$($PSQL -U $PGUSER $PGHOST template1 -Atc "select version()")
 
 # Initialize HTML report
 ########################
@@ -164,6 +164,7 @@ _html_head_
 _html_nl_
 _html_title_ "Cluster configuration"
 _html_line_ "Size of all the DBs of the current cluster: $PG_SIZE_ALL"
+_html_line_ "Postgres version $PG_VERSION"
 _html_nl_
 
 _html_nl_
