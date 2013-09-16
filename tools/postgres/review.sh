@@ -175,33 +175,37 @@ _html_title_ "Cluster configuration"
 _html_line_ "Size of all the DBs of the current cluster: $PG_SIZE_ALL"
 _html_nl_
 
-_section_ "Configuration (only 1 output per cluster):" 
+_html_nl_
+_html_title_ "Databases:"
+$PSQL -U $PGUSER $PGHOST template1 -l >> $CG_LOG
+
+_html_nl_
+_html_line_ "Configuration (only 1 output per cluster):" 
+_html_line_ "Bold values are not in default setting"
+_html_nl_
 
 $PSQL -U $PGUSER $PGHOST template1 $HTML -c "\
-      select regexp_replace(category,'(Previous PostgreSQL|Compatibility|Settings$|and Authentication$)','','g') ,\
-             context, name || ' = ' || setting \
+      select category ,\
+             context, \
+             name, \
+             CASE WHEN setting = boot_val THEN setting WHEN setting != boot_val THEN '<b>' || setting::text || '</b>' ELSE setting END, \
+             boot_val as default
          from pg_settings \
         where  category !~ 'File Locations' order by category" >> $CG_LOG
 
+_html_nl_
+_html_title_ "File locations:"
+_html_nl_
+$PSQL -U $PGUSER $PGHOST $HTML template1 -c "select name, setting, context, category \
+      from pg_settings where category ~ 'File Locations'" >> $CG_LOG
+
+_html_nl_
+_html_title_ "Is replication set up? This query will fail for < 9.0 versions."
+_html_nl_
+$PSQL -U $PGUSER $PGHOST $HTML template1 -c "select count(*) OVER (), client_addr , client_hostname, state, sync_state from pg_stat_replication " >> $CG_LOG
+
+
 _html_close_
-
-_section_ "Configuration (only 1 output per cluster):"
-
-
-_line_
-_section_ "Databases:"
-$PSQL -U $PGUSER $PGHOST template1 -l >> $LOG
-
-_line_
-_section_ "File Locations:" 
-
-$PSQL -U $PGUSER $PGHOST template1 -c "select name, setting, context, category \
-      from pg_settings where category ~ 'File Locations'" >> $LOG
-
-_line_
-_section_ "Is replication set up? This query will fail for < 9.0 versions."
-
-$PSQL -U $PGUSER $PGHOST template1 -c "select count(*) OVER (), client_addr , client_hostname, state, sync_state from pg_stat_replication " >> $LOG
 
 
 # Per DB Info collector
