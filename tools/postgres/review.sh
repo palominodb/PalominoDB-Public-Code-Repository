@@ -116,8 +116,8 @@ while getopts th:o:cb:u:VH optname
         ;;
       "h")
         PGHOST="-h $OPTARG" || { echo "Error setting host variable" ; exit 10 ; }
-        LOG=review_$PGHOST.log
-        CG_LOG=review_conf_$PGHOST.html
+        LOG=review_$OPTARG.log
+        CG_LOG=review_conf_$OPTARG.html
         ;;
       "o")
         LOG=$OPTARG
