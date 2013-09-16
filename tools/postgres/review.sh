@@ -177,10 +177,11 @@ _html_nl_
 
 _html_nl_
 _html_title_ "Databases:"
-$PSQL -U $PGUSER $PGHOST template1 -l >> $CG_LOG
+$PSQL -U $PGUSER $PGHOST $HTML template1 -l >> $CG_LOG
 
 _html_nl_
-_html_line_ "Configuration (only 1 output per cluster):" 
+_html_title_ "Configuration (only 1 output per cluster):" 
+_html_nl_
 _html_line_ "Bold values are not in default setting"
 _html_nl_
 
