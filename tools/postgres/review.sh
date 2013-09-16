@@ -171,6 +171,12 @@ _html_title_ "Databases:"
 $PSQL -U $PGUSER $PGHOST $HTML template1 -l >> $CG_LOG
 
 _html_nl_
+_html_title_ "Databases sizes:"
+$PSQL -U $PGUSER $PGHOST $HTML template1 -c "select psd.*, pg_size_pretty(pg_database_size(datname)) as size \
+                               from pg_database pd join pg_stat_database psd using (datname)" >> $CG_LOG
+
+
+_html_nl_
 _html_title_ "Configuration (only 1 output per cluster):" 
 _html_nl_
 _html_line_ "Bold values are not in default setting"
