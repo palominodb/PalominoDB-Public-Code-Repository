@@ -187,6 +187,11 @@ _html_close_
 
 _section_ "Configuration (only 1 output per cluster):"
 
+
+_line_
+_section_ "Databases:"
+$PSQL -U $PGUSER $PGHOST template1 -l >> $LOG
+
 _line_
 _section_ "File Locations:" 
 
