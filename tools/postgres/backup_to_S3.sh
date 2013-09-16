@@ -176,7 +176,6 @@ then
   exit 15
 fi
 
-#Check key health here
 
 #Check if pg_dumpall command exists
 if ! test -e ${PGBINHOME}/pg_dumpall
@@ -201,6 +200,7 @@ if [ $CHECK_KEYS ]
 then
   PRIV_KEY_MD5=$(openssl rsa -noout -modulus -in $PRIV_KEY_PATH | openssl md5)
   PUB_KEY_MD5=$(openssl x509 -noout -modulus -in $PUB_KEY_PATH | openssl md5) 
+  [ ! "$PRIV_KEY_MD5" = "$PUB_KEY_MD5" ] && { echo "Keys doesn¡t correpond" ; exit 6 ; }
 fi
 
 #Backup command
