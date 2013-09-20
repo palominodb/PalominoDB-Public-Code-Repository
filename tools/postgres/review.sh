@@ -5,13 +5,18 @@
 # Author: Emanuel Calvo
 #
 # TODO:
-# - Add better output
+# - Add better output (HTML will be the default)
 # - Suggestions according the findings
-# - Master/Slave detection and status
+# - Master/Slave detection and status (Already does this)
 # - Summary 
 # - Split the queries in a section/file to make this more extensible
 
-VERSION="1.0b"
+# There is another project for this script for a more useful analytics.
+# The idea is to collect information during x minutes and have a better
+# number of the activity.
+# Also will be nice to add the mail feature.
+
+VERSION="1.1 alpha prototype"
 
 # You should not change variables here, please use the parameters.
 LOG=review_$(hostname).log
