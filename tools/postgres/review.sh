@@ -229,6 +229,21 @@ do
        from pg_stat_database where datname like '$i'" >> $LOG
 
   _line_
+  _section_ "Number of tables per schema and total"
+  
+  $PSQL -U $PGUSER $PGHOST $i -c "\
+       select schemaname, count(*) as "Num of tables per schema", \
+       sum(count(*)) OVER () as "Total number of tables" from pg_tables \
+       group by schemaname order by 2 desc" >> $LOG
+       
+       
+  _line_
+  _section_ "Background writer stats: "
+  
+  $PSQL -U $PGUSER $PGHOST $i -xc "\
+       select * from pg_stat_bgwriter" >> $LOG       
+
+  _line_
   _section_ "Activity in amounts: " 
 
   $PSQL -U $PGUSER $i $PGHOST -xc "select st.schemaname, st.relname, seq_scan , \
@@ -250,14 +265,6 @@ do
        where schemaname not in ('pg_catalog', 'information_schema')  \
          and n_distinct between 100 and 500 and most_common_freqs[1] < 0.18  \
       order by n_distinct desc" >> $LOG
-
-
-  _line_
-  _section_ "Dirty rows: " 
-
-  $PSQL -U $PGUSER $i $PGHOST -c "select schemaname, relname, n_live_tup, n_dead_tup, \
-       pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
-       from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $LOG
   
   _line_
   _section_ "Biggest 10 tables: " 
@@ -278,8 +285,16 @@ do
   _line_
   _section_ "Dirty rows: " 
 
+  $PSQL -U $PGUSER $i $PGHOST -c "select schemaname, relname, n_live_tup, n_dead_tup, \
+       pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
+       from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $LOG
+
+
+  _line_
+  _section_ "Dirty rows, nailed: " 
+
    $PSQL -U $PGUSER $i $PGHOST -c "select relname, n_live_tup, n_dead_tup, \
-            pg_size_pretty(pg_relation_size(schemaname || '.' || relname)) \
+            pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) \
             FROM pg_stat_user_tables \
             ORDER by n_dead_tup desc limit 10; \
             SELECT sum(n_live_tup) as Total_Live_rows, sum(n_dead_tup) as Total_Dead_Rows, \
