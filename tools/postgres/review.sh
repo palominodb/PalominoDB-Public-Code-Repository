@@ -1,20 +1,20 @@
 #!/bin/bash
 #
-# Very basic Postgres information collection script.
-# BSD License . PalominoDB team.
+# Basic Postgres info collector script.
+#   
+# 
+# BSD License . Palomino team.
 # Author: Emanuel Calvo
 #
 # TODO:
-# - Add better output
-# - Suggestions according the findings
-# - Master/Slave detection and status
-# - Summary 
-# - Split the queries in a section/file to make this more extensible
+# - Add better output (More! Now is HTML)
+# - Suggestions according the findings (That we'll be included in other tool)
+# - Master/Slave detection and status (already do this)
 
-VERSION="1.0b"
+VERSION="1.4b"
 
 # You should not change variables here, please use the parameters.
-LOG=review_$(hostname).log
+#LOG=review_$(hostname).log
 CG_LOG=review_conf_$(hostname).html
 DEF_PGUSER=postgres
 PGUSER=$DEF_PGUSER
@@ -22,21 +22,22 @@ PGHOST=""
 PORT=5432
 HTML="-H"
 TAR_FILE=$(hostname)_review.tar
+COUNTER_ID=1 #For the div and <a> references, generates a sequence
 
 usage()
 {
 cat << EOF
 usage: $0 options
 
-Postgres review script
+Postgres review script. Palomino Tools team.
 
 
 OPTIONS:
     -h HOST                 Set the remote host. By default connects through socket.
-    -o <file>               Output the report to a file Default: $LOG
+    -o <file>               Output the report to a file Default: $CG_LOG
     -c                      Set log check (non available remotely or using -h option)
     -H                      THIS
-    -t                      Tar log files. Name $TAR_FILE
+    -t                      Tar log files. Name $TAR_FILE DEPRECATED (only 1 HTML output)
     -b <psql dir>           That is if you want to execute an specific psql command location (several versions?). Your actual psql is under: $(whereis psql || echo "You don't have it." ) 
     -u <POSTGRES USER>      The database user Default= $DEF_PGUSER
     -p <port>               Not implemented yet. Default: $PORT
@@ -44,32 +45,70 @@ OPTIONS:
 EOF
 }
 
-_line_()
-{
-  echo "" >> $LOG
-  echo "#################################################################################################" >> $LOG
-}
+## Full HTML output, deprecated
+#_line_()
+#{
+#  echo "" >> $LOG
+#  echo "#################################################################################################" >> $LOG
+#}
 
-_section_()
-{
-  echo "### $1" | tee -a $LOG 
-}
+#_section_()
+#{
+#  echo "### $1" >> $LOG  #| tee -a $LOG 
+#}
 
 
 _html_head_()
 {
 
-echo "
+cat <<_EOF > $CG_LOG 
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Configuration Report for $hostname</title>
+<title>Configuration Report for $hostname by PalominoDB tools team</title>
+<script language="javascript">
+function toggle(element,label) {
+        var ele = document.getElementById(element);
+        var text = document.getElementById(label);
+        if(ele.style.display == "block") {
+                ele.style.display = "none";
+                text.innerHTML = "(+)";
+        }
+        else {
+                ele.style.display = "block";
+                text.innerHTML = "(-)";
+        }
+}
+</script>
  
 </head>
 <body>
-" > $CG_LOG
+_EOF
 
+
+}
+
+_html_block_begin_()
+{
+# Param 1 : div id
+# Param 2 : a id
+#<a id="displayText2" href="javascript:toggle('toggleText2','displayText2');">+</a>
+#<div id="toggleText2" style="display:block;">Other content</div>
+COUNTER_ID=$((COUNTER_ID+1))
+cat  <<_EOF >> $CG_LOG
+<a id="displayText$COUNTER_ID" href="javascript:toggle('toggleText$COUNTER_ID','displayText$COUNTER_ID');">(+)</a>
+_EOF
+
+cat <<_EOF >> $CG_LOG
+<div id="toggleText$COUNTER_ID" style="display:block;"> 
+_EOF
+}
+
+_html_block_end_()
+{
+
+  echo "</div>" >> $CG_LOG
 }
 
 _html_close_()
@@ -85,6 +124,10 @@ _html_nl_()
 _html_title_()
 {
   echo "<h1>$1</h1>" >> $CG_LOG
+}
+
+_html_subtitle_(){
+  echo "<h2>$1</h2>" >> $CG_LOG
 }
 
 _html_line_()
@@ -111,7 +154,12 @@ while getopts th:o:cb:u:VH optname
         CG_LOG=review_conf_$OPTARG.html
         ;;
       "o")
+        _L=$LOG
+        _C=$CG_LOG
         LOG=$OPTARG
+        [ -d $LOG ] || { echo "Log param shuold be a directory" ; exit 11 ; }
+        LOG=$OPTARG/$_L
+        CG_LOG=$OPTARG/$_C
         ;;
       "c")
         LOG_CHECK=1
@@ -138,7 +186,7 @@ done
 
 ## Checks
 ##########
-[ -e $LOG ] && cat /dev/null > $LOG
+#[ -e $LOG ] && cat /dev/null > $LOG
 
 [ ! $PGBINHOME ] && { echo "No folder for postgres binaries. Please set the -b <folder> option" ; exit 15 ; }
 
@@ -164,24 +212,28 @@ _html_head_
 _html_nl_
 _html_title_ "Cluster configuration"
 _html_line_ "Size of all the DBs of the current cluster: $PG_SIZE_ALL"
-_html_line_ "Postgres version $PG_VERSION"
+_html_nl_
+_html_line_ "Postgres version: $PG_VERSION"
 _html_nl_
 
-_html_nl_
-_html_title_ "Databases:"
-$PSQL -U $PGUSER $PGHOST $HTML template1 -l >> $CG_LOG
+#_html_nl_
+#_html_title_ "Databases:"
+#$PSQL -U $PGUSER $PGHOST $HTML template1 -l >> $CG_LOG
 
 _html_nl_
-_html_title_ "Databases sizes:"
-$PSQL -U $PGUSER $PGHOST $HTML template1 -c "select psd.*, pg_size_pretty(pg_database_size(datname)) as size \
+_html_title_ "Databases sizes and details:"
+_html_nl_
+_html_block_begin_
+$PSQL -U $PGUSER $PGHOST $HTML template1 -xc "select psd.*, pg_size_pretty(pg_database_size(datname)) as size \
                                from pg_database pd join pg_stat_database psd using (datname)\
                                order by pg_database_size(datname) desc" >> $CG_LOG
-
+_html_block_end_
 
 _html_nl_
-_html_title_ "Configuration (only 1 output per cluster):" 
+_html_title_ "Instance configuration:" 
 _html_nl_
-_html_line_ "Bold values are not in default setting"
+_html_block_begin_
+_html_line_ "NOTE: Bold values were changed from the default value!"
 _html_nl_
 
 $PSQL -U $PGUSER $PGHOST template1 $HTML -c "\
@@ -194,6 +246,7 @@ $PSQL -U $PGUSER $PGHOST template1 $HTML -c "\
         where  category !~ 'File Locations' order by category" | sed 's/&lt;/</g' | sed 's/&gt;/>/g' >> $CG_LOG
 
 _html_nl_
+_html_block_end_
 _html_title_ "File locations:"
 _html_nl_
 $PSQL -U $PGUSER $PGHOST $HTML template1 -c "select name, setting, context, category \
@@ -216,81 +269,82 @@ for i in $($PSQL -U $PGUSER $PGHOST template1 -Atc "\
        select datname from pg_database\
        where datname !~ 'template0|template1|postgres' ")
 do
-  _line_
-  _section_ " DATABASE  $i" 
-  _line_
+  _html_nl_
+  _html_title_ " ========== DATABASE  $i ============== " 
+  _html_block_begin_ 
+  _html_nl_
 
-  _line_
-  _section_ "Database stats:" 
+  _html_nl_
+  _html_subtitle_ "Database stats:" 
 
-  $PSQL -U $PGUSER $PGHOST $i -xc "\
+  $PSQL -U $PGUSER $PGHOST $i $HTML -xc "\
       select *, (tup_returned+tup_fetched)/NULLIF(tup_inserted+tup_updated+tup_deleted,0)\
        || ' to 1' as Ratio_R_W \
-       from pg_stat_database where datname like '$i'" >> $LOG
+       from pg_stat_database where datname like '$i'" >> $CG_LOG
 
-  _line_
-  _section_ "Activity in amounts: " 
+  _html_nl_
+  _html_subtitle_ "Activity in amounts: " 
 
-  $PSQL -U $PGUSER $i $PGHOST -xc "select st.schemaname, st.relname, seq_scan , \
+  $PSQL -U $PGUSER $i $PGHOST $HTML -xc "select st.schemaname, st.relname, seq_scan , \
       seq_tup_read ,  idx_scan  , idx_tup_fetch , n_tup_ins , n_tup_upd , n_tup_del \
       ,pg_relation_size(st.schemaname || '.' || quote_ident(st.relname)) as size, \
       pg_size_pretty(pg_relation_size(st.schemaname || '.' || quote_ident(st.relname))) as pretty,heap_blks_read \
       , heap_blks_hit , idx_blks_read , idx_blks_hit , toast_blks_read , toast_blks_hit , \
       tidx_blks_read , tidx_blks_hit  \
       from pg_stat_user_tables st JOIN pg_statio_user_tables io USING (relid) \
-      order by size desc limit 5"  >> $LOG
+      order by size desc limit 5"  >> $CG_LOG
 
-  _line_
-  _section_ "Candidates to increase the STATISTICS target" 
+  _html_nl_
+  _html_subtitle_ "Candidates to increase the STATISTICS target" 
 
-   $PSQL -U $PGUSER $PGHOST $i -c "\
+   $PSQL -U $PGUSER $PGHOST $i $HTML -c "\
        select tablename, attname, n_distinct,(most_common_vals::text::text[])[1], \
               most_common_freqs[1]  \
        from pg_Stats  \
        where schemaname not in ('pg_catalog', 'information_schema')  \
          and n_distinct between 100 and 500 and most_common_freqs[1] < 0.18  \
-      order by n_distinct desc" >> $LOG
+      order by n_distinct desc" >> $CG_LOG
 
 
-  _line_
-  _section_ "Dirty rows: " 
+  _html_nl_
+  _html_subtitle_ "Dirty rows: " 
 
-  $PSQL -U $PGUSER $i $PGHOST -c "select schemaname, relname, n_live_tup, n_dead_tup, \
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c "select schemaname, relname, n_live_tup, n_dead_tup, \
        pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
-       from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $LOG
+       from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $CG_LOG
   
-  _line_
-  _section_ "Biggest 10 tables: " 
+  _html_nl_
+  _html_subtitle_ "Biggest 10 tables: " 
 
-  $PSQL -U $PGUSER $i $PGHOST -c "select schemaname, relname, n_live_tup, \
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c "select schemaname, relname, n_live_tup, \
        pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
        from pg_stat_user_tables order by pg_relation_size(schemaname || '.' || quote_ident(relname)) desc \
-       limit 10"  >> $LOG
+       limit 10"  >> $CG_LOG
 
-  _line_
-  _section_ "Inherited tables size: " 
+  _html_nl_
+  _html_subtitle_ "Inherited tables size: " 
 
-  $PSQL -U $PGUSER $i $PGHOST -c "select inhparent::regclass, sum(pg_relation_size(inhrelid::regclass))::bigint, \
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c "select inhparent::regclass, sum(pg_relation_size(inhrelid::regclass))::bigint, \
      pg_size_pretty(sum(pg_relation_size(inhrelid::regclass))::bigint) \
      from pg_inherits \
-     group by 1 order by 2 desc" >> $LOG
+     group by 1 order by 2 desc" >> $CG_LOG
 
-  _line_
-  _section_ "Dirty rows: " 
+  _html_nl_
+  _html_subtitle_ "Dirty rows: " 
 
-   $PSQL -U $PGUSER $i $PGHOST -c "select relname, n_live_tup, n_dead_tup, \
+   $PSQL -U $PGUSER $i $PGHOST $HTML -c "select relname, n_live_tup, n_dead_tup, \
             pg_size_pretty(pg_relation_size(schemaname || '.' || relname)) \
             FROM pg_stat_user_tables \
             ORDER by n_dead_tup desc limit 10; \
             SELECT sum(n_live_tup) as Total_Live_rows, sum(n_dead_tup) as Total_Dead_Rows, \
             round(sum(n_dead_tup)*100/nullif(sum(n_live_tup),0),2) as Percentage_of_Dead_Rows, \
             pg_size_pretty(sum(pg_relation_size(schemaname || '.' || relname))::bigint) \
-            FROM pg_stat_user_tables;" >> $LOG
+            FROM pg_stat_user_tables;" >> $CG_LOG
   
-  _line_
-  _section_ "Update ratio - FILLFACTOR enhacements: " 
+  _html_nl_
+  _html_subtitle_ "Update ratio - FILLFACTOR enhacements: " 
   
-  $PSQL -U $PGUSER $i $PGHOST -c"\
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c"\
   SELECT t.schemaname, t.relname, c.reloptions,\
        t.n_tup_upd, t.n_tup_hot_upd,\
        case when n_tup_upd > 0\
@@ -300,12 +354,12 @@ do
    FROM pg_stat_all_tables t \
       JOIN (pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid) \
         ON n.nspname = t.schemaname AND c.relname = t.relname \
-   ORDER BY n_tup_upd desc LIMIT 20;" >> $LOG
+   ORDER BY n_tup_upd desc LIMIT 20;" >> $CG_LOG
    
-   _line_ 
-   _section_ "Duplicated indexes:" 
+   _html_nl_ 
+   _html_subtitle_ "Duplicated indexes:" 
    
-   $PSQL -U $PGUSER $i $PGHOST -c"\
+   $PSQL -U $PGUSER $i $PGHOST $HTML -c"\
    SELECT pg_size_pretty(sum(pg_relation_size(idx))::bigint) AS size, \
        (array_agg(idx))[1] AS idx1, (array_agg(idx))[2] AS idx2, \
        (array_agg(idx))[3] AS idx3, (array_agg(idx))[4] AS idx4 \
@@ -314,12 +368,12 @@ do
                                          coalesce(indexprs::text,'')||E'\n' || coalesce(indpred::text,'')) AS KEY \
      FROM pg_index) sub \
    GROUP BY KEY HAVING count(*)>1 \
-   ORDER BY sum(pg_relation_size(idx)) DESC" >> $LOG
+   ORDER BY sum(pg_relation_size(idx)) DESC" >> $CG_LOG
    
-   _line_
-   _section_ "Index Summary:" 
+   _html_nl_
+   _html_subtitle_ "Index Summary:" 
 
-   $PSQL -U $PGUSER $i $PGHOST -c"\
+   $PSQL -U $PGUSER $i $PGHOST $HTML -c"\
    SELECT\
     pg_class.relname,\
     pg_size_pretty(pg_class.reltuples::bigint) AS rows_in_bytes,\
@@ -353,12 +407,12 @@ do
      pg_namespace.nspname='public'\
   AND  pg_class.relkind = 'r'\
   GROUP BY pg_class.relname, pg_class.reltuples, x.is_unique\
-  ORDER BY 2;" >> $LOG
+  ORDER BY 2;" >> $CG_LOG
 
-  _line_
-  _section_ "Index Statistics:" 
+  _html_nl_
+  _html_subtitle_ "Index Statistics:" 
 
-   $PSQL -U $PGUSER $i $PGHOST -c"SELECT\
+   $PSQL -U $PGUSER $i $PGHOST $HTML -c"SELECT\
     t.tablename,\
     indexname,\
     c.reltuples AS num_rows,\
@@ -387,23 +441,24 @@ do
     AS foo\
     ON t.tablename = foo.ctablename\
   WHERE t.schemaname='public'\
-  ORDER BY 1,2; " >> $LOG
+  ORDER BY 1,2; " >> $CG_LOG
 
 
-  _line_
-  _section_ "Actual Table cache hit ratio"
-  $PSQL -U $PGUSER $i $PGHOST -c" SELECT\
+  _html_nl_
+  _html_subtitle_ "Actual Table cache hit ratio"
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c" SELECT\
     'cache hit rate' AS name,\
      sum(heap_blks_hit) / nullif((sum(heap_blks_hit) + sum(heap_blks_read)),0) AS ratio \
-     FROM pg_statio_user_tables; " >> $LOG
+     FROM pg_statio_user_tables; " >> $CG_LOG
 
-  _line_
-  _section_ "Actual Index cache hit ratio"
-  $PSQL -U $PGUSER $i $PGHOST -c" SELECT\
+  _html_nl_
+  _html_subtitle_ "Actual Index cache hit ratio"
+  $PSQL -U $PGUSER $i $PGHOST $HTML -c " SELECT\
     'index hit rate' AS name,\
     (sum(idx_blks_hit)) / nullif(sum(idx_blks_hit + idx_blks_read),0) AS ratio\
-    FROM pg_statio_user_indexes; " >>$LOG
+    FROM pg_statio_user_indexes; " >>$CG_LOG
 
+  _html_block_end_
 
 done
 
@@ -411,27 +466,31 @@ done
 ## Log Collector Info
 #####################
 
+_html_nl_
+_html_title_ "Log parse"
+_html_block_begin_
+
 if [ $LOG_CHECK ]
 then
   # The following lines could show error if logging_collector isn't enabled.
-  _line_
-  _section_ "Deadlocks:" 
-  grep -c deadlock $PG_LOGS/* >> $LOG
-  _line_
-  _section_ "Timeouts:" 
-  grep -c "canceling statement due to statement timeout" $PG_LOGS/* >> $LOG
-  _line_
-  _section_ "Checkpoints warning:"
-  grep -c "checkpoints are occurring too frequently" $PG_LOGS/* >> $LOG
+  _html_nl_
+  _html_subtitle_ "Deadlocks:" 
+  grep -c deadlock $PG_LOGS/* >> $CG_LOG
+  _html_nl_
+  _html_subtitle_ "Timeouts:" 
+  grep -c "canceling statement due to statement timeout" $PG_LOGS/* >> $CG_LOG
+  _html_nl_
+  _html_subtitle_ "Checkpoints warning:"
+  grep -c "Checkpoints are occurring too frequently" $PG_LOGS/* >> $CG_LOG
 fi 
 
+_html_block_end_
 
 ## The end
 ##########
-_line_
-echo "All the information was dump to $LOG and $CG_LOG files."
+echo "All the information was dump to  $CG_LOG file."
 
-[ $TAR ] && { tar -cf $TAR_FILE $LOG $CG_LOG ; echo "Tar file $TAR_FILE" ; }
+[ $TAR ] && { tar -cf $TAR_FILE  $CG_LOG ; echo "Tar file $TAR_FILE" ; }
 
 exit 0
 
