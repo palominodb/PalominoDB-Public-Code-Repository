@@ -96,12 +96,13 @@ _html_block_begin_()
 #<a id="displayText2" href="javascript:toggle('toggleText2','displayText2');">+</a>
 #<div id="toggleText2" style="display:block;">Other content</div>
 COUNTER_ID=$((COUNTER_ID+1))
+DEF_COLLAPASE="none"  # or block
 cat  <<_EOF >> $CG_LOG
 <a id="displayText$COUNTER_ID" href="javascript:toggle('toggleText$COUNTER_ID','displayText$COUNTER_ID');">(+)</a>
 _EOF
 
 cat <<_EOF >> $CG_LOG
-<div id="toggleText$COUNTER_ID" style="display:block;"> 
+<div id="toggleText$COUNTER_ID" style="display:$DEF_COLLAPSE;"> 
 _EOF
 }
 
