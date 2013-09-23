@@ -7,26 +7,11 @@
 # Author: Emanuel Calvo
 #
 # TODO:
-<<<<<<< HEAD
 # - Add better output (More! Now is HTML)
 # - Suggestions according the findings (That we'll be included in other tool)
 # - Master/Slave detection and status (already do this)
 
 VERSION="1.4b"
-=======
-# - Add better output (HTML will be the default)
-# - Suggestions according the findings
-# - Master/Slave detection and status (Already does this)
-# - Summary 
-# - Split the queries in a section/file to make this more extensible
-
-# There is another project for this script for a more useful analytics.
-# The idea is to collect information during x minutes and have a better
-# number of the activity.
-# Also will be nice to add the mail feature.
-
-VERSION="1.1 alpha prototype"
->>>>>>> 0590f3a8335c746eef1cf16af24b60a41afb2657
 
 # You should not change variables here, please use the parameters.
 #LOG=review_$(hostname).log
@@ -297,28 +282,8 @@ do
        || ' to 1' as Ratio_R_W \
        from pg_stat_database where datname like '$i'" >> $CG_LOG
 
-<<<<<<< HEAD
   _html_nl_
   _html_subtitle_ "Activity in amounts: " 
-=======
-  _line_
-  _section_ "Number of tables per schema and total"
-  
-  $PSQL -U $PGUSER $PGHOST $i -c "\
-       select schemaname, count(*) as "Num of tables per schema", \
-       sum(count(*)) OVER () as "Total number of tables" from pg_tables \
-       group by schemaname order by 2 desc" >> $LOG
-       
-       
-  _line_
-  _section_ "Background writer stats: "
-  
-  $PSQL -U $PGUSER $PGHOST $i -xc "\
-       select * from pg_stat_bgwriter" >> $LOG       
-
-  _line_
-  _section_ "Activity in amounts: " 
->>>>>>> 0590f3a8335c746eef1cf16af24b60a41afb2657
 
   $PSQL -U $PGUSER $i $PGHOST $HTML -xc "select st.schemaname, st.relname, seq_scan , \
       seq_tup_read ,  idx_scan  , idx_tup_fetch , n_tup_ins , n_tup_upd , n_tup_del \
@@ -338,7 +303,6 @@ do
        from pg_Stats  \
        where schemaname not in ('pg_catalog', 'information_schema')  \
          and n_distinct between 100 and 500 and most_common_freqs[1] < 0.18  \
-<<<<<<< HEAD
       order by n_distinct desc" >> $CG_LOG
 
 
@@ -348,9 +312,6 @@ do
   $PSQL -U $PGUSER $i $PGHOST $HTML -c "select schemaname, relname, n_live_tup, n_dead_tup, \
        pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
        from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $CG_LOG
-=======
-      order by n_distinct desc" >> $LOG
->>>>>>> 0590f3a8335c746eef1cf16af24b60a41afb2657
   
   _html_nl_
   _html_subtitle_ "Biggest 10 tables: " 
@@ -371,21 +332,8 @@ do
   _html_nl_
   _html_subtitle_ "Dirty rows: " 
 
-<<<<<<< HEAD
    $PSQL -U $PGUSER $i $PGHOST $HTML -c "select relname, n_live_tup, n_dead_tup, \
             pg_size_pretty(pg_relation_size(schemaname || '.' || relname)) \
-=======
-  $PSQL -U $PGUSER $i $PGHOST -c "select schemaname, relname, n_live_tup, n_dead_tup, \
-       pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) as size \
-       from pg_stat_user_tables order by n_dead_tup desc limit 5"  >> $LOG
-
-
-  _line_
-  _section_ "Dirty rows, nailed: " 
-
-   $PSQL -U $PGUSER $i $PGHOST -c "select relname, n_live_tup, n_dead_tup, \
-            pg_size_pretty(pg_relation_size(schemaname || '.' || quote_ident(relname))) \
->>>>>>> 0590f3a8335c746eef1cf16af24b60a41afb2657
             FROM pg_stat_user_tables \
             ORDER by n_dead_tup desc limit 10; \
             SELECT sum(n_live_tup) as Total_Live_rows, sum(n_dead_tup) as Total_Dead_Rows, \
