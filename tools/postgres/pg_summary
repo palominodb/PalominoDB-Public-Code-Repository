@@ -1,0 +1,52 @@
+#!/usr/bin/python
+# 
+# pg_summary 
+#
+#   Test the activity of a Postgres service during a small time frame.
+# This tool is not a replacement for a monitoring/trending tool, instead is useful
+# for first onboard reviews and checks.
+#
+# Pre-requisites: python-psycopg2
+
+import psycopg2
+from optparse import OptionParser
+
+#Constants and hardcoded/hard variables
+VERSION = "Alpha? Not even!"
+DSN = "dbname=postgres user=postgres"
+
+
+def parse():
+    parser = OptionParser(usage="usage: %prog -h [host] -p [port] -U [pguser]",
+                          version="%prog " + VERSION )
+    parser.add_option("-h", "--host",
+                      action="store",
+                      dest="host",
+                      default="localhost",
+                      help="Host to review")
+    parser.add_option("-p", "--port",
+                      action="store",
+                      dest="port",
+                      default=5432,
+                      help="Postgres Port Default=5432")
+    parser.add_option("-U", "--user",
+                      action="store",
+                      dest="pguser",
+                      default="postgres",
+                      help="Postgres user")
+    (options, args) = parser.parse_args()
+
+#    if options.host == False:
+#        parser.error("Error: host is required.")
+
+
+    return (option, args)    
+
+def main():
+    (options, args) = parse()
+
+
+# call main
+if __name__ == '__main__':
+    main()
+
