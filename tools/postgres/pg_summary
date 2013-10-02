@@ -42,6 +42,7 @@ def parse():
 
     return (option, args)    
 
+
 def main():
     (options, args) = parse()
 
