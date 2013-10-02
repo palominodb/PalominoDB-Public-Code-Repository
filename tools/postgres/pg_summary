@@ -14,12 +14,12 @@ from optparse import OptionParser
 #Constants and hardcoded/hard variables
 VERSION = "Alpha? Not even!"
 DSN = "dbname=postgres user=postgres"
-
+PROC_TIME = 900 # That's 15 minutes
 
 def parse():
     parser = OptionParser(usage="usage: %prog -h [host] -p [port] -U [pguser]",
                           version="%prog " + VERSION )
-    parser.add_option("-h", "--host",
+    parser.add_option("-H", "--host",
                       action="store",
                       dest="host",
                       default="localhost",
@@ -34,19 +34,31 @@ def parse():
                       dest="pguser",
                       default="postgres",
                       help="Postgres user")
+    parser.add_option("-d", "--database",
+                      action="store",
+                      dest="database",
+                      default="postgres",
+                      help="Database to connect")
     (options, args) = parser.parse_args()
 
 #    if options.host == False:
 #        parser.error("Error: host is required.")
-
-
-    return (option, args)    
+    return (options, args)    
 
 
 def main():
     (options, args) = parse()
+#connect to the database
+    DSN = "dbname=" + options.database + " user=" + options.pguser + " port=" + str(options.port) + " host=" + options.host
+    conn = psycopg2.connect(DSN)
+# retrieve the data
+# sleep
+# retrieve the new data
+#calculate the diff
+#report nicely
+    conn.close()
 
-
+    
 # call main
 if __name__ == '__main__':
     main()
