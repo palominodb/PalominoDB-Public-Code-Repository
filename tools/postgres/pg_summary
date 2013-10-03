@@ -17,7 +17,7 @@ from optparse import OptionParser
 VERSION = "Alpha? Not even!"
 DSN = "dbname=postgres user=postgres"
 DEF_PROC_TIME = 900 # That's 15 minutes
-DEF_SNAPSHOT_TIME = 60 # That's 1 minute
+DEF_INTERVAL_TIME = 60 # That's 1 minute
 DEF_DEBUG=2
 DEBUG=2
 
@@ -49,10 +49,10 @@ def parse():
                       dest="PROC_TIME",
                       default=DEF_PROC_TIME,
                       help="Time spent for the analysis")
-    parser.add_option("-S", "--snapshot-time",
+    parser.add_option("-i", "--interval-time",
                       action="store",
-                      dest="SNAPSHOT_TIME",
-                      default=DEF_SNAPSHOT_TIME,
+                      dest="INTERVAL_TIME",
+                      default=DEF_INTERVAL_TIME,
                       help="Interval between the inserts.")
     parser.add_option("-D","--debug",
                       action="store",
@@ -76,7 +76,8 @@ def create_schema(conn):
     conn.set_isolation_level(0)
     cur = conn.cursor()
     cur.execute("CREATE SCHEMA _summary_;")
-    cur.execute("CREATE TABLE _summary_.bgwriter ( id serial PRIMARY KEY, ts timestamp default clock_timestamp(), "
+    # droped id serial only for quick test due to insert conflicts
+    cur.execute("CREATE TABLE _summary_.bgwriter (  ts timestamp default clock_timestamp(), "
                 "checkpoints_timed bigint, checkpoints_req bigint, checkpoint_write_time bigint, checkpoint_sync_time bigint,"
                 "buffers_checkpoint bigint, buffers_clean bigint, maxwritten_clean bigint, "
                 "buffers_backend bigint, buffers_backend_fsync bigint, buffers_alloc bigint);")
@@ -86,6 +87,7 @@ def create_schema(conn):
                 "tup_inserted  bigint,  tup_updated   bigint , tup_deleted   bigint , conflicts bigint,"
                 "temp_files bigint , temp_bytes bigint ,deadlocks bigint ,blk_read_time   double precision, "
                 "blk_write_time  double precision); ")
+    
 
 def drop_schema(conn):
     conn.set_isolation_level(0)
@@ -96,10 +98,11 @@ def drop_schema(conn):
 
 def collect_data(conn):
     cur = conn.cursor()
-    cur.execute("SELECT checkpoints_timed,checkpoints_req, " 
-                "checkpoint_write_time, checkpoint_sync_time, "
-                "buffers_checkpoint, buffers_backend, buffers_alloc FROM pg_stat_bgwriter;")
-    print cur.fetchone()
+    cur.execute("INSERT INTO _summary_.bgwriter SELECT clock_timestamp(), checkpoints_timed , checkpoints_req , "
+                "checkpoint_write_time , checkpoint_sync_time , buffers_checkpoint , buffers_clean , maxwritten_clean , "
+                "buffers_backend , buffers_backend_fsync , buffers_alloc FROM pg_catalog.pg_stat_bgwriter;")
+    #cur.execute("SELECT * from _summary_.bgwriter")
+    #print cur.fetchone()
 
 
 def main():
@@ -109,6 +112,11 @@ def main():
     DSN = "dbname=" + options.database + " user=" + options.pguser + " port=" + str(options.port) + " host=" + options.host
     conn = psycopg2.connect(DSN)
 
+    start = time.time()
+    ETA =  time.time() + int(options.PROC_TIME)
+
+    print start
+    print ETA
     # Prepare the environment (tables) 
     try:
         create_schema(conn)
@@ -117,8 +125,14 @@ def main():
         debug("create_schema: %s" % str(e))
         #raise    
     # retrieve the data
-    collect_data(conn)    
+    while ETA > time.time():
+        collect_data(conn)    
+        time.sleep(int(options.INTERVAL_TIME))
 
+    cur = conn.cursor()
+    cur.execute("SELECT * from _summary_.bgwriter")
+    for all in cur.fetchall():
+        print (all)
     # retrieve the new data
     #calculate the diff
     #report nicely
