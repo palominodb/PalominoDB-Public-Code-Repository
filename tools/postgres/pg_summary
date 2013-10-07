@@ -12,6 +12,7 @@ import psycopg2
 import time
 import sys
 from optparse import OptionParser
+import argparse
 
 #Constants and hardcoded/hard variables
 VERSION = "Alpha? Not even!"
@@ -21,49 +22,26 @@ DEF_INTERVAL_TIME = 60 # That's 1 minute
 DEF_DEBUG=2
 DEBUG=2
 
-def parse():
-    parser = OptionParser(usage="usage: %prog -h [host] -p [port] -U [pguser]",
-                          version="%prog " + VERSION )
-    parser.add_option("-H", "--host",
-                      action="store",
-                      dest="host",
-                      default="localhost",
-                      help="Host to review")
-    parser.add_option("-p", "--port",
-                      action="store",
-                      dest="port",
-                      default=5432,
-                      help="Postgres Port Default=5432")
-    parser.add_option("-U", "--user",
-                      action="store",
-                      dest="pguser",
-                      default="postgres",
-                      help="Postgres user")
-    parser.add_option("-d", "--database",
-                      action="store",
-                      dest="database",
-                      default="postgres",
-                      help="Database to connect")
-    parser.add_option("-T", "--time-delay",
-                      action="store",
-                      dest="PROC_TIME",
-                      default=DEF_PROC_TIME,
-                      help="Time spent for the analysis")
-    parser.add_option("-i", "--interval-time",
-                      action="store",
-                      dest="INTERVAL_TIME",
-                      default=DEF_INTERVAL_TIME,
-                      help="Interval between the inserts.")
-    parser.add_option("-D","--debug",
-                      action="store",
-                      dest="DEBUG",
-                      default=DEF_DEBUG,
-                      help="Debug level")
-    (options, args) = parser.parse_args()
+#    parser = OptionParser(usage="usage: %prog -h [host] -p [port] -U [pguser]",
+#                          version="%prog " + VERSION )
 
-#    if options.host == False:
-#        parser.error("Error: host is required.")
-    return (options, args)    
+def parse():
+    parser = argparse.ArgumentParser(description='Process arguments')
+    parser.add_argument("-H","--host",dest='host',default='localhost',
+                        help='host to review')
+    parser.add_argument("-p", "--port",dest='port',default=5432,
+                        help="Postgres Port Default=5432")
+    parser.add_argument("-U", "--user",dest="pguser",default="postgres",
+                        help="Database to connect")
+    parser.add_argument("-d", "--database",dest="database",default="postgres",
+                        help="Database to connect")
+    parser.add_argument("-T", "--time-delay",dest="PROC_TIME",default=DEF_PROC_TIME,
+                        help="Time spent for the analysis")
+    parser.add_argument("-i", "--interval-time",dest="INTERVAL_TIME",default=DEF_INTERVAL_TIME,
+                        help="Interval between the inserts.")
+    parser.add_argument("-D","--debug",dest="DEBUG",default=DEF_DEBUG,
+                        help="Debug level")
+    return parser.parse_args() 
 
 def debug(message,level=1):
     "Print a debug message"
@@ -106,8 +84,7 @@ def collect_data(conn):
 
 
 def main():
-    (options, args) = parse()
-
+    options = parse()
     #connect to the database
     DSN = "dbname=" + options.database + " user=" + options.pguser + " port=" + str(options.port) + " host=" + options.host
     conn = psycopg2.connect(DSN)
