@@ -1,0 +1,76 @@
+
+#   Copyright 2013 Palominodb
+# 
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+# 
+#        http://www.apache.org/licenses/LICENSE-2.0
+# 
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+#
+
+
+DBA related scripts for managing client infrastructure
+
+Installation instructions:
+
+o To get this repo without a key from github run the following:
+
+  ssh <username>@host
+  mkdir git
+  cd git
+  git clone https://github.com/dturner-palominodb/dba.git
+
+
+o Run create_perf_tarball.sh from git/dba.
+  It will create /tmp/perf_tarball.tgz which
+  can be copied to any host.
+
+  cd ~/git/dba
+  ./create_perf_tarball.sh
+
+o Copy the file to db dest_host:/tmp
+
+  scp /tmp/perf_tarball_20120820043003.tgz <hostname>:/tmp
+
+o On the dest host open the tar file and run
+  install_perf_tarball.sh.
+
+  cd /tmp
+  tar xzvf perf_tarball.tgz
+  cd perf_tarball
+  ./install_perf_tarball.sh
+
+o Test that the script is working, type dba. This will source the vfa_lib.sh script.
+  Your prompt should change. IE
+
+  [dturner@host02-01 ~]$ dba
+  [dturner@host02-01:3306 ~]#
+
+o Files of interest
+
+  /etc/vfatab
+  
+  The contents of the above file should resemble the following if you have multiple instances. Otherwise,
+  only one line for 3306
+ 
+  /etc/my-3306.cnf:3306:Y:Y    
+  /etc/my-3307.cnf:3307:Y:N    
+  /etc/my-3310.cnf:3310:Y:N    
+
+o /etc/init.d/mysql
+  /etc/init.d/mysqld
+
+  Both are symlinks to /usr/local/palominodb/scripts/mysqld. This is a modified mysqld script that is used to work
+  with multiple database instances. By default it will start or stop all instances. However, if a port is passed 
+  it will start or stop the individual instance.
+
+  /etc/init.d/mysql start 3307
+
+
+
