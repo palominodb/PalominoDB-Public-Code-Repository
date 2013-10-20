@@ -1,0 +1,211 @@
+#!/bin/bash
+#
+# mysqld	This shell script takes care of starting and stopping
+#		the MySQL subsystem (mysqld).
+#
+# chkconfig: - 64 36
+# description:	MySQL database server.
+# processname: mysqld
+# config: /etc/my.cnf
+# pidfile: /var/run/mysqld/mysqld.pid
+
+
+request=$1
+.  /usr/local/palominodb/scripts/vfa_lib.sh ""
+
+if [ ! -z $2 ];then
+  port_list=($2)
+else
+  port_list=( $(show_managed_ports) )
+fi
+
+# Library that helps identify location of various database files.
+
+# Source function library.
+.  /usr/local/palominodb/scripts/functions
+# Original call to functions used by this script. Had to modify
+# to work with both Centos and Ubuntu
+# . /etc/rc.d/init.d/functions
+
+# Deprecated
+# Source networking configuration.
+# .  /usr/local/palominodb/scripts/network
+# Original call to network used by this script. Had to modify
+# to work with both Centos and Ubuntu
+# . /etc/sysconfig/network
+
+
+prog="MySQL"
+
+# extract value of a MySQL option from config files
+# Usage: get_mysql_option SECTION VARNAME DEFAULT
+# result is returned in $result
+# We use my_print_defaults which prints all options from multiple files,
+# with the more specific ones later; hence take the last match.
+get_mysql_option(){
+	result=`/usr/bin/my_print_defaults --defaults-file=$(show_my_cnf $4) "$1" | sed -n "s/^--$2=//p" | tail -n 1`
+	if [ -z "$result" ]; then
+	    # not found, use default
+	    result="$3"
+	fi
+}
+
+
+set_vars(){
+
+  get_mysql_option mysqld datadir "/var/lib/mysql" $1
+  datadir="$result"
+
+  get_mysql_option mysqld socket "$datadir/mysql.sock" $1
+  socketfile="$result"
+  
+  get_mysql_option mysqld_safe log-error '' $1
+  if [ -z $result ];then
+    get_mysql_option mysqld log-error "/var/log/mysqld.log" $1
+  fi
+  errlogfile="$result"
+  
+  get_mysql_option mysqld_safe pid-file '' $1
+  if [ -z $result ];then
+    get_mysql_option mysqld pid-file "/var/run/mysqld/mysqld.pid" $1
+  fi
+  mypidfile="$result"
+
+}
+
+start(){
+	touch "$errlogfile"
+	chown mysql:mysql "$errlogfile" 
+	chmod 0640 "$errlogfile"
+	[ -x /sbin/restorecon ] && /sbin/restorecon "$errlogfile"
+	if [ ! -d "$datadir/mysql" ] ; then
+	    action $"Initializing MySQL database: " /usr/bin/mysql_install_db
+	    ret=$?
+	    chown -R mysql:mysql "$datadir"
+	    if [ $ret -ne 0 ] ; then
+		return $ret
+	    fi
+	fi
+	chown mysql:mysql "$datadir"
+	chmod 0755 "$datadir"
+	# Pass all the options determined above, to ensure consistent behavior.
+	# In many cases mysqld_safe would arrive at the same conclusions anyway
+	# but we need to be sure.
+        # DEBUG
+	/usr/bin/mysqld_safe   --defaults-file=$(show_my_cnf ${port}) --datadir="$datadir" --socket="$socketfile" \
+		--port=${port} --log-error="$errlogfile" --pid-file="$mypidfile" \
+		>/dev/null 2>&1 &
+	ret=$?
+	# Spin for a maximum of N seconds waiting for the server to come up.
+	# Rather than assuming we know a valid username, accept an "access
+	# denied" response as meaning the server is functioning.
+	if [ $ret -eq 0 ]; then
+            # May want to bump on some systems to 300
+	    STARTTIMEOUT=240
+	    while [ $STARTTIMEOUT -gt 0 ]; do
+		echo -n "."
+		RESPONSE=`/usr/bin/mysqladmin --socket="$socketfile" --user=UNKNOWN_MYSQL_USER ping 2>&1` && break
+		echo "$RESPONSE" | grep -q "Access denied for user" && break
+		sleep 1
+		let STARTTIMEOUT=${STARTTIMEOUT}-1
+	    done
+            echo
+	    if [ $STARTTIMEOUT -eq 0 ]; then
+                    echo "Timeout error occurred trying to start MySQL Daemon."
+                    action $"Starting $prog on ${port}: " /bin/false
+                    ret=1
+            else
+                    action $"Starting $prog on ${port}: " /bin/true
+            fi
+	else
+    	    action $"Starting $prog on ${port}: " /bin/false
+	fi
+
+        if [ ! -d /var/lock/subsys ];then
+          mkdir /var/lock/subsys
+        fi
+
+	[ $ret -eq 0 ] && touch /var/lock/subsys/mysqld-${port}
+	return $ret
+}
+
+stop(){
+        MYSQLPID=`cat "$mypidfile"  2>/dev/null `
+        if [ -n "$MYSQLPID" ]; then
+            /bin/kill "$MYSQLPID" >/dev/null 2>&1
+            ret=$?
+            if [ $ret -eq 0 ]; then
+                STOPTIMEOUT=60
+                while [ $STOPTIMEOUT -gt 0 ]; do
+		    echo -n "."
+                    /bin/kill -0 "$MYSQLPID" >/dev/null 2>&1 || break
+                    sleep 1
+                    let STOPTIMEOUT=${STOPTIMEOUT}-1
+                done
+                echo
+                if [ $STOPTIMEOUT -eq 0 ]; then
+                    echo "Timeout error occurred trying to stop MySQL Daemon."
+                    ret=1
+                    action $"Stopping $prog on ${port}: " /bin/false
+                else
+                    rm -f /var/lock/subsys/mysqld-${port}
+                    rm -f "$socketfile"
+                    action $"Stopping $prog on ${port}: " /bin/true
+                fi
+            else
+                action $"Stopping $prog on ${port}: " /bin/false
+            fi
+        else
+            ret=1
+            action $"Stopping $prog on ${port}: " /bin/false
+        fi
+        return $ret
+}
+ 
+restart(){
+    stop
+    start
+}
+
+condrestart(){
+    [ -e /var/lock/subsys/mysqld-${port} ] && restart || :
+}
+
+main(){
+# See how we were called.
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  status)
+    status mysqld
+    ;;
+  restart)
+    restart
+    ;;
+  condrestart)
+    condrestart
+    ;;
+  *)
+    echo $"Usage: $0 {start|stop|status|condrestart|restart}"
+    return 1
+esac
+}
+
+for port in ${port_list[@]}
+do
+  set_vars ${port}
+  main ${request}
+# Talk with Moss about whether we want to do this or not.
+# I can see reasons to quit our or not. I lean to not break'ing.
+#   if [ $? -eq 1 ];then
+#     echo "DEBUG Returned $?"
+#     break
+#     exit 1
+#   fi
+
+done
+
