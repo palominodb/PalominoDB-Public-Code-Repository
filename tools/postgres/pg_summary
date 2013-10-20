@@ -8,7 +8,7 @@
 #
 # Pre-requisites: python-psycopg2
 
-import psycopg2
+import psycopg2 as dbdriver
 import time
 import sys
 import argparse
@@ -92,7 +92,7 @@ def main():
     options = parse()
     #connect to the database
     DSN = "dbname=" + options.database + " user=" + options.pguser + " port=" + str(options.port) + " host=" + options.host
-    conn = psycopg2.connect(DSN)
+    conn = dbdriver.connect(DSN)
 
     #I'm looking here something more elegant. I.e.: After hit the Ctrl+C
     #it'll end up showing the partial stats, no just exit the script
@@ -118,8 +118,12 @@ def main():
 
     cur = conn.cursor()
     cur.execute("SELECT * from _summary_.bgwriter")
-    for all in cur.fetchall():
-        print (all.datetime)
+    #bgwriter_array = cur.fetchall()
+    #bgwriter_array.append(bgwriter_array)
+    #print "Number of columns %s and whole array: %s" % (cur, bgwriter_array)
+    for row in cur.fetchall():
+         print "DA ROW %s" , [row[0]]
+    
     # retrieve the new data
     #calculate the diff
     #report nicely
