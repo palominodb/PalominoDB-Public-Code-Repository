@@ -8,7 +8,18 @@ pg.dbspecific.ht.xml
 
 ### To set up: 
 
-Assumptions: Cacti installed and running. Set of postgres hosts running. The hosts are reachable from the cacti server by either ping or SNMP, and either directly via the postgres ports (usually 5432/5433), or reachable via ssh.
+Assumptions: 
+
+Cacti installed and running. 
+
+Set of postgres hosts running. 
+
+The hosts are reachable from the cacti server by either ping or SNMP, and either directly via the postgres ports (usually 5432/5433), or reachable via ssh.
+
+You have installed the php-postgres module on the cacti server.
+
+You've created the user for cacti on the monitored DB. No need for super privileges.
+
 
 1. Import the two host templates. 
 
