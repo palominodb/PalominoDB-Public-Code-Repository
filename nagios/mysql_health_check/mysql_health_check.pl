@@ -49,10 +49,12 @@ switch ($np->opts->mode)
   {
     foreach my $query_hr (@{$data->{current}->{proc_list}})
     {
-      # this is where we can add rules to skip specific queries or users
+      ### this is where we can add rules to skip specific queries or users
       next if($query_hr->{User} =~ /system user/);
-      next if($query_hr->{Command} =~ /Binlog Dump/);
+      next if($query_hr->{Command} =~ m/(Sleep|Binlog Dump|Ping|Processlist)/io);
       next unless($query_hr->{Info});
+      # skip if time is zero or NULL
+      next unless $$query_hr{'time'};
       ###
       my $code = $np->check_threshold(check => $query_hr->{Time}, warning => $np->opts->warning, critical => $np->opts->critical);
       if($code)
