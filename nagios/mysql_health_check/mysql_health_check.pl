@@ -54,7 +54,7 @@ switch ($np->opts->mode)
       next if($query_hr->{Command} =~ m/(Sleep|Binlog Dump|Ping|Processlist)/io);
       next unless($query_hr->{Info});
       # skip if time is zero or NULL
-      next unless $$query_hr{'time'};
+      next unless $query_hr->{Time};
       ###
       my $code = $np->check_threshold(check => $query_hr->{Time}, warning => $np->opts->warning, critical => $np->opts->critical);
       if($code)
