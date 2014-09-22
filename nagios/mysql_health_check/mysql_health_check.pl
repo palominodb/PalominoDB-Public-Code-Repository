@@ -2,22 +2,22 @@
 ### work around for ePn until I can refactor completely.
 # nagios: -epn
 ###
-# mysql_health_check.pl - A Nagios health check to monitory any variable from 
+# mysql_health_check.pl - A Nagios health check to monitory any variable from
 # 'SHOW GLOBAL STATUS' or 'SHOW GLOBAL VARIABLES'.
 # Copyright (c) 2009-2013, PalominoDB, Inc.
-# 
+#
 # You may contact the maintainers at eng@palominodb.com.
-# 
+#
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License along
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
@@ -67,9 +67,12 @@ switch ($np->opts->mode)
   }
   case "locked-query"
   {
+    ### this is where we can add rules to skip specific queries or users
+    next if($query_hr->{User} =~ /system user/);
+    next if($query_hr->{State} =~ m/User lock/i);
     foreach my $query_hr (@{$data->{current}->{proc_list}})
     {
-      if($query_hr->{Command} eq 'Query' && (defined($query_hr->{State}) && $query_hr->{State} eq 'Locked'))
+      if($query_hr->{Command} eq 'Query' && (defined($query_hr->{State}) && $query_hr->{State} =~ m/lock/i))
       {
         my $code = $np->check_threshold(check => $query_hr->{Time}, warning => $np->opts->warning, critical => $np->opts->critical);
         if($code)
@@ -78,11 +81,11 @@ switch ($np->opts->mode)
           $np->add_message($code, $msg);
           last;
         }
-      } 
+      }
     }
   }
   case /varcomp/
-  { 
+  {
     my $comp_res_code;
     my $expr_res;
 
@@ -185,16 +188,16 @@ sub mode_varcomp
   my $comp_res_code;
 
   pdebug("expr (" . $np->opts->expression . ")\n");
-  if($np->opts->comparison_warning){ 
-    pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n"); 
+  if($np->opts->comparison_warning){
+    pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n");
   }
-  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n"); 
+  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n");
 
   my $do_math = 0;
-  foreach my $word (split(/\b/, $np->opts->expression)) 
+  foreach my $word (split(/\b/, $np->opts->expression))
   {
     pdebug("parsing $word\n");
-    if(exists($meta_data->{current}->{varstatus}->{$word})) 
+    if(exists($meta_data->{current}->{varstatus}->{$word}))
     {
       pdebug("found $word in metadata, value is $meta_data->{current}->{varstatus}->{$word} \n");
       $parsed_expr .= $meta_data->{current}->{varstatus}->{$word};
@@ -213,7 +216,7 @@ sub mode_varcomp
   if($do_math)
   {
     pdebug("doing math: $parsed_expr\n");
-    $expr_res = eval($parsed_expr); 
+    $expr_res = eval($parsed_expr);
     #if it's a float, round to two decimal places.
     $expr_res = nearest(.01, $expr_res) if($expr_res =~ /\d+\.?\d*/);
   }
@@ -225,7 +228,7 @@ sub mode_varcomp
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") = TRUE\n");
     $comp_res_code = CRITICAL;
   }elsif ($np->opts->comparison_warning) {
-    if (eval($expr_res . $np->opts->comparison_warning)) { 
+    if (eval($expr_res . $np->opts->comparison_warning)) {
       pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_warning.") = TRUE\n");
       $comp_res_code = WARNING;
     } else {
@@ -236,8 +239,8 @@ sub mode_varcomp
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") == FALSE\n");
     $comp_res_code = OK;
   }
-    
-  return $comp_res_code, $expr_res; 
+
+  return $comp_res_code, $expr_res;
 }
 
 #####
@@ -251,9 +254,9 @@ sub mode_lastrun_varcomp
   my $comp_res = '';
   my $comp_res_code;
 
-  pdebug("expr (" . $np->opts->expression . ")\n"); 
-  pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n"); 
-  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n"); 
+  pdebug("expr (" . $np->opts->expression . ")\n");
+  pdebug("comp-warning (" . $np->opts->comparison_warning . ")\n");
+  pdebug("comp-critical (" . $np->opts->comparison_critical . ")\n");
 
   unless(exists($meta_data->{lastrun}->{varstatus}))
   {
@@ -266,26 +269,26 @@ sub mode_lastrun_varcomp
   $parsed_expr =~ s/current{(\w+)}/$meta_data->{current}->{varstatus}->{$1}/gx;
   $parsed_expr =~ s/lastrun{(\w+)}/$meta_data->{lastrun}->{varstatus}->{$1}/gx;
 
-  pdebug("expr ($parsed_expr)\n"); 
+  pdebug("expr ($parsed_expr)\n");
 
 #  print Dumper($meta_data);
 
   pdebug("doing math: $parsed_expr\n");
-  $expr_res = eval($parsed_expr); 
+  $expr_res = eval($parsed_expr);
   #if it's a float, round to two decimal places.
   $expr_res = nearest(.01, $expr_res) if($expr_res =~ /\d+\.?\d*/);
- 
+
   if (eval($expr_res . $np->opts->comparison_critical)) {
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") = TRUE\n");
     $comp_res_code = CRITICAL;
-  } elsif (eval($expr_res . $np->opts->comparison_warning)) { 
+  } elsif (eval($expr_res . $np->opts->comparison_warning)) {
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_warning.") = TRUE\n");
     $comp_res_code = WARNING;
   } else {
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") == (".$expr_res . $np->opts->comparison_warning.") == FALSE\n");
   }
-    
-  return $comp_res_code, $expr_res; 
+
+  return $comp_res_code, $expr_res;
 }
 
 
@@ -315,7 +318,7 @@ sub load_meta_data
       $current = fetch_server_meta_data({type => 'current', cache => 0});
       write_cache($current);
     }
-  } 
+  }
 
   if($run_mode eq 'lastrun-varcomp')
   {
@@ -333,7 +336,7 @@ sub load_meta_data
 #####
 sub fetch_server_meta_data
 {
-  my $args = shift; 
+  my $args = shift;
   my $data;
 
   if($args->{'type'} eq 'current')
@@ -341,13 +344,13 @@ sub fetch_server_meta_data
     if($args->{'cache'})
     {
       pdebug("Getting meta data from server (cache)...\n");
-      $data = get_from_cache({type => 'current'}); 
+      $data = get_from_cache({type => 'current'});
     }
     else
     {
       pdebug("Getting meta data from server (no cache)...\n");
       pdebug("\tSHOW FULL PROCESSLIST...\n");
-      $data->{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);     
+      $data->{proc_list} = dbi_exec_for_loh($dbh, q|SHOW FULL PROCESSLIST|);
       pdebug("\tSHOW GLOBAL VARIABLES...\n");
       $data->{varstatus} = dbi_exec_for_paired_hash($dbh, q|SHOW GLOBAL VARIABLES|);
       pdebug("\tSHOW GLOBAL STATUS...\n");
@@ -376,16 +379,16 @@ sub fetch_server_meta_data
 #####
 sub get_from_cache
 {
-  my $args = shift; 
+  my $args = shift;
   my $cache_info = cache_paths();
   my $data;
 
-  
+
   if($args->{'type'} eq 'current')
   {
     if(-e $cache_info->{'file'})
-    { 
-      my $cf_stat = stat($cache_info->{'file'}); 
+    {
+      my $cf_stat = stat($cache_info->{'file'});
       my $cf_age = time() - $cf_stat->mtime;
       pdebug("Cache file ($cache_info->{'file'}) is $cf_age second old - max age is " . $np->opts->max_cache_age . ".\n");
       # if the file is too old, lock, if we can't get a lock, stale data it is becuase another process is refreshing
@@ -410,7 +413,7 @@ sub get_from_cache
   }
 
 #  print Dumper($data);
-  return $data; 
+  return $data;
 }
 
 sub refresh_cache
@@ -449,7 +452,7 @@ sub write_cache
   store($data, $cache_info->{'tmp_file'}) || $np->nagios_die(CRITICAL, "Can't write cache tmp file($cache_info->{'tmp_file'}): $!");
   move($cache_info->{'tmp_file'}, $cache_info->{'file'}) || $np->nagios_die(CRITICAL, "Can't rename cache tmp file: $!");
 
-   
+
   return $data;
 }
 
@@ -458,7 +461,7 @@ sub lock_cache
   my $cache_info = cache_paths();
   open(CACHE_FILE, "<$cache_info->{'file'}") || $np->nagios_die(UNKNOWN, "Can't open cache for locking: $!\n");
   pdebug("Locking ($cache_info->{'file'})...\n");
-  my $lock_res = flock(CACHE_FILE, LOCK_EX|LOCK_NB); 
+  my $lock_res = flock(CACHE_FILE, LOCK_EX|LOCK_NB);
   pdebug("LOCK: ($lock_res)\n");
   return $lock_res;
 }
@@ -477,10 +480,10 @@ sub cleanup
 }
 
 # connect to database server and return a DBI handle
-sub dbi_connect 
+sub dbi_connect
 {
   my $np = shift;
-  
+
   my $dsn = sprintf("DBI:mysql:database=%s:host=%s:port=%d", $np->opts->database, $np->opts->hostname, $np->opts->port);
   my $dbh = DBI->connect($dsn, $np->opts->user, $np->opts->password, { RaiseError => 0, AutoCommit => 1 });
   unless($dbh) { $np->nagios_exit(CRITICAL, "Can't connect to MySQL: $DBI::errstr") }
@@ -510,10 +513,10 @@ sub init_plugin
   $np->add_arg(spec => 'warning|w=s', required => 0, default => '', help => "-w, --warning\n\tWarning Threshold");
   $np->add_arg(spec => 'critical|c=s', required => 0, default => '', help => "-c, --critical\n\tCritical Threshold");
   $np->add_arg(spec => 'shortname=s', required => 0, default => '', help => qq|--shortname\n\tName/Label to give this check i.e "max_connections"|);
-  $np->add_arg(spec => 'mode|m=s', required => 1, help => 
-    qq|-m, --mode\n\tRun mode\n| . 
-    qq|\t\tvarcomp\t\tVariable comparison (--comparison_warning, --comparison_critical, and --expression)\n| . 
-    qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison_warning, --comparison_critical, and --expression)\n| . 
+  $np->add_arg(spec => 'mode|m=s', required => 1, help =>
+    qq|-m, --mode\n\tRun mode\n| .
+    qq|\t\tvarcomp\t\tVariable comparison (--comparison_warning, --comparison_critical, and --expression)\n| .
+    qq|\t\tlastrun-varcomp\t\tLast run variable comparison (--comparison_warning, --comparison_critical, and --expression)\n| .
     qq|\t\tlocked-query\tCheck for queries in the 'Locked' state\n| .
     qq|\t\tsec-behind-master\tCheck for value of seconds behind master from show slave status\n| .
     qq|\t\tlong-query\tCheck for long running queries\n|
@@ -561,7 +564,7 @@ sub init_plugin
       {
         $np->nagios_die("ERROR: run mode 'varcomp' requires --comparison_warning, --comparison_critical and --expression params.");
       }
-    }    
+    }
     case "lastrun-varcomp"
     {
       $np->shortname('mysql_lastrun-varcomp') unless($np->opts->shortname);
@@ -578,7 +581,7 @@ sub init_plugin
         $np->nagios_die("ERROR: run mode 'simple' requires --expression param.");
       }
     }
-  } 
+  }
 
   return $np, $dbh = dbi_connect($np);
 }
@@ -586,20 +589,20 @@ sub init_plugin
 sub dbi_exec_for_paired_hash { dbi_fetch_paired_hash (prepare_and_exec(@_)) }
 sub dbi_exec_for_loh { dbi_fetch_loh (prepare_and_exec(@_)) }
 
-sub dbi_fetch_loh 
-{ 
+sub dbi_fetch_loh
+{
   my $sth = shift;
   my $lref = $sth->fetchall_arrayref( {} );
   return \@{$lref};
 }
 
-sub dbi_fetch_paired_hash 
+sub dbi_fetch_paired_hash
 {
   my $sth = shift;
   die "query asks for " . $sth->{NUM_OF_FIELDS} . " fields, not 2" if $sth->{NUM_OF_FIELDS} != 2;
   my $key = $sth->{NAME}->[0];
   my %hash;
-  while (my $lref = $sth->fetchrow_arrayref) 
+  while (my $lref = $sth->fetchrow_arrayref)
   {
     my $val = $lref->[0];
     $hash{$val} = $lref->[1];
@@ -607,13 +610,13 @@ sub dbi_fetch_paired_hash
   return \%hash;
 }
 
-sub prepare_and_exec 
+sub prepare_and_exec
 {
   my $dbh = shift;
   my $flags = 0;
   $flags = shift if ($_[0] =~ /^\d+$/);
   my ($query, @binds) = @_;
-  my $sth = (($flags & DBI_CACHE_STMT()) ? $dbh->prepare_cached($query) : $dbh->prepare($query)) 
+  my $sth = (($flags & DBI_CACHE_STMT()) ? $dbh->prepare_cached($query) : $dbh->prepare($query))
         || croak "error preparing query: ".$dbh->errstr." ($query)";
   $sth->execute(@binds) || croak "error executing query: ".$dbh->errstr." ($query)";
   return $sth;
@@ -621,7 +624,7 @@ sub prepare_and_exec
 
 sub DBI_CACHE_STMT { 1 }
 
-sub hash_merge 
+sub hash_merge
 {
   shift unless ref $_[0]; # Take care of the case we're called like Hash::Merge::Simple->merge(...)
   my ($left, @right) = @_;
@@ -630,14 +633,14 @@ sub hash_merge
   my ($right) = @right;
   my %merge = %$left;
 
-  for my $key (keys %$right) 
+  for my $key (keys %$right)
   {
     my ($hr, $hl) = map { ref $_->{$key} eq 'HASH' } $right, $left;
     if ($hr and $hl)
     {
       $merge{$key} = hash_merge($left->{$key}, $right->{$key});
     }
-    else 
+    else
     {
       $merge{$key} = $right->{$key};
     }
@@ -646,7 +649,7 @@ sub hash_merge
 }
 
 # stolen from Math::Round
-sub nearest 
+sub nearest
 {
   my $targ = abs(shift);
   my @res  = map {
