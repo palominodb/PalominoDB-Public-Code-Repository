@@ -283,6 +283,7 @@ sub mode_lastrun_varcomp
     $comp_res_code = WARNING;
   } else {
     pdebug("Parsed ($parsed_expr) = ($expr_res) | (".$expr_res . $np->opts->comparison_critical.") == (".$expr_res . $np->opts->comparison_warning.") == FALSE\n");
+    $comp_res_code = OK;
   }
     
   return $comp_res_code, $expr_res; 
